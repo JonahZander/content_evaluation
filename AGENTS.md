@@ -98,6 +98,11 @@ Examples that may make sense later:
 - Annotation export and reviewer QA
 - Release verification
 
+Repo-local skills currently available:
+
+- `.codex/skills/commit-style/SKILL.md`
+- `.codex/skills/frontend-design/SKILL.md`
+
 Do not create a skill for information that is really repository knowledge.
 If the content explains this project's architecture, workflows, or domain language, prefer `docs/`.
 

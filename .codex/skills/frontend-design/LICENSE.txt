@@ -1,0 +1,3 @@
+This skill is stored as repository-local guidance for work in this project.
+
+Until the repository owner defines broader terms, treat this skill content as available for use, modification, and maintenance within this repository and its related development workflows only.

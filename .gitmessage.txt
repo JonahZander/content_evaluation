@@ -1,0 +1,10 @@
+# <type>(<scope>): <summary>
+
+Why:
+- 
+
+What:
+- 
+
+Checks:
+- 

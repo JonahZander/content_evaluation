@@ -60,6 +60,11 @@ The browser API contract lives in:
 
 Use those two files when reviewing frontend/backend contract changes.
 
+Browser-level UI tests live in:
+
+- `apps/web/playwright.config.ts`
+- `apps/web/e2e/`
+
 ### Backend
 
 The backend HTTP entrypoint is:
@@ -265,6 +270,8 @@ Backend tests:
 Frontend tests:
 
 - `apps/web/test/ReviewWorkbench.test.tsx`
+- `apps/web/e2e/review-workbench.spec.ts`
+- `apps/web/e2e/error-states.spec.ts`
 
 The tests are currently strongest around:
 
@@ -273,6 +280,7 @@ The tests are currently strongest around:
 - exports
 - provider parsing
 - core workbench rendering
+- browser-level submit, reply, selection-comment, export, and invalid-upload flows
 
 ## Review Checklist
 

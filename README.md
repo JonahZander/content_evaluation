@@ -36,6 +36,8 @@ Current analysis and review capabilities:
 - API: `npm run dev:api`
 - Web tests: `npm run test:web`
 - Web typecheck: `npm run typecheck:web`
+- Browser E2E tests: `npm run test:e2e`
+- Browser E2E headed: `npm run test:e2e:headed`
 - API tests: `npm run test:api`
 - API typecheck: `npm run typecheck:api`
 - API lint: `npm run lint:api`

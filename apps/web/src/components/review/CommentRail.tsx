@@ -106,6 +106,7 @@ export function CommentRail({
                         {reviewActions.map((state) => (
                           <button
                             key={state}
+                            data-testid={`review-state-${comment.id}-${state}`}
                             className={`${styles.stateButton} ${
                               comment.review_state === state ? styles.stateButtonActive : ""
                             }`}
@@ -120,12 +121,18 @@ export function CommentRail({
                       <div className={styles.toolbarGroup}>
                         <button
                           className={styles.ghostButton}
+                          data-testid={`edit-comment-${comment.id}`}
                           type="button"
                           onClick={() => onStartEditing(comment.id, comment.body)}
                         >
                           Edit
                         </button>
-                        <button className={styles.ghostButton} type="button" onClick={() => onDeleteComment(comment.id)}>
+                        <button
+                          className={styles.ghostButton}
+                          data-testid={`delete-comment-${comment.id}`}
+                          type="button"
+                          onClick={() => onDeleteComment(comment.id)}
+                        >
                           Delete
                         </button>
                       </div>
@@ -143,11 +150,17 @@ export function CommentRail({
                     <div className={styles.replyComposer}>
                       <textarea
                         className={styles.replyInput}
+                        data-testid={`reply-input-${comment.id}`}
                         value={replyDrafts[comment.id] ?? ""}
                         onChange={(event) => onReplyDraftChange(comment.id, event.target.value)}
                         placeholder="Reply to this comment"
                       />
-                      <button className={styles.button} type="button" onClick={() => onAddReply(comment.id)}>
+                      <button
+                        className={styles.button}
+                        data-testid={`reply-submit-${comment.id}`}
+                        type="button"
+                        onClick={() => onAddReply(comment.id)}
+                      >
                         Add reply
                       </button>
                     </div>

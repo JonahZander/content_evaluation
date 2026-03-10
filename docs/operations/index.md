@@ -7,4 +7,4 @@ Read this section for logging, run inspection, readiness, and local or Docker ex
 - `observability.md`
   - Current visibility model for runs, models, timings, and evidence
 - `local-development.md`
-  - Local and Docker workflows for the web app, API, and Postgres
+  - Local and Docker workflows for the web app, API, Postgres, and Playwright E2E testing

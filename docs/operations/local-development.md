@@ -18,9 +18,35 @@
 
 - Web tests: `npm run test:web`
 - Web typecheck: `npm run typecheck:web`
+- Browser E2E tests: `npm run test:e2e`
+- Browser E2E headed: `npm run test:e2e:headed`
+- Browser E2E UI mode: `npm run test:e2e:ui`
 - API tests: `npm run test:api`
 - API lint: `npm run lint:api`
 - API typecheck: `npm run typecheck:api`
+
+## Playwright Setup
+
+- Playwright was installed in `apps/web` using the official setup command from the Playwright docs:
+  - `npm init playwright@latest`
+- The repo keeps the generated Playwright config in:
+  - `apps/web/playwright.config.ts`
+- The browser tests live in:
+  - `apps/web/e2e/`
+- The Playwright config starts both:
+  - the FastAPI API in `CONTENT_EVAL_APP_ENV=test`
+  - the Next.js app on `127.0.0.1:3000`
+
+## Playwright Notes
+
+- The E2E suite currently runs on Chromium.
+- The browser flows cover:
+  - pasted-text submission
+  - agent reply and review-state updates
+  - standalone reviewer comments from browser text selection
+  - Markdown and JSON export popups
+  - invalid upload handling
+- Playwright stores browser binaries outside the repo and writes local reports under `apps/web/` paths that are ignored by Git.
 
 ## Docker Workflow
 

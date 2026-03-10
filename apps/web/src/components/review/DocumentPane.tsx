@@ -153,6 +153,7 @@ export function DocumentPane({
             key={block.id}
             className={styles.paragraph}
             data-block-id={block.id}
+            data-testid={`document-block-${block.index}`}
             onMouseUp={(event) => {
               const draft = resolveSelectionDraft(event.currentTarget, window.getSelection(), block.id);
               onSelectionDraft(draft);

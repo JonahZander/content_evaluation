@@ -33,12 +33,13 @@ export function SelectionBanner({
       <div className={styles.replyComposer}>
         <textarea
           className={styles.toolbarTextarea}
+          data-testid="selection-comment-input"
           value={commentDraft}
           onChange={(event) => onCommentDraftChange(event.target.value)}
           placeholder="Add a reviewer note for this selection"
         />
         <div className={styles.toolbarGroup}>
-          <button className={styles.button} type="button" onClick={onSave}>
+          <button className={styles.button} data-testid="selection-comment-save" type="button" onClick={onSave}>
             Save comment
           </button>
           <button className={styles.ghostButton} type="button" onClick={onCancel}>

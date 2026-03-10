@@ -45,3 +45,4 @@ Load only the section needed for the current task.
 - Review actions: reply to comments, create reviewer comments, accept/reject/uncertain agent comments
 - Exports: Markdown and JSON
 - Runtime visibility: `/health`, `/ready`, run events, SSE stream
+- Browser E2E coverage: Playwright installed through the official setup flow in `apps/web`

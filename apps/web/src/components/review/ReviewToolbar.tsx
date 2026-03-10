@@ -36,6 +36,7 @@ export function ReviewToolbar({
       <div className={styles.toolbarGroup}>
         <select
           className={styles.toolbarSelect}
+          data-testid="source-type-select"
           value={formState.sourceType}
           onChange={(event) =>
             onFormChange((current) => ({
@@ -50,6 +51,7 @@ export function ReviewToolbar({
         </select>
         <input
           className={styles.toolbarInput}
+          data-testid="draft-title-input"
           value={formState.title}
           onChange={(event) => onFormChange((current) => ({ ...current, title: event.target.value }))}
           placeholder="Draft title"
@@ -57,6 +59,7 @@ export function ReviewToolbar({
         {formState.sourceType === "url" ? (
           <input
             className={styles.toolbarInput}
+            data-testid="draft-url-input"
             value={formState.url}
             onChange={(event) =>
               onFormChange((current) => ({
@@ -73,6 +76,7 @@ export function ReviewToolbar({
             <input
               key={fileInputKey}
               className={styles.toolbarInput}
+              data-testid="draft-file-input"
               type="file"
               accept=".txt,.md,text/plain,text/markdown"
               onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
@@ -82,6 +86,7 @@ export function ReviewToolbar({
         ) : (
           <textarea
             className={styles.toolbarTextarea}
+            data-testid="draft-text-input"
             value={formState.text}
             onChange={(event) => onFormChange((current) => ({ ...current, text: event.target.value }))}
             placeholder="Paste draft text"
@@ -89,16 +94,32 @@ export function ReviewToolbar({
         )}
       </div>
       <div className={styles.toolbarGroup}>
-        <button className={styles.button} type="button" onClick={onSubmit} disabled={submitting}>
+        <button
+          className={styles.button}
+          data-testid="analyze-button"
+          type="button"
+          onClick={onSubmit}
+          disabled={submitting}
+        >
           {submitting ? "Submitting..." : "Analyze content"}
         </button>
-        <button className={styles.ghostButton} type="button" onClick={() => onExport("md")}>
+        <button
+          className={styles.ghostButton}
+          data-testid="export-markdown-button"
+          type="button"
+          onClick={() => onExport("md")}
+        >
           Export Markdown
         </button>
-        <button className={styles.ghostButton} type="button" onClick={() => onExport("json")}>
+        <button
+          className={styles.ghostButton}
+          data-testid="export-json-button"
+          type="button"
+          onClick={() => onExport("json")}
+        >
           Export JSON
         </button>
-        <span className={styles.statusPill} role="status">
+        <span className={styles.statusPill} data-testid="run-status" role="status">
           {statusMessage}
         </span>
       </div>

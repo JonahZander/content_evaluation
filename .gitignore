@@ -2,8 +2,15 @@
 node_modules/
 .next/
 out/
+*.tsbuildinfo
 services/api/.venv/
 apps/web/.vitest/
+.uv-cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
 
 # Logs
 *.log

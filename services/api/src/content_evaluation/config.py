@@ -1,9 +1,13 @@
 """Application settings."""
 
 from functools import lru_cache
+from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from content_evaluation.domain.exceptions import ConfigurationError
+from content_evaluation.domain.models import RuntimeMode
 
 
 class Settings(BaseSettings):
@@ -11,13 +15,57 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="CONTENT_EVAL_", env_file=".env", extra="ignore")
 
-    app_env: str = Field(default="development")
+    app_env: Literal["development", "test", "production"] = Field(default="development")
     database_url: str | None = Field(default=None)
     reviewer_name: str = Field(default="Workspace reviewer")
     openai_api_key: str | None = Field(default=None)
     tavily_api_key: str | None = Field(default=None)
     api_base_url: str = Field(default="http://localhost:8000")
     web_base_url: str = Field(default="http://localhost:3000")
+    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000", "http://127.0.0.1:3000"])
+    max_upload_bytes: int = Field(default=524_288)
+    worker_poll_interval_seconds: float = Field(default=0.15)
+    worker_max_attempts: int = Field(default=2)
+    request_timeout_seconds: float = Field(default=30.0)
+    provider_timeout_seconds: float = Field(default=45.0)
+
+    @property
+    def runtime_mode(self) -> RuntimeMode:
+        """Return whether the app is using live or mock providers."""
+
+        if self.openai_api_key and self.tavily_api_key:
+            return RuntimeMode.LIVE
+        return RuntimeMode.MOCK
+
+    @property
+    def persistent_storage_enabled(self) -> bool:
+        """Return whether the app uses persistent storage."""
+
+        return self.database_url is not None
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _coerce_origins(cls, value: object) -> object:
+        """Support comma-separated origins from environment variables."""
+
+        if isinstance(value, str):
+            return [origin.strip() for origin in value.split(",") if origin.strip()]
+        return value
+
+    @model_validator(mode="after")
+    def validate_runtime(self) -> "Settings":
+        """Validate production-safe runtime settings."""
+
+        if self.app_env == "production":
+            if self.runtime_mode is RuntimeMode.MOCK:
+                raise ConfigurationError(
+                    "Production mode requires CONTENT_EVAL_OPENAI_API_KEY and CONTENT_EVAL_TAVILY_API_KEY"
+                )
+            if not self.persistent_storage_enabled:
+                raise ConfigurationError("Production mode requires CONTENT_EVAL_DATABASE_URL")
+            if not self.cors_origins or "*" in self.cors_origins:
+                raise ConfigurationError("Production mode requires explicit non-wildcard CONTENT_EVAL_CORS_ORIGINS")
+        return self
 
 
 @lru_cache(maxsize=1)

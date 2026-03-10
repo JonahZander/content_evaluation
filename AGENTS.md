@@ -38,6 +38,7 @@ Read only the domain relevant to the task:
 - Logging, observability, and traceability:
   - `docs/operations/index.md`
   - `docs/operations/observability.md`
+  - `docs/operations/local-development.md`
 - Process, documentation hygiene, and commit conventions:
   - `docs/process/index.md`
   - `docs/process/documentation-maintenance.md`
@@ -77,6 +78,7 @@ Update docs when you change:
 - Data contracts, ingestion paths, or storage layout
 - UX flows, review interactions, or annotation behavior
 - Logging, trace fields, or evaluation outputs
+- Runtime mode rules, readiness checks, or local/Docker workflows
 - Commit conventions, workflow rules, or repo structure
 
 If user feedback changes how a feature should behave, update the relevant markdown in the same change set.

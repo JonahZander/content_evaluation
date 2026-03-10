@@ -1,10 +1,17 @@
 """Comment service tests."""
 
-from uuid import uuid4
-
 import pytest
 
-from content_evaluation.domain.models import AgentCategory, AuthorType, Comment, ReviewState, RunMetadata, SourceType, TextAnchor
+from content_evaluation.domain.exceptions import ValidationError
+from content_evaluation.domain.models import (
+    AgentCategory,
+    AuthorType,
+    Comment,
+    ReviewState,
+    RunMetadata,
+    SourceType,
+    TextAnchor,
+)
 from content_evaluation.repositories.in_memory import InMemoryRunRepository
 from content_evaluation.services.comments import CommentService
 
@@ -58,3 +65,44 @@ async def test_comment_service_creates_new_anchor_for_human_selection() -> None:
     detail = await repository.get_run_detail(run.id)
 
     assert comment.anchor_id in {anchor.id for anchor in detail.anchors}
+
+
+@pytest.mark.asyncio
+async def test_comment_service_rejects_editing_agent_comment() -> None:
+    """Prevent edits to agent-authored comments."""
+
+    repository = InMemoryRunRepository()
+    run = RunMetadata(source_type=SourceType.TEXT, source_label="draft")
+    await repository.create_run(run)
+    anchor = TextAnchor(block_id="block-1", start_offset=0, end_offset=4, quote="Test")
+    await repository.save_anchor(run.id, anchor)
+    agent_comment = Comment(
+        run_id=run.id,
+        anchor_id=anchor.id,
+        author_type=AuthorType.AGENT,
+        author_label="editorial agent",
+        category=AgentCategory.EDITORIAL,
+        body="Trim this paragraph.",
+    )
+    await repository.save_comment(agent_comment)
+
+    service = CommentService(repository, "Reviewer")
+
+    with pytest.raises(ValidationError, match="Only human comments can be edited"):
+        await service.update_comment(agent_comment.id, "Changed")
+
+
+@pytest.mark.asyncio
+async def test_comment_service_rejects_reviewing_human_comment() -> None:
+    """Prevent review-state updates on human comments."""
+
+    repository = InMemoryRunRepository()
+    run = RunMetadata(source_type=SourceType.TEXT, source_label="draft")
+    await repository.create_run(run)
+    anchor = TextAnchor(block_id="block-1", start_offset=0, end_offset=4, quote="Test")
+    await repository.save_anchor(run.id, anchor)
+    service = CommentService(repository, "Reviewer")
+    human_comment = await service.create_comment(run.id, "Needs one example.", anchor.id)
+
+    with pytest.raises(ValidationError, match="Only agent comments can receive review-state updates"):
+        await service.set_review_state(human_comment.id, ReviewState.ACCEPTED)

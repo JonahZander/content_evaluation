@@ -15,6 +15,8 @@ from content_evaluation.domain.models import (
     ReviewState,
     RunDetail,
     RunEvent,
+    RunJob,
+    RunJobStatus,
     RunMetadata,
     RunSummary,
     TextAnchor,
@@ -29,12 +31,70 @@ class InMemoryRunRepository:
         """Initialize the in-memory store."""
 
         self._runs: dict[UUID, RunDetail] = {}
+        self._jobs: dict[UUID, RunJob] = {}
 
     async def create_run(self, run: RunMetadata) -> RunMetadata:
         """Persist a new run."""
 
         self._runs[run.id] = RunDetail(run=run)
         return run
+
+    async def enqueue_run_job(self, job: RunJob) -> RunJob:
+        """Persist a queued job."""
+
+        self._jobs[job.run_id] = deepcopy(job)
+        return job
+
+    async def claim_next_run_job(self) -> RunJob | None:
+        """Claim the next queued job."""
+
+        queued_jobs = sorted(
+            (job for job in self._jobs.values() if job.status is RunJobStatus.QUEUED),
+            key=lambda job: job.created_at,
+        )
+        if not queued_jobs:
+            return None
+        job = queued_jobs[0]
+        job.status = RunJobStatus.RUNNING
+        job.attempts += 1
+        job.updated_at = now_utc()
+        return deepcopy(job)
+
+    async def complete_run_job(self, run_id: UUID) -> None:
+        """Mark one job as completed."""
+
+        job = self._jobs.get(run_id)
+        if job is not None:
+            job.status = RunJobStatus.COMPLETED
+            job.updated_at = now_utc()
+
+    async def fail_run_job(self, run_id: UUID) -> None:
+        """Mark one job as failed."""
+
+        job = self._require_job(run_id)
+        job.status = RunJobStatus.FAILED
+        job.updated_at = now_utc()
+
+    async def requeue_run_job(self, run_id: UUID) -> RunJob | None:
+        """Move one job back to queued state."""
+
+        job = self._jobs.get(run_id)
+        if job is None:
+            return None
+        job.status = RunJobStatus.QUEUED
+        job.updated_at = now_utc()
+        return deepcopy(job)
+
+    async def reset_inflight_jobs(self) -> int:
+        """Return running jobs to the queue."""
+
+        reset_count = 0
+        for job in self._jobs.values():
+            if job.status is RunJobStatus.RUNNING:
+                job.status = RunJobStatus.QUEUED
+                job.updated_at = now_utc()
+                reset_count += 1
+        return reset_count
 
     async def update_run(self, run: RunMetadata) -> RunMetadata:
         """Persist a run status change."""
@@ -103,6 +163,11 @@ class InMemoryRunRepository:
                     return
         raise NotFoundError(f"Comment {comment_id} not found")
 
+    async def get_comment(self, comment_id: str) -> Comment:
+        """Return one top-level comment."""
+
+        return deepcopy(self._find_comment(comment_id))
+
     async def add_reply(self, reply: CommentReply) -> CommentReply:
         """Persist one reply."""
 
@@ -136,6 +201,11 @@ class InMemoryRunRepository:
         detail = self._runs.get(run_id)
         return deepcopy(detail) if detail else None
 
+    async def readiness_check(self) -> bool:
+        """Return storage readiness for the in-memory repository."""
+
+        return True
+
     def _require_run(self, run_id: UUID) -> RunDetail:
         """Return a run detail or raise."""
 
@@ -162,3 +232,11 @@ class InMemoryRunRepository:
                     if comment.id == comment_id:
                         return comment
         raise NotFoundError(f"Comment {comment_id} not found")
+
+    def _require_job(self, run_id: UUID) -> RunJob:
+        """Return a queued job or raise."""
+
+        job = self._jobs.get(run_id)
+        if job is None:
+            raise NotFoundError(f"Run job {run_id} not found")
+        return job

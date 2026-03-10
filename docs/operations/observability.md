@@ -4,7 +4,7 @@
 
 Make every analysis run easy to inspect by humans and future agents.
 
-## Planned Visibility Requirements
+## Current Visibility Requirements
 
 - Show which agents ran
 - Show which models were used
@@ -19,6 +19,19 @@ Make every analysis run easy to inspect by humans and future agents.
 - Each run should have a stable run identifier.
 - Each agent step should include timing and model metadata.
 - User-visible conclusions should reference the source run and evidence.
+
+## Current Surfaces
+
+- `/health`
+  - Liveness plus app environment and processing mode
+- `/ready`
+  - Readiness report for database state, provider readiness, runtime mode, and persistence mode
+- `RunEvent` records
+  - Persisted per run and exposed both in the API payload and via SSE
+- Review UI event panel
+  - Human-readable event stream with stage, agent, and model
+- Structured request logging middleware
+  - Request method, path, duration, and request id
 
 ## UI Expectations
 

@@ -21,14 +21,19 @@ async def test_openai_provider_parses_structured_findings() -> None:
                     "choices": [
                         {
                             "message": {
-                                "content": '{"findings":[{"excerpt":"Alpha","rationale":"Reason","confidence":0.8,"suggestion":"Trim"}]}'
+                                "content": (
+                                    '{"findings":[{"excerpt":"Alpha","rationale":"Reason",'
+                                    '"confidence":0.8,"suggestion":"Trim"}]}'
+                                )
                             }
                         }
                     ]
                 },
             )
         )
-        findings = await provider.analyze_category(AgentCategory.VALUE, "Title", [DocumentBlock(index=0, text="Alpha text")])
+        findings = await provider.analyze_category(
+            AgentCategory.VALUE, "Title", [DocumentBlock(index=0, text="Alpha text")]
+        )
 
     assert route.called
     assert findings[0]["rationale"] == "Reason"

@@ -33,6 +33,22 @@ class RunStatus(StrEnum):
     FAILED = "failed"
 
 
+class RuntimeMode(StrEnum):
+    """Enumerate runtime execution modes."""
+
+    MOCK = "mock"
+    LIVE = "live"
+
+
+class RunJobStatus(StrEnum):
+    """Enumerate durable worker job states."""
+
+    QUEUED = "queued"
+    RUNNING = "running"
+    FAILED = "failed"
+    COMPLETED = "completed"
+
+
 class AuthorType(StrEnum):
     """Enumerate comment author types."""
 
@@ -71,6 +87,7 @@ class RunMetadata(BaseModel):
     created_at: datetime = Field(default_factory=now_utc)
     updated_at: datetime = Field(default_factory=now_utc)
     error_message: str | None = None
+    processing_mode: RuntimeMode = RuntimeMode.MOCK
 
 
 class DocumentBlock(BaseModel):
@@ -198,3 +215,24 @@ class RunInput(BaseModel):
     title: str | None = None
     url: str | None = None
 
+
+class RunJob(BaseModel):
+    """Store one durable queued job for the worker."""
+
+    run_id: UUID
+    input_data: RunInput
+    status: RunJobStatus = RunJobStatus.QUEUED
+    attempts: int = 0
+    created_at: datetime = Field(default_factory=now_utc)
+    updated_at: datetime = Field(default_factory=now_utc)
+
+
+class ReadinessReport(BaseModel):
+    """Store readiness information for health endpoints."""
+
+    status: str
+    app_env: str
+    processing_mode: RuntimeMode
+    persistent_storage: bool
+    database_ready: bool
+    providers_ready: bool

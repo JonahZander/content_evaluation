@@ -54,9 +54,9 @@ describe("ReviewWorkbench", () => {
   it("shows review buttons and reply controls", () => {
     render(<ReviewWorkbench initialRun={mockRunDetail} />);
 
-    expect(screen.getAllByRole("button", { name: "accepted" }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("button", { name: "rejected" }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("button", { name: "uncertain" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: "Accept" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: "Reject" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: "Uncertain" }).length).toBeGreaterThan(0);
     expect(screen.getAllByPlaceholderText("Reply to this comment").length).toBeGreaterThan(0);
   });
 

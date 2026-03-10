@@ -1,7 +1,5 @@
 """Export tests."""
 
-from uuid import uuid4
-
 from content_evaluation.domain.models import (
     AgentCategory,
     AuthorType,
@@ -25,7 +23,13 @@ def test_exports_include_comments_and_replies() -> None:
 
     run = RunMetadata(source_type=SourceType.TEXT, source_label="draft")
     block = DocumentBlock(index=0, text="This post explains how editors review content.")
-    document = NormalizedDocument(title="Draft", source_type=SourceType.TEXT, source_label="draft", text=block.text, blocks=[block])
+    document = NormalizedDocument(
+        title="Draft",
+        source_type=SourceType.TEXT,
+        source_label="draft",
+        text=block.text,
+        blocks=[block],
+    )
     anchor = TextAnchor(block_id=block.id, start_offset=0, end_offset=4, quote="This")
     comment = Comment(
         run_id=run.id,
@@ -37,7 +41,12 @@ def test_exports_include_comments_and_replies() -> None:
         review_state=ReviewState.UNCERTAIN,
     )
     comment.replies.append(
-        CommentReply(comment_id=comment.id, author_type=AuthorType.HUMAN, author_label="Reviewer", body="Needs more examples.")
+        CommentReply(
+            comment_id=comment.id,
+            author_type=AuthorType.HUMAN,
+            author_label="Reviewer",
+            body="Needs more examples.",
+        )
     )
     detail = RunDetail(
         run=run,

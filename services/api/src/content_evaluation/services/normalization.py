@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
 
-from content_evaluation.domain.models import DocumentBlock, NormalizedDocument, RunInput, SourceType
+from content_evaluation.domain.models import DocumentBlock, NormalizedDocument, RunInput
 
 
 def normalize_text(input_data: RunInput, extracted_text: str, title: str | None = None) -> NormalizedDocument:

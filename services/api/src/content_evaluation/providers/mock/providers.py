@@ -12,9 +12,21 @@ class MockSimilaritySearchProvider:
         """Return synthetic similarity results."""
 
         return [
-            {"title": "Related framing on agentic evaluation", "url": "https://example.com/agentic-evaluation", "score": 0.71},
-            {"title": "Editorial review systems for AI content", "url": "https://example.com/editorial-review", "score": 0.64},
-            {"title": f"Query echo: {query[:40]}", "url": "https://example.com/query-echo", "score": 0.49},
+            {
+                "title": "Related framing on agentic evaluation",
+                "url": "https://example.com/agentic-evaluation",
+                "score": 0.71,
+            },
+            {
+                "title": "Editorial review systems for AI content",
+                "url": "https://example.com/editorial-review",
+                "score": 0.64,
+            },
+            {
+                "title": f"Query echo: {query[:40]}",
+                "url": "https://example.com/query-echo",
+                "score": 0.49,
+            },
         ]
 
 
@@ -49,16 +61,25 @@ class MockAnalysisProvider:
             return [
                 {
                     "excerpt": primary[:120],
-                    "rationale": "The phrasing is polished and structurally repetitive, which may indicate AI assistance.",
+                    "rationale": (
+                        "The phrasing is polished and structurally repetitive, "
+                        "which may indicate AI assistance."
+                    ),
                     "confidence": 0.42,
-                    "suggestion": "Add concrete anecdotes or original evidence to reduce generic phrasing.",
+                    "suggestion": (
+                        "Add concrete anecdotes or original evidence to reduce "
+                        "generic phrasing."
+                    ),
                 }
             ]
         if category is AgentCategory.VALUE:
             return [
                 {
                     "excerpt": primary[:120],
-                    "rationale": "The strongest value is practical guidance for editors evaluating whether a post is worth reading.",
+                    "rationale": (
+                        "The strongest value is practical guidance for editors "
+                        "evaluating whether a post is worth reading."
+                    ),
                     "confidence": 0.79,
                     "suggestion": "Surface the main takeaway earlier in the introduction.",
                 }
@@ -85,9 +106,15 @@ class MockAnalysisProvider:
             return [
                 {
                     "excerpt": primary[:120],
-                    "rationale": "The post feels useful and coherent, but should include sharper evidence and less repetition.",
+                    "rationale": (
+                        "The post feels useful and coherent, but should include "
+                        "sharper evidence and less repetition."
+                    ),
                     "confidence": 0.83,
-                    "suggestion": "Keep the core thesis and trim sections that restate prior points.",
+                    "suggestion": (
+                        "Keep the core thesis and trim sections that restate "
+                        "prior points."
+                    ),
                 }
             ]
         return []

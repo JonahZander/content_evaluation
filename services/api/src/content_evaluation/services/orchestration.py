@@ -46,13 +46,21 @@ class RunOrchestrator:
     async def create_run(self, input_data: RunInput) -> RunMetadata:
         """Create one queued run."""
 
-        run = RunMetadata(source_type=input_data.source_type, source_label=input_data.source_label)
+        run = RunMetadata(
+            source_type=input_data.source_type,
+            source_label=input_data.source_label,
+        )
         return await self._repository.create_run(run)
 
     async def process_run(self, run_id: UUID, input_data: RunInput) -> None:
         """Process one queued run."""
 
-        run = RunMetadata(id=run_id, source_type=input_data.source_type, source_label=input_data.source_label, status=RunStatus.RUNNING)
+        run = RunMetadata(
+            id=run_id,
+            source_type=input_data.source_type,
+            source_label=input_data.source_label,
+            status=RunStatus.RUNNING,
+        )
         await self._repository.update_run(run)
         await self._repository.append_event(
             RunEvent(run_id=run_id, stage="run", status="started", message="Run started")
@@ -66,7 +74,9 @@ class RunOrchestrator:
                 RunEvent(run_id=run_id, stage="ingestion", status="completed", message="Document normalized")
             )
 
-            similarity_results = await self._search_provider.search(build_similarity_query(document.title, document.blocks))
+            similarity_results = await self._search_provider.search(
+                build_similarity_query(document.title, document.blocks)
+            )
             await self._repository.append_event(
                 RunEvent(
                     run_id=run_id,
@@ -89,7 +99,11 @@ class RunOrchestrator:
                 AgentCategory.EDITORIAL,
                 AgentCategory.SYNTHESIS,
             ):
-                raw_findings = await self._analysis_provider.analyze_category(category, document.title, document.blocks)
+                raw_findings = await self._analysis_provider.analyze_category(
+                    category,
+                    document.title,
+                    document.blocks,
+                )
                 await self._repository.append_event(
                     RunEvent(
                         run_id=run_id,
@@ -136,7 +150,14 @@ class RunOrchestrator:
                 verdict="Worth reading with edits" if overall_score >= 60 else "Needs stronger differentiation",
                 value_summary=_pick_summary(all_findings, AgentCategory.VALUE),
                 audience_summary=_pick_summary(all_findings, AgentCategory.AUDIENCE),
-                novelty_score=max(0.0, 1.0 - max((_coerce_float(item.get("score"), 0.0) for item in similarity_results), default=0.0)),
+                novelty_score=max(
+                    0.0,
+                    1.0
+                    - max(
+                        (_coerce_float(item.get("score"), 0.0) for item in similarity_results),
+                        default=0.0,
+                    ),
+                ),
                 ai_likelihood=ai_likelihood_score,
             )
             await self._repository.save_summary(run_id, summary)
@@ -188,9 +209,18 @@ def _pick_summary(findings: list[AgentFinding], category: AgentCategory) -> str:
 def _score_run(similarity_results: list[dict[str, object]], ai_likelihood: float, findings: list[AgentFinding]) -> int:
     """Compute a simple editorial score."""
 
-    similarity_penalty = max((_coerce_float(item.get("score"), 0.0) for item in similarity_results), default=0.0) * 25
+    similarity_penalty = (
+        max((_coerce_float(item.get("score"), 0.0) for item in similarity_results), default=0.0) * 25
+    )
     ai_penalty = ai_likelihood * 20
-    confidence_bonus = sum(item.confidence for item in findings if item.category in (AgentCategory.VALUE, AgentCategory.AUDIENCE)) * 10
+    confidence_bonus = (
+        sum(
+            item.confidence
+            for item in findings
+            if item.category in (AgentCategory.VALUE, AgentCategory.AUDIENCE)
+        )
+        * 10
+    )
     raw_score = 72 + confidence_bonus - similarity_penalty - ai_penalty
     return max(0, min(100, int(raw_score)))
 

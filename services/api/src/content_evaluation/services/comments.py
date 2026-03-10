@@ -57,16 +57,23 @@ class CommentService:
     async def update_comment(self, comment_id: str, body: str) -> Comment:
         """Update one human standalone comment."""
 
+        comment = await self._repository.get_comment(comment_id)
+        if comment.author_type is not AuthorType.HUMAN:
+            raise ValidationError("Only human comments can be edited")
         return await self._repository.update_comment(comment_id, body)
 
     async def delete_comment(self, comment_id: str) -> None:
         """Delete one human standalone comment."""
 
+        comment = await self._repository.get_comment(comment_id)
+        if comment.author_type is not AuthorType.HUMAN:
+            raise ValidationError("Only human comments can be deleted")
         await self._repository.delete_comment(comment_id)
 
     async def add_reply(self, comment_id: str, body: str) -> CommentReply:
         """Add one human reply beneath a comment."""
 
+        await self._repository.get_comment(comment_id)
         reply = CommentReply(
             comment_id=comment_id,
             author_type=AuthorType.HUMAN,
@@ -80,4 +87,7 @@ class CommentService:
 
         if state is ReviewState.UNREVIEWED:
             raise ValidationError("Review state must be accepted, rejected, or uncertain")
+        comment = await self._repository.get_comment(comment_id)
+        if comment.author_type is not AuthorType.AGENT:
+            raise ValidationError("Only agent comments can receive review-state updates")
         return await self._repository.update_comment_review_state(comment_id, state)

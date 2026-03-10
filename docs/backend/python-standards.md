@@ -2,10 +2,11 @@
 
 ## Runtime
 
-- Python `3.12+`
+- Python `3.12`
 - PEP8 style
 - Max line length `120`
 - `snake_case` for functions, variables, and modules
+- Tooling is configured in `services/api/pyproject.toml`
 
 ## Type Safety
 
@@ -30,10 +31,14 @@
 
 - Use `tenacity` for transient provider retries
 - Enforce request timeouts on every HTTP call
-- Emit structured logs with run and model metadata
+- Emit structured logs with request, run, and model metadata
+- Fail fast in production when provider keys, database URL, or CORS configuration are missing
+- Keep mock providers limited to development and test workflows
 
 ## Testing
 
 - Use `pytest`
 - Mock HTTP calls in tests
 - Validate retry behavior, error mapping, serialization, repository behavior, and orchestration flow
+- Keep `mypy` and `ruff` passing
+- Prefer a repository-local `UV_CACHE_DIR` when sandboxed tooling cannot write to the default user cache

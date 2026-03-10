@@ -5,4 +5,4 @@ Read this section for the review workbench, interaction design, and user-visible
 ## Files
 
 - `annotation-review-workbench.md`
-  - Planned UX for span selection, comments, evidence, and run visibility
+  - Current UX for span selection, comments, connector lines, exports, and run visibility

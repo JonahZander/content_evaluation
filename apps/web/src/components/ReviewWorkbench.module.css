@@ -117,6 +117,17 @@
   resize: vertical;
 }
 
+.fileInputWrap {
+  display: grid;
+  gap: 6px;
+}
+
+.fileMeta {
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .button,
 .ghostButton,
 .stateButton {
@@ -136,6 +147,12 @@
 .button {
   background: var(--ink);
   color: white;
+}
+
+.button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+  transform: none;
 }
 
 .ghostButton {
@@ -386,6 +403,21 @@
 .selectionQuote {
   margin: 8px 0 0;
   color: var(--muted);
+}
+
+.errorBanner,
+.emptyState,
+.emptyEventState {
+  padding: 14px 16px;
+  border-radius: 18px;
+  color: var(--muted);
+  background: rgba(255, 248, 240, 0.82);
+  border: 1px solid rgba(59, 43, 22, 0.12);
+}
+
+.errorBanner {
+  color: var(--vermilion);
+  background: rgba(184, 76, 36, 0.08);
 }
 
 .connectorCanvas {

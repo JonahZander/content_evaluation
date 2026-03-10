@@ -9,13 +9,13 @@ Load only the section needed for the current task.
 - `product/`
   - Product goals, user journeys, analysis outputs
 - `frontend/`
-  - Review UI, annotations, editor interactions
+  - Review UI, annotations, connector behavior, reviewer actions
 - `backend/`
-  - Ingestion, orchestration, result synthesis
+  - Ingestion, orchestration, queued execution, exports, Python standards
 - `agents/`
-  - Agent roles, prompts, evaluation workflow
+  - Agent roles, structured findings, evaluation workflow
 - `operations/`
-  - Logs, traces, model usage visibility
+  - Logs, readiness, model usage visibility, local and Docker workflows
 - `process/`
   - Documentation hygiene, commit rules, repo workflow
 - `plans/`
@@ -35,3 +35,11 @@ Load only the section needed for the current task.
   - `docs/operations/index.md`
 - Workflow or repo rules:
   - `docs/process/index.md`
+
+## Current Product Surface
+
+- Inputs: URL, pasted text, `.txt`, `.md`
+- Review UI: left text pane, right comment rail, SVG connector lines
+- Review actions: reply to comments, create reviewer comments, accept/reject/uncertain agent comments
+- Exports: Markdown and JSON
+- Runtime visibility: `/health`, `/ready`, run events, SSE stream

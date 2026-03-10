@@ -15,3 +15,7 @@ class ValidationError(ContentEvaluationError):
 
 class ProviderError(ContentEvaluationError):
     """Raise when an upstream provider fails."""
+
+
+class ConfigurationError(ContentEvaluationError):
+    """Raise when the runtime configuration is invalid."""

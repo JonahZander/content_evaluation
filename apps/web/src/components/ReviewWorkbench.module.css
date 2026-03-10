@@ -100,6 +100,34 @@
   align-items: center;
 }
 
+.toggleLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.agentSelector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.agentChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(45, 33, 17, 0.12);
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-size: 12px;
+  color: var(--ink);
+}
+
 .toolbarInput,
 .toolbarSelect,
 .toolbarTextarea,
@@ -187,6 +215,62 @@
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
+}
+
+.progressPanel {
+  display: grid;
+  gap: 12px;
+  padding: 18px 22px;
+  border-radius: 24px;
+  background: rgba(255, 248, 239, 0.88);
+  border: 1px solid rgba(48, 36, 24, 0.12);
+}
+
+.progressTrack {
+  position: relative;
+  height: 14px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(22, 18, 14, 0.08);
+}
+
+.progressFill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #1d8f6f, #e0a92f, #c4542c);
+  transition: width 180ms ease;
+}
+
+.progressMeta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+
+.agentStatusGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.agentStatusCard {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.76);
+  border: 1px solid rgba(57, 44, 29, 0.12);
+}
+
+.agentStatusCopy {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
 }
 
 .metricCard {

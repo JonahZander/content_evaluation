@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from content_evaluation.domain.models import ReviewState, SourceType
+from content_evaluation.domain.models import AnalysisArtifact, PersistenceMode, ReviewState, SourceType
 
 
 class CreateRunRequest(BaseModel):
@@ -17,12 +17,21 @@ class CreateRunRequest(BaseModel):
     title: str | None = None
     text: str | None = None
     url: str | None = None
+    selected_agents: list[str] = Field(default_factory=list)
+    persistence_mode: PersistenceMode = PersistenceMode.SESSION
+    include_debug_trace: bool = False
+
+
+class ImportArtifactRequest(BaseModel):
+    """Store a request to import an artifact."""
+
+    artifact: AnalysisArtifact
 
 
 class CreateCommentRequest(BaseModel):
     """Store a request to create a comment."""
 
-    run_id: UUID
+    artifact_id: UUID
     anchor_id: str | None = None
     block_id: str | None = None
     start_offset: int | None = None

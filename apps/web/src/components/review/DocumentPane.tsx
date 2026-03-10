@@ -2,7 +2,7 @@ import type { MutableRefObject, ReactNode } from "react";
 
 import styles from "@/components/ReviewWorkbench.module.css";
 import { colorForCategory } from "@/components/review/category-colors";
-import type { NormalizedDocument, TextAnchor } from "@/lib/types";
+import type { ArtifactAnchor, ArtifactDocument } from "@/lib/types";
 
 interface AnchorThread {
   colors: string[];
@@ -16,8 +16,8 @@ interface SelectionDraft {
 }
 
 interface DocumentPaneProps {
-  document: NormalizedDocument | null;
-  anchors: TextAnchor[];
+  document: ArtifactDocument | null;
+  anchors: ArtifactAnchor[];
   anchorThreadMap: Map<string, AnchorThread>;
   hoveredAnchorId: string | null;
   anchorRefs: MutableRefObject<Record<string, HTMLSpanElement | null>>;
@@ -26,7 +26,7 @@ interface DocumentPaneProps {
 }
 
 function renderAnchor(
-  anchor: TextAnchor,
+  anchor: ArtifactAnchor,
   blockText: string,
   colors: string[],
   isHovered: boolean,
@@ -70,7 +70,7 @@ function renderAnchor(
 function renderParagraph(
   blockId: string,
   blockText: string,
-  anchors: TextAnchor[],
+  anchors: ArtifactAnchor[],
   anchorThreadMap: Map<string, AnchorThread>,
   hoveredAnchorId: string | null,
   anchorRefs: MutableRefObject<Record<string, HTMLSpanElement | null>>,

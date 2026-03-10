@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from content_evaluation.domain.models import AgentCategory, DocumentBlock
+from content_evaluation.domain.models import ArtifactBlock
 
 
 class MockSimilaritySearchProvider:
@@ -47,33 +47,35 @@ class MockContentExtractionProvider:
 class MockAnalysisProvider:
     """Return deterministic findings from local heuristics."""
 
-    async def analyze_category(
+    async def analyze(
         self,
-        category: AgentCategory,
+        agent_id: str,
+        instruction: str,
         title: str,
-        blocks: list[DocumentBlock],
-    ) -> list[dict[str, object]]:
-        """Return deterministic findings for one category."""
+        blocks: list[ArtifactBlock],
+        context: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        """Return deterministic JSON for one analysis agent."""
 
+        del instruction
         primary = blocks[0].text if blocks else title
         secondary = blocks[min(1, len(blocks) - 1)].text if blocks else title
-        if category is AgentCategory.AI_LIKELIHOOD:
-            return [
+        result: dict[str, object] = {"findings": []}
+        findings = result["findings"]
+        assert isinstance(findings, list)
+        if agent_id == "ai_likelihood":
+            findings.append(
                 {
                     "excerpt": primary[:120],
                     "rationale": (
-                        "The phrasing is polished and structurally repetitive, "
-                        "which may indicate AI assistance."
+                        "The phrasing is polished and structurally repetitive, which may indicate AI assistance."
                     ),
                     "confidence": 0.42,
-                    "suggestion": (
-                        "Add concrete anecdotes or original evidence to reduce "
-                        "generic phrasing."
-                    ),
+                    "suggestion": "Add concrete anecdotes or original evidence to reduce generic phrasing.",
                 }
-            ]
-        if category is AgentCategory.VALUE:
-            return [
+            )
+        elif agent_id == "value":
+            findings.append(
                 {
                     "excerpt": primary[:120],
                     "rationale": (
@@ -83,27 +85,28 @@ class MockAnalysisProvider:
                     "confidence": 0.79,
                     "suggestion": "Surface the main takeaway earlier in the introduction.",
                 }
-            ]
-        if category is AgentCategory.AUDIENCE:
-            return [
+            )
+        elif agent_id == "audience":
+            findings.append(
                 {
                     "excerpt": secondary[:120],
                     "rationale": "The content appears aimed at editorial, marketing, and AI-operations teams.",
                     "confidence": 0.76,
                     "suggestion": "Name the intended audience directly in the first two paragraphs.",
                 }
-            ]
-        if category is AgentCategory.EDITORIAL:
-            return [
+            )
+        elif agent_id == "editorial":
+            findings.append(
                 {
                     "excerpt": secondary[:120],
                     "rationale": "This section restates ideas from the introduction without adding new support.",
                     "confidence": 0.67,
                     "suggestion": "Condense or merge this section to tighten the argument.",
                 }
-            ]
-        if category is AgentCategory.SYNTHESIS:
-            return [
+            )
+        elif agent_id == "synthesis":
+            context_summary = ", ".join(sorted((context or {}).keys()))
+            findings.append(
                 {
                     "excerpt": primary[:120],
                     "rationale": (
@@ -111,10 +114,8 @@ class MockAnalysisProvider:
                         "sharper evidence and less repetition."
                     ),
                     "confidence": 0.83,
-                    "suggestion": (
-                        "Keep the core thesis and trim sections that restate "
-                        "prior points."
-                    ),
+                    "suggestion": "Keep the core thesis and trim sections that restate prior points.",
                 }
-            ]
-        return []
+            )
+            result["summary"] = f"Synthesized from: {context_summary}" if context_summary else "Synthesis complete"
+        return result

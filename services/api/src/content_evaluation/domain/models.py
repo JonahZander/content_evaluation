@@ -22,10 +22,11 @@ class SourceType(StrEnum):
     URL = "url"
     TEXT = "text"
     FILE = "file"
+    ARTIFACT = "artifact"
 
 
 class RunStatus(StrEnum):
-    """Enumerate run lifecycle states."""
+    """Enumerate artifact lifecycle states."""
 
     QUEUED = "queued"
     RUNNING = "running"
@@ -38,6 +39,13 @@ class RuntimeMode(StrEnum):
 
     MOCK = "mock"
     LIVE = "live"
+
+
+class PersistenceMode(StrEnum):
+    """Enumerate persistence strategies."""
+
+    SESSION = "session"
+    WORKSPACE = "workspace"
 
 
 class RunJobStatus(StrEnum):
@@ -77,20 +85,51 @@ class AgentCategory(StrEnum):
     HUMAN = "human"
 
 
-class RunMetadata(BaseModel):
-    """Store run identity and lifecycle metadata."""
+class ProviderKind(StrEnum):
+    """Enumerate provider categories."""
 
-    id: UUID = Field(default_factory=uuid4)
-    status: RunStatus = RunStatus.QUEUED
+    SEARCH = "search"
+    ANALYSIS = "analysis"
+    EXTRACT = "extract"
+
+
+class AgentExecutionMode(StrEnum):
+    """Enumerate agent execution styles."""
+
+    SINGLE_TURN = "single_turn"
+    MULTI_STEP = "multi_step"
+
+
+class AgentPlanStatus(StrEnum):
+    """Enumerate agent plan item states."""
+
+    PENDING = "pending"
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+class EventType(StrEnum):
+    """Enumerate live event categories."""
+
+    RUN = "run"
+    ARTIFACT = "artifact"
+    AGENT = "agent"
+
+
+class ArtifactSource(BaseModel):
+    """Store source metadata for an artifact."""
+
     source_type: SourceType
     source_label: str
-    created_at: datetime = Field(default_factory=now_utc)
-    updated_at: datetime = Field(default_factory=now_utc)
-    error_message: str | None = None
-    processing_mode: RuntimeMode = RuntimeMode.MOCK
+    title: str | None = None
+    url: str | None = None
+    imported: bool = False
 
 
-class DocumentBlock(BaseModel):
+class ArtifactBlock(BaseModel):
     """Store one normalized text block."""
 
     id: str = Field(default_factory=lambda: f"block-{uuid4()}")
@@ -98,7 +137,7 @@ class DocumentBlock(BaseModel):
     text: str
 
 
-class NormalizedDocument(BaseModel):
+class ArtifactDocument(BaseModel):
     """Store normalized reviewable content."""
 
     id: UUID = Field(default_factory=uuid4)
@@ -106,10 +145,10 @@ class NormalizedDocument(BaseModel):
     source_type: SourceType
     source_label: str
     text: str
-    blocks: list[DocumentBlock]
+    blocks: list[ArtifactBlock]
 
 
-class TextAnchor(BaseModel):
+class ArtifactAnchor(BaseModel):
     """Store a text-range anchor within one block."""
 
     id: str = Field(default_factory=lambda: f"anchor-{uuid4()}")
@@ -117,6 +156,42 @@ class TextAnchor(BaseModel):
     start_offset: int
     end_offset: int
     quote: str
+
+
+class ArtifactReply(BaseModel):
+    """Store one reply beneath a top-level comment."""
+
+    id: str = Field(default_factory=lambda: f"reply-{uuid4()}")
+    comment_id: str
+    author_type: AuthorType
+    author_label: str
+    body: str
+    created_at: datetime = Field(default_factory=now_utc)
+    updated_at: datetime = Field(default_factory=now_utc)
+
+
+class ArtifactComment(BaseModel):
+    """Store one top-level comment tied to an anchor."""
+
+    id: str = Field(default_factory=lambda: f"comment-{uuid4()}")
+    artifact_id: UUID
+    anchor_id: str
+    author_type: AuthorType
+    author_label: str
+    category: AgentCategory
+    body: str
+    suggestion: str | None = None
+    review_state: ReviewState = ReviewState.UNREVIEWED
+    created_at: datetime = Field(default_factory=now_utc)
+    updated_at: datetime = Field(default_factory=now_utc)
+    replies: list[ArtifactReply] = Field(default_factory=list)
+
+
+class ArtifactThread(BaseModel):
+    """Store the comments for a single anchor."""
+
+    anchor: ArtifactAnchor
+    comments: list[ArtifactComment]
 
 
 class AgentFinding(BaseModel):
@@ -133,43 +208,36 @@ class AgentFinding(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class CommentReply(BaseModel):
-    """Store one reply beneath a top-level comment."""
+class ArtifactAgentPlanItem(BaseModel):
+    """Store planned execution data for one agent."""
 
-    id: str = Field(default_factory=lambda: f"reply-{uuid4()}")
-    comment_id: str
-    author_type: AuthorType
-    author_label: str
-    body: str
-    created_at: datetime = Field(default_factory=now_utc)
-    updated_at: datetime = Field(default_factory=now_utc)
-
-
-class Comment(BaseModel):
-    """Store one top-level comment tied to an anchor."""
-
-    id: str = Field(default_factory=lambda: f"comment-{uuid4()}")
-    run_id: UUID
-    anchor_id: str
-    author_type: AuthorType
-    author_label: str
+    agent_id: str
+    display_name: str
     category: AgentCategory
-    body: str
-    suggestion: str | None = None
-    review_state: ReviewState = ReviewState.UNREVIEWED
-    created_at: datetime = Field(default_factory=now_utc)
-    updated_at: datetime = Field(default_factory=now_utc)
-    replies: list[CommentReply] = Field(default_factory=list)
+    depends_on: list[str] = Field(default_factory=list)
+    provider_kind: ProviderKind
+    execution_mode: AgentExecutionMode
+    instruction_file: str
+    status: AgentPlanStatus = AgentPlanStatus.PENDING
+    model_name: str | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    message: str | None = None
 
 
-class CommentThread(BaseModel):
-    """Store the comments for a single anchor."""
+class ArtifactAgentResult(BaseModel):
+    """Store one resolved agent result."""
 
-    anchor: TextAnchor
-    comments: list[Comment]
+    agent_id: str
+    category: AgentCategory
+    status: AgentPlanStatus
+    findings: list[AgentFinding] = Field(default_factory=list)
+    summary: str | None = None
+    raw_output: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class RunSummary(BaseModel):
+class ArtifactSummary(BaseModel):
     """Store aggregate scores and narrative summary."""
 
     overall_score: int
@@ -180,30 +248,59 @@ class RunSummary(BaseModel):
     ai_likelihood: float
 
 
-class RunEvent(BaseModel):
-    """Store a durable run event."""
+class ArtifactEvent(BaseModel):
+    """Store one durable artifact event."""
 
     id: str = Field(default_factory=lambda: f"event-{uuid4()}")
-    run_id: UUID
+    artifact_id: UUID
+    event_type: EventType
     stage: str
     message: str
     status: str
+    progress: float | None = None
+    agent_id: str | None = None
     agent_name: str | None = None
     model_name: str | None = None
+    snapshot_available: bool = False
     created_at: datetime = Field(default_factory=now_utc)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class RunDetail(BaseModel):
-    """Store the full UI payload for one run."""
+class ArtifactDebug(BaseModel):
+    """Store optional verbose debug trace data."""
 
-    run: RunMetadata
-    document: NormalizedDocument | None = None
-    anchors: list[TextAnchor] = Field(default_factory=list)
-    threads: list[CommentThread] = Field(default_factory=list)
-    findings: list[AgentFinding] = Field(default_factory=list)
-    summary: RunSummary | None = None
-    events: list[RunEvent] = Field(default_factory=list)
+    traces: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class RunConfig(BaseModel):
+    """Store run configuration that shapes artifact creation."""
+
+    selected_agents: list[str]
+    resolved_agents: list[str] = Field(default_factory=list)
+    runtime_mode: RuntimeMode
+    persistence_mode: PersistenceMode = PersistenceMode.SESSION
+    include_debug_trace: bool = False
+
+
+class AnalysisArtifact(BaseModel):
+    """Store the complete artifact consumed by the UI and exports."""
+
+    schema_version: str = "1.0"
+    artifact_id: UUID = Field(default_factory=uuid4)
+    status: RunStatus = RunStatus.QUEUED
+    created_at: datetime = Field(default_factory=now_utc)
+    updated_at: datetime = Field(default_factory=now_utc)
+    source: ArtifactSource
+    document: ArtifactDocument | None = None
+    run_config: RunConfig
+    agent_plan: list[ArtifactAgentPlanItem] = Field(default_factory=list)
+    agent_results: list[ArtifactAgentResult] = Field(default_factory=list)
+    anchors: list[ArtifactAnchor] = Field(default_factory=list)
+    threads: list[ArtifactThread] = Field(default_factory=list)
+    summary: ArtifactSummary | None = None
+    events: list[ArtifactEvent] = Field(default_factory=list)
+    debug: ArtifactDebug | None = None
+    error_message: str | None = None
 
 
 class RunInput(BaseModel):
@@ -214,17 +311,33 @@ class RunInput(BaseModel):
     text: str | None = None
     title: str | None = None
     url: str | None = None
+    selected_agents: list[str] = Field(default_factory=list)
+    persistence_mode: PersistenceMode = PersistenceMode.SESSION
+    include_debug_trace: bool = False
 
 
 class RunJob(BaseModel):
     """Store one durable queued job for the worker."""
 
-    run_id: UUID
+    artifact_id: UUID
     input_data: RunInput
     status: RunJobStatus = RunJobStatus.QUEUED
     attempts: int = 0
     created_at: datetime = Field(default_factory=now_utc)
     updated_at: datetime = Field(default_factory=now_utc)
+
+
+class AgentCatalogEntry(BaseModel):
+    """Expose one agent definition over the API."""
+
+    agent_id: str
+    display_name: str
+    category: AgentCategory
+    depends_on: list[str]
+    execution_mode: AgentExecutionMode
+    provider_kind: ProviderKind
+    description: str
+    default_enabled: bool = True
 
 
 class ReadinessReport(BaseModel):

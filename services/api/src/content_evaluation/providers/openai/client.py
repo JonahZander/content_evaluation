@@ -8,7 +8,7 @@ import httpx
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential_jitter
 
 from content_evaluation.domain.exceptions import ProviderError
-from content_evaluation.domain.models import AgentCategory, DocumentBlock
+from content_evaluation.domain.models import ArtifactBlock
 
 
 class OpenAIAnalysisProvider:
@@ -33,15 +33,17 @@ class OpenAIAnalysisProvider:
         retry=retry_if_exception_type((httpx.HTTPError, ProviderError)),
         reraise=True,
     )
-    async def analyze_category(
+    async def analyze(
         self,
-        category: AgentCategory,
+        agent_id: str,
+        instruction: str,
         title: str,
-        blocks: list[DocumentBlock],
-    ) -> list[dict[str, object]]:
-        """Request structured findings from OpenAI."""
+        blocks: list[ArtifactBlock],
+        context: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        """Request structured JSON from OpenAI."""
 
-        prompt = self._build_prompt(category, title, blocks)
+        prompt = self._build_prompt(agent_id, instruction, title, blocks, context or {})
         async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
             response = await client.post(
                 "https://api.openai.com/v1/chat/completions",
@@ -57,7 +59,7 @@ class OpenAIAnalysisProvider:
                             "role": "system",
                             "content": (
                                 "You are a structured editorial analysis agent. "
-                                "Return JSON only with a top-level 'findings' array. "
+                                "Return JSON only. Include a top-level 'findings' array. "
                                 "Each finding must include excerpt, rationale, confidence, and suggestion."
                             ),
                         },
@@ -72,24 +74,29 @@ class OpenAIAnalysisProvider:
         if not content:
             raise ProviderError("OpenAI returned empty content")
         parsed = json.loads(content)
+        if not isinstance(parsed, dict):
+            raise ProviderError("OpenAI response was not a JSON object")
         findings = parsed.get("findings", [])
         if not isinstance(findings, list):
             raise ProviderError("OpenAI response had an invalid 'findings' shape")
-        return findings
+        return parsed
 
     @staticmethod
-    def _build_prompt(category: AgentCategory, title: str, blocks: list[DocumentBlock]) -> str:
-        """Build the analysis prompt for one category."""
+    def _build_prompt(
+        agent_id: str,
+        instruction: str,
+        title: str,
+        blocks: list[ArtifactBlock],
+        context: dict[str, object],
+    ) -> str:
+        """Build the analysis prompt for one agent."""
 
         joined_blocks = "\n\n".join(f"[{block.id}] {block.text}" for block in blocks)
         return (
-            f"Title: {title}\n"
-            f"Category: {category.value}\n\n"
-            "Analyze the document. Return 1-3 findings.\n"
-            "Each finding must include:\n"
-            "- excerpt: exact quoted text from the document\n"
-            "- rationale: short explanation\n"
-            "- confidence: number from 0 to 1\n"
-            "- suggestion: optional editorial recommendation\n\n"
+            f"Agent: {agent_id}\n"
+            f"Title: {title}\n\n"
+            f"Instruction:\n{instruction}\n\n"
+            f"Upstream context:\n{json.dumps(context, indent=2, ensure_ascii=True)}\n\n"
+            "Analyze the document and return JSON only.\n\n"
             f"Document:\n{joined_blocks}"
         )

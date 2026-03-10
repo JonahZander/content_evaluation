@@ -53,6 +53,8 @@ class AppServices:
             provider_health.analysis_provider,
             provider_health.search_provider,
             provider_health.extraction_provider,
+            settings.runtime_mode,
+            settings.persistent_storage_enabled,
         )
         self.comments = CommentService(self.repository, settings.reviewer_name)
         self.worker = RunWorker(self.repository, self.orchestrator, settings)

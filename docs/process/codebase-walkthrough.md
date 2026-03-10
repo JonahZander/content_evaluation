@@ -12,17 +12,17 @@ The system is a monorepo with two application surfaces:
   - Handles reviewer replies, standalone comments, review-state actions, and export buttons
 - `services/api`
   - FastAPI backend in Python 3.12
-  - Accepts runs from URL, pasted text, or uploaded `.txt` / `.md`
-  - Normalizes content, queues the run, processes it in a worker, and stores results
+  - Accepts runs from URL, pasted text, uploaded `.txt` / `.md`, or imported artifact JSON
+  - Normalizes content, orchestrates agent execution, incrementally builds an `AnalysisArtifact`, and can optionally persist it
 
 The main product loop is:
 
 1. The user submits content from the web app.
-2. The API creates a queued run and persists a `run_job`.
-3. The worker claims the job and runs the analysis pipeline.
-4. Findings become anchored comments, summary data, and run events.
-5. The web app refreshes from the run API and event stream.
-6. The reviewer replies to comments, marks agent comments accepted/rejected/uncertain, or exports the run.
+2. The API creates an artifact and run config in `session` mode by default.
+3. The orchestrator expands agent dependencies and executes the analysis graph.
+4. Findings become anchored comments, summary data, and artifact events.
+5. The web app refreshes from the artifact API and event stream.
+6. The reviewer replies to comments, marks agent comments accepted/rejected/uncertain, imports/exports artifacts, or adds human comments.
 
 ## How the Code Is Organized
 
@@ -39,8 +39,10 @@ The main workbench coordinator is:
 That file owns:
 
 - run submission
+- artifact import/export
 - live refresh through SSE
 - local UI state for replies, selection drafts, and inline comment editing
+- sessionStorage-backed artifact continuity
 - refresh-after-mutation behavior
 
 The presentational pieces live in:
@@ -81,6 +83,11 @@ The domain models and enums live in:
 - `services/api/src/content_evaluation/domain/models.py`
 - `services/api/src/content_evaluation/domain/exceptions.py`
 
+The declarative agent definitions and instruction files live in:
+
+- `services/api/src/content_evaluation/agents/registry.py`
+- `services/api/src/content_evaluation/agents/instructions/`
+
 The repositories live in:
 
 - `services/api/src/content_evaluation/repositories/base.py`
@@ -114,9 +121,10 @@ Start here:
 That route:
 
 1. validates JSON or file input
-2. creates a run record through the orchestrator
-3. enqueues a `RunJob`
-4. returns immediately
+2. builds a `RunConfig` including selected agents and persistence mode
+3. creates an initial artifact through the orchestrator
+4. enqueues follow-up processing when needed
+5. returns the current artifact snapshot
 
 ### Run processing
 
@@ -129,7 +137,8 @@ The worker:
 1. polls the repository for queued jobs
 2. claims one job
 3. calls `RunOrchestrator.process_run(...)`
-4. marks the job completed, failed, or requeued
+4. updates the artifact as each agent completes
+5. marks the job completed, failed, or requeued
 
 ### Analysis pipeline
 
@@ -141,12 +150,13 @@ Review this file for:
 
 - source resolution
 - normalization
+- dependency expansion and scheduling
 - similarity search
-- per-category analysis
+- per-agent analysis
 - anchor creation
 - agent comment creation
 - summary scoring
-- run event logging
+- artifact event logging
 
 ### Review mutations
 
@@ -186,7 +196,7 @@ Read:
 
 This tells you:
 
-- what a run looks like
+- what an artifact looks like
 - how anchors and comments are represented
 - which fields are exchanged over the API
 
@@ -198,7 +208,7 @@ Read:
 - `services/api/src/content_evaluation/api/main.py`
 - `services/api/src/content_evaluation/services/orchestration.py`
 
-This gives you the end-to-end path from submit to rendered review state.
+This gives you the end-to-end path from submit/import to rendered artifact state.
 
 ### 3. Check the async boundaries
 
@@ -210,9 +220,9 @@ Read:
 
 Focus on:
 
-- queue semantics
+- queue semantics and session/workspace boundaries
 - retry behavior
-- run state transitions
+- artifact state transitions
 - persistence guarantees
 
 ### 4. Check reviewer permissions and safety rules

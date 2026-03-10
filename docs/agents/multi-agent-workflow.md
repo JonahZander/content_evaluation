@@ -1,9 +1,20 @@
 # Multi-Agent Workflow
 
-## Current Agents
+## Model
+
+This project uses a code-orchestrated multi-agent model:
+
+- one orchestrator plans and schedules the run
+- specialist agents perform narrow analysis tasks
+- agents do not autonomously spawn other agents
+- dependencies determine execution order
+- completed agent outputs are merged into one `AnalysisArtifact`
+
+## Current Agent Roles
 
 - Similarity research agent
   - Searches online for related posts and overlap in claims or framing
+  - Can be multi-step because research may require intermediate search reasoning
 - AI-likelihood agent
   - Estimates whether the text appears AI-generated
 - Value extraction agent
@@ -11,34 +22,67 @@
 - Audience analysis agent
   - Infers the target audience and fit
 - Editorial recommendation agent
-  - Converts findings into span-level comments and rewrite suggestions
+  - Produces span-level comments and rewrite suggestions
 - Evaluation synthesis agent
-  - Produces the final reading-worthiness assessment
+  - Produces a final verdict after upstream specialist agents complete
+
+## Planned Agent Definition Shape
+
+Each agent should be declared with:
+
+- `agent_id`
+- `display_name`
+- `category`
+- `depends_on`
+- `provider_kind`
+- `execution_mode`
+- `instruction_file`
+- `result_schema`
+
+## Execution Rules
+
+- Selected agents are explicit in the API and UI.
+- Required dependencies are auto-included.
+- Independent agents may run in parallel.
+- Dependent agents wait for prerequisites.
+- Synthesis/scoring runs after upstream specialist agents finish.
+- Each status transition emits a durable event for the live timeline.
+
+## Instruction Organization
+
+- Agent instructions live in their own folder under the API package.
+- One instruction file should exist per agent.
+- Provider code should load instruction text from those files instead of embedding prompts inline.
+- Adding an agent should mainly require:
+  - one instruction file
+  - one schema
+  - one registry entry
+  - optional dependencies
 
 ## Shared Inputs
 
 - Normalized document text
-- Document blocks
-- Section and span identifiers
+- Ordered document blocks
 - Source metadata
-- Similarity results when synthesis needs them
+- Upstream agent outputs when a dependency exists
+- Run configuration including selected agents and debug settings
 
 ## Shared Outputs
 
-- Structured findings
-- Evidence references to spans
+- Structured results per agent
+- Evidence references to anchors/spans
 - Confidence indicators
 - Recommended actions
-- Run metadata including model and timestamps
-- Top-level anchored comments for the review UI
+- Model/provider metadata
+- Partial and final artifact snapshots
 
 ## Design Principles
 
 - Each agent should have a clear contract and a narrow job.
 - Agents should emit structured data before any user-facing prose.
-- Synthesis should happen after specialized analysis, not instead of it.
-- Agent outputs should be inspectable in the UI.
-- Agent comments should remain immutable; reviewer feedback happens via replies and review-state actions.
+- Artifact assembly should happen in code, not inside prompts.
+- Agent outputs should be inspectable in the UI and exportable for debugging.
+- Agent comments should remain immutable; reviewer feedback happens via replies and review-state actions inside the same artifact.
 
 ## Current Provider Routing
 

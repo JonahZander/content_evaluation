@@ -48,16 +48,16 @@ class RunWorker:
                 await asyncio.sleep(self._settings.worker_poll_interval_seconds)
                 continue
 
-            self._logger.info("worker claimed run_id=%s attempt=%s", job.run_id, job.attempts)
+            self._logger.info("worker claimed artifact_id=%s attempt=%s", job.artifact_id, job.attempts)
             try:
-                await self._orchestrator.process_run(job.run_id, job.input_data)
+                await self._orchestrator.process_run(job.artifact_id, job.input_data)
             except Exception:
                 if job.attempts < self._settings.worker_max_attempts:
-                    await self._repository.requeue_run_job(job.run_id)
-                    self._logger.exception("worker requeued run_id=%s attempt=%s", job.run_id, job.attempts)
+                    await self._repository.requeue_run_job(job.artifact_id)
+                    self._logger.exception("worker requeued artifact_id=%s attempt=%s", job.artifact_id, job.attempts)
                 else:
-                    await self._repository.fail_run_job(job.run_id)
-                    self._logger.exception("worker failed run_id=%s attempts=%s", job.run_id, job.attempts)
+                    await self._repository.fail_run_job(job.artifact_id)
+                    self._logger.exception("worker failed artifact_id=%s attempts=%s", job.artifact_id, job.attempts)
             else:
-                await self._repository.complete_run_job(job.run_id)
-                self._logger.info("worker completed run_id=%s", job.run_id)
+                await self._repository.complete_run_job(job.artifact_id)
+                self._logger.info("worker completed artifact_id=%s", job.artifact_id)

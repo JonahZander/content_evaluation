@@ -2,62 +2,71 @@
 
 ## Goal
 
-Turn raw content into structured, explainable analysis that powers the review UI.
+Turn raw content into a complete, explainable `AnalysisArtifact` that can be produced by the API independently of the frontend.
 
-## Current Stages
+## Target Stages
 
 1. Intake
-   - Accept URL, uploaded `.txt`/`.md`, or pasted text
+   - Accept URL, uploaded `.txt`/`.md`, pasted text, and imported artifact JSON
    - Validate upload type and size at the API boundary
-2. Run creation
-   - Create a queued run record
-   - Persist a `run_job` for the background worker
+2. Session or workspace run creation
+   - Create an artifact skeleton with run config, selected agents, and empty result slots
+   - Persist a queued `run_job`
 3. Queued execution
    - `RunWorker` claims queued jobs
    - Resets in-flight jobs on startup
    - Requeues failed attempts up to the configured max attempts
-2. Normalization
+4. Normalization
    - Extract text and metadata into a shared document schema
    - Split text into ordered document blocks
-4. Agent execution
-   - Similarity search
-   - AI likelihood analysis
-   - Value analysis
-   - Audience analysis
-   - Editorial analysis
-   - Synthesis analysis
-5. Anchor and comment generation
-   - Convert excerpts into `TextAnchor` records
-   - Persist agent findings and top-level agent comments per anchor
-6. Aggregation
-   - Compute novelty and AI-likelihood signals
-   - Build `RunSummary`
-7. Persistence and export
-   - Store run metadata, events, comments, replies, and summary
-   - Serve Markdown and JSON exports from persisted state
+   - Save the normalized document into the artifact
+5. Agent planning
+   - Validate selected agent ids
+   - Expand required dependencies
+   - Topologically sort the dependency graph
+   - Record agent plan items with execution status
+6. Agent execution
+   - Run independent agents in parallel
+   - Run dependent agents after prerequisites complete
+   - Emit progress events and partial artifact updates as each agent completes
+7. Artifact assembly
+   - Convert agent outputs into anchors, comments, results, summary data, and debug traces
+   - Keep human comment/reply/review-state data in the same artifact structure
+8. Export and import
+   - Export the artifact as JSON
+   - Export Markdown derived from the artifact
+   - Reopen a saved artifact without rerunning the pipeline
 
-## Current Services
+## Artifact-First Rules
+
+- `AnalysisArtifact` is the canonical backend output.
+- The event stream narrates artifact construction; it is not the primary data model.
+- Human comments, replies, and review-state changes live inside the artifact from the start.
+- Persistence is an adapter around artifact snapshots, not the core business model.
+- Backend services should be usable independently of the web app.
+
+## Current Refactor Direction
 
 - `api/main.py`
-  - HTTP routes, SSE event stream, upload validation, export endpoints
+  - HTTP routes, SSE event stream, upload validation, artifact endpoints
 - `services/orchestration.py`
-  - Run lifecycle, provider coordination, finding creation, summary scoring
+  - Session/workspace run lifecycle, agent planning, dependency-driven execution, artifact assembly
+- `services/comments.py`
+  - Human comment creation, reply creation, inline edit/delete checks, agent review-state updates against the artifact
+- `services/exporting.py`
+  - Artifact JSON and Markdown export builders
 - `services/worker.py`
   - Repository-backed polling worker
-- `services/comments.py`
-  - Human comment creation, reply creation, inline edit/delete checks, agent review-state updates
-- `services/exporting.py`
-  - Markdown and JSON export builders
-- `repositories/in_memory.py`
-  - Test and local fallback storage
-- `repositories/postgres.py`
-  - Async PostgreSQL persistence including `run_jobs`
+- `agents/`
+  - Declarative registry plus per-agent instruction files
+- `repositories/`
+  - Session-first storage with optional persisted artifact snapshots
 
 ## Boundaries
 
+- Agent instructions belong in `agents/`, not inline inside provider code.
 - Provider-specific details should live near adapters, not in orchestration logic.
-- Shared document schemas should be stable and explicit.
-- Aggregation should preserve evidence links back to spans and agent runs.
+- Shared artifact schemas should be stable and explicit.
 - Services should not contain raw SQL or raw provider HTTP calls.
 - Production mode should not silently fall back to mock providers or in-memory storage.
 
@@ -71,6 +80,7 @@ Turn raw content into structured, explainable analysis that powers the review UI
 - `DELETE /api/v1/comments/{comment_id}`
 - `POST /api/v1/comments/{comment_id}/replies`
 - `PATCH /api/v1/comments/{comment_id}/review-state`
+- `POST /api/v1/artifacts/import`
 - `GET /api/v1/runs/{run_id}/export.md`
 - `GET /api/v1/runs/{run_id}/export.json`
 - `GET /health`

@@ -1,8 +1,8 @@
 import styles from "@/components/ReviewWorkbench.module.css";
-import type { RunSummary } from "@/lib/types";
+import type { ArtifactSummary } from "@/lib/types";
 
 interface RunMetricsProps {
-  summary: RunSummary | null;
+  summary: ArtifactSummary | null;
 }
 
 export function RunMetrics({ summary }: RunMetricsProps) {

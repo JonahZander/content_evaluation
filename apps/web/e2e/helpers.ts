@@ -1,7 +1,12 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
-export async function submitDraft(page: Page, title: string, text: string): Promise<void> {
+export async function waitForWorkbenchReady(page: Page): Promise<void> {
   await page.goto("/");
+  await expect(page.getByTestId("agent-toggle-similarity")).toBeVisible({ timeout: 15_000 });
+}
+
+export async function submitDraft(page: Page, title: string, text: string): Promise<void> {
+  await waitForWorkbenchReady(page);
   await page.getByTestId("draft-title-input").fill(title);
   await page.getByTestId("draft-text-input").fill(text);
   await page.getByTestId("analyze-button").click();
@@ -13,9 +18,7 @@ export async function submitDraft(page: Page, title: string, text: string): Prom
 export async function expectRunLoaded(page: Page, title: string): Promise<void> {
   await expect(page.getByRole("heading", { name: title })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId("connector-canvas")).toBeVisible();
-  await expect(page.locator("[data-testid^='thread-anchor-']")).toHaveCount(5, {
-    timeout: 15_000,
-  });
+  await expect(page.locator("[data-testid^='thread-anchor-']").first()).toBeVisible({ timeout: 15_000 });
 }
 
 export async function selectText(block: Locator, startOffset: number, endOffset: number): Promise<void> {

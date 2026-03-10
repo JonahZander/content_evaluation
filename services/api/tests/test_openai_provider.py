@@ -4,7 +4,7 @@ import pytest
 import respx
 from httpx import Response
 
-from content_evaluation.domain.models import AgentCategory, DocumentBlock
+from content_evaluation.domain.models import ArtifactBlock
 from content_evaluation.providers.openai.client import OpenAIAnalysisProvider
 
 
@@ -31,9 +31,14 @@ async def test_openai_provider_parses_structured_findings() -> None:
                 },
             )
         )
-        findings = await provider.analyze_category(
-            AgentCategory.VALUE, "Title", [DocumentBlock(index=0, text="Alpha text")]
+        findings = await provider.analyze(
+            "value",
+            "Analyze value",
+            "Title",
+            [ArtifactBlock(index=0, text="Alpha text")],
         )
 
     assert route.called
-    assert findings[0]["rationale"] == "Reason"
+    findings_payload = findings["findings"]
+    assert isinstance(findings_payload, list)
+    assert findings_payload[0]["rationale"] == "Reason"

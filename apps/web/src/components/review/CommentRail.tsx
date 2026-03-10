@@ -2,11 +2,11 @@ import type { MutableRefObject } from "react";
 
 import styles from "@/components/ReviewWorkbench.module.css";
 import { colorForCategory } from "@/components/review/category-colors";
-import type { CommentThread, ReviewState, RunEvent } from "@/lib/types";
+import type { ArtifactEvent, ArtifactThread, ReviewState } from "@/lib/types";
 
 interface CommentRailProps {
-  threads: CommentThread[];
-  events: RunEvent[];
+  threads: ArtifactThread[];
+  events: ArtifactEvent[];
   hoveredAnchorId: string | null;
   commentRefs: MutableRefObject<Record<string, HTMLElement | null>>;
   replyDrafts: Record<string, string>;

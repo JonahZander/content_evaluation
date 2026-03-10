@@ -4,16 +4,18 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from content_evaluation.domain.models import AgentCategory, DocumentBlock
+from content_evaluation.domain.models import ArtifactBlock
 
 
 class AnalysisProvider(Protocol):
-    """Describe one provider that can produce structured findings."""
+    """Describe one provider that can produce structured agent results."""
 
-    async def analyze_category(
+    async def analyze(
         self,
-        category: AgentCategory,
+        agent_id: str,
+        instruction: str,
         title: str,
-        blocks: list[DocumentBlock],
-    ) -> list[dict[str, object]]:
-        """Return structured findings for one analysis category."""
+        blocks: list[ArtifactBlock],
+        context: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        """Return one structured JSON object for an agent run."""

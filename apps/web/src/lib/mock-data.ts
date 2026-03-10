@@ -1,16 +1,18 @@
-import { RunDetail } from "@/lib/types";
+import { AnalysisArtifact } from "@/lib/types";
 
 const timestamp = new Date().toISOString();
 
-export const mockRunDetail: RunDetail = {
-  run: {
-    id: "run-demo",
-    status: "completed",
+export const mockArtifact: AnalysisArtifact = {
+  schema_version: "1.0",
+  artifact_id: "run-demo",
+  status: "completed",
+  created_at: timestamp,
+  updated_at: timestamp,
+  source: {
     source_type: "text",
     source_label: "Demo draft",
-    created_at: timestamp,
-    updated_at: timestamp,
-    error_message: null,
+    title: "How Editorial Teams Can Evaluate AI-Written Posts",
+    imported: false,
   },
   document: {
     id: "doc-demo",
@@ -40,6 +42,48 @@ export const mockRunDetail: RunDetail = {
       },
     ],
   },
+  run_config: {
+    selected_agents: ["similarity", "value", "audience", "editorial", "synthesis"],
+    resolved_agents: ["similarity", "value", "audience", "editorial", "synthesis"],
+    runtime_mode: "mock",
+    persistence_mode: "session",
+    include_debug_trace: true,
+  },
+  agent_plan: [
+    {
+      agent_id: "similarity",
+      display_name: "Similarity Research",
+      category: "similarity",
+      depends_on: [],
+      provider_kind: "search",
+      execution_mode: "multi_step",
+      instruction_file: "similarity.md",
+      status: "completed",
+      message: "Agent completed",
+    },
+    {
+      agent_id: "value",
+      display_name: "Value Analysis",
+      category: "value",
+      depends_on: [],
+      provider_kind: "analysis",
+      execution_mode: "single_turn",
+      instruction_file: "value.md",
+      status: "completed",
+      message: "Agent completed",
+    },
+  ],
+  agent_results: [
+    {
+      agent_id: "value",
+      category: "value",
+      status: "completed",
+      findings: [],
+      summary: "The piece becomes strongest when it explains a concrete review workflow.",
+      raw_output: {},
+      metadata: {},
+    },
+  ],
   anchors: [
     {
       id: "anchor-1",
@@ -75,7 +119,7 @@ export const mockRunDetail: RunDetail = {
       comments: [
         {
           id: "comment-1",
-          run_id: "run-demo",
+          artifact_id: "run-demo",
           anchor_id: "anchor-1",
           author_type: "agent",
           author_label: "audience agent",
@@ -110,7 +154,7 @@ export const mockRunDetail: RunDetail = {
       comments: [
         {
           id: "comment-2",
-          run_id: "run-demo",
+          artifact_id: "run-demo",
           anchor_id: "anchor-2",
           author_type: "agent",
           author_label: "value agent",
@@ -122,49 +166,9 @@ export const mockRunDetail: RunDetail = {
           updated_at: timestamp,
           replies: [],
         },
-        {
-          id: "comment-3",
-          run_id: "run-demo",
-          anchor_id: "anchor-2",
-          author_type: "agent",
-          author_label: "similarity agent",
-          category: "similarity",
-          body: "The concept is good, but the wording overlaps with common AI-editorial framing found elsewhere online.",
-          suggestion: "Support the claim with a distinctive case study or internal workflow example.",
-          review_state: "uncertain",
-          created_at: timestamp,
-          updated_at: timestamp,
-          replies: [],
-        },
-      ],
-    },
-    {
-      anchor: {
-        id: "anchor-3",
-        block_id: "block-3",
-        start_offset: 0,
-        end_offset: 76,
-        quote: "Some later sections restate the introduction without adding evidence",
-      },
-      comments: [
-        {
-          id: "comment-4",
-          run_id: "run-demo",
-          anchor_id: "anchor-3",
-          author_type: "agent",
-          author_label: "editorial agent",
-          category: "editorial",
-          body: "This section repeats the introduction and slows the pacing.",
-          suggestion: "Cut or compress this paragraph.",
-          review_state: "rejected",
-          created_at: timestamp,
-          updated_at: timestamp,
-          replies: [],
-        },
       ],
     },
   ],
-  findings: [],
   summary: {
     overall_score: 73,
     verdict: "Worth reading with edits",
@@ -176,25 +180,37 @@ export const mockRunDetail: RunDetail = {
   events: [
     {
       id: "event-1",
-      run_id: "run-demo",
+      artifact_id: "run-demo",
+      event_type: "agent",
       stage: "similarity",
-      message: "Similarity scan completed",
+      message: "Similarity search completed",
       status: "completed",
-      agent_name: "similarity",
+      progress: 0.3,
+      agent_id: "similarity",
+      agent_name: "Similarity Research",
       model_name: "tavily",
+      snapshot_available: true,
       created_at: timestamp,
       metadata: {},
     },
     {
       id: "event-2",
-      run_id: "run-demo",
+      artifact_id: "run-demo",
+      event_type: "agent",
       stage: "value",
       message: "Value analysis completed",
       status: "completed",
-      agent_name: "value",
+      progress: 0.5,
+      agent_id: "value",
+      agent_name: "Value Analysis",
       model_name: "mock",
+      snapshot_available: true,
       created_at: timestamp,
       metadata: {},
     },
   ],
+  debug: {
+    traces: [{ step: "demo", note: "Mock artifact used in component tests." }],
+  },
+  error_message: null,
 };

@@ -24,11 +24,12 @@ from content_evaluation.api.schemas import (
     CreateCommentRequest,
     CreateReplyRequest,
     CreateRunRequest,
+    ImportArtifactRequest,
     UpdateCommentRequest,
     UpdateReviewStateRequest,
 )
 from content_evaluation.domain.exceptions import ContentEvaluationError, NotFoundError
-from content_evaluation.domain.models import RunInput, RunJob, RunMetadata, RunStatus, SourceType
+from content_evaluation.domain.models import AnalysisArtifact, RunInput, RunJob, SourceType
 from content_evaluation.logging import configure_logging, request_logging_middleware
 from content_evaluation.repositories.base import RunRepository
 from content_evaluation.repositories.postgres import PostgresRunRepository
@@ -55,20 +56,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await services.stop()
 
 
-app = FastAPI(title="Content Evaluation API", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="Content Evaluation API", version="0.3.0", lifespan=lifespan)
 app.middleware("http")(request_logging_middleware)
-
-
-def _cors_origins(services: AppServices) -> list[str]:
-    """Return the configured CORS origins."""
-
-    return services.settings.cors_origins
-
 
 bootstrap_services = build_services()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_origins(bootstrap_services),
+    allow_origins=bootstrap_services.settings.cors_origins,
     allow_credentials=bootstrap_services.settings.app_env != "production",
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type", "X-Request-Id"],
@@ -95,44 +89,58 @@ async def ready(services: ServicesDependency) -> JSONResponse:
     return JSONResponse(content=report.model_dump(mode="json"), status_code=status_code)
 
 
+@app.get("/api/v1/agents")
+async def list_agents(services: ServicesDependency) -> object:
+    """Return the available agent catalog."""
+
+    return services.orchestrator.list_agents()
+
+
 @app.post("/api/v1/runs")
 async def create_run(
     http_request: Request,
     services: ServicesDependency,
     file: UploadFileInput = None,
-) -> RunMetadata:
-    """Create one run from JSON or multipart input."""
+) -> AnalysisArtifact:
+    """Create one artifact from JSON or multipart input."""
 
     input_data = await _resolve_run_input(http_request, file, services)
-    run = await services.orchestrator.create_run(input_data)
-    await services.repository.enqueue_run_job(RunJob(run_id=run.id, input_data=input_data))
-    return run
+    artifact = await services.orchestrator.create_run(input_data)
+    await services.repository.enqueue_run_job(RunJob(artifact_id=artifact.artifact_id, input_data=input_data))
+    return artifact
+
+
+@app.post("/api/v1/artifacts/import")
+async def import_artifact(payload: ImportArtifactRequest, services: ServicesDependency) -> AnalysisArtifact:
+    """Import one saved artifact into the current backend session."""
+
+    return await services.orchestrator.import_artifact(payload.artifact)
 
 
 @app.get("/api/v1/runs/{run_id}")
-async def get_run(run_id: UUID, repository: RepositoryDependency) -> object:
-    """Return one full run detail."""
+async def get_run(run_id: UUID, repository: RepositoryDependency) -> AnalysisArtifact:
+    """Return one artifact snapshot."""
 
-    detail = await repository.get_run_detail(run_id)
-    if detail is None:
+    artifact = await repository.get_artifact(run_id)
+    if artifact is None:
         raise HTTPException(status_code=404, detail="Run not found")
-    return detail
+    return artifact
 
 
 @app.get("/api/v1/runs/{run_id}/events")
 async def stream_run_events(run_id: UUID, repository: RepositoryDependency) -> EventSourceResponse:
-    """Stream events for one run."""
+    """Stream events for one artifact."""
 
     async def event_generator() -> AsyncIterator[dict[str, str]]:
-        """Yield run events as SSE messages."""
+        """Yield artifact events as SSE messages."""
 
         last_count = 0
         idle_loops = 0
         while True:
-            detail = await repository.get_run_detail(run_id)
-            if detail is None:
+            artifact = await repository.get_artifact(run_id)
+            if artifact is None:
                 break
-            events = detail.events
+            events = artifact.events
             if len(events) > last_count:
                 for event in events[last_count:]:
                     yield {"data": event.model_dump_json()}
@@ -141,7 +149,7 @@ async def stream_run_events(run_id: UUID, repository: RepositoryDependency) -> E
             else:
                 idle_loops += 1
 
-            if detail.run.status in (RunStatus.COMPLETED, RunStatus.FAILED) and idle_loops >= 2:
+            if artifact.status in {"completed", "failed"} and idle_loops >= 2:
                 break
             await asyncio.sleep(0.15)
 
@@ -156,7 +164,7 @@ async def create_comment(
     """Create one human standalone comment."""
 
     return await comments.create_comment(
-        request.run_id,
+        request.artifact_id,
         request.body,
         request.anchor_id,
         block_id=request.block_id,
@@ -211,20 +219,20 @@ async def update_review_state(
 async def export_markdown(run_id: UUID, repository: RepositoryDependency) -> PlainTextResponse:
     """Return one Markdown export."""
 
-    detail = await repository.get_run_detail(run_id)
-    if detail is None:
+    artifact = await repository.get_artifact(run_id)
+    if artifact is None:
         raise HTTPException(status_code=404, detail="Run not found")
-    return PlainTextResponse(build_markdown_export(detail), media_type="text/markdown")
+    return PlainTextResponse(build_markdown_export(artifact), media_type="text/markdown")
 
 
 @app.get("/api/v1/runs/{run_id}/export.json")
 async def export_json(run_id: UUID, repository: RepositoryDependency) -> Response:
     """Return one JSON export."""
 
-    detail = await repository.get_run_detail(run_id)
-    if detail is None:
+    artifact = await repository.get_artifact(run_id)
+    if artifact is None:
         raise HTTPException(status_code=404, detail="Run not found")
-    return Response(build_json_export(detail), media_type="application/json")
+    return Response(build_json_export(artifact), media_type="application/json")
 
 
 @app.exception_handler(ContentEvaluationError)

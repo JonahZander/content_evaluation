@@ -1,35 +1,39 @@
-export type SourceType = "url" | "text" | "file";
+export type SourceType = "url" | "text" | "file" | "artifact";
 export type RunStatus = "queued" | "running" | "completed" | "failed";
 export type ReviewState = "unreviewed" | "accepted" | "rejected" | "uncertain";
 export type AuthorType = "agent" | "human";
 export type AgentCategory = "similarity" | "ai_likelihood" | "value" | "audience" | "editorial" | "synthesis" | "human";
+export type RuntimeMode = "mock" | "live";
+export type PersistenceMode = "session" | "workspace";
+export type AgentPlanStatus = "pending" | "queued" | "running" | "completed" | "failed" | "skipped";
+export type AgentExecutionMode = "single_turn" | "multi_step";
+export type ProviderKind = "search" | "analysis" | "extract";
+export type EventType = "run" | "artifact" | "agent";
 
-export interface RunMetadata {
-  id: string;
-  status: RunStatus;
+export interface ArtifactSource {
   source_type: SourceType;
   source_label: string;
-  created_at: string;
-  updated_at: string;
-  error_message?: string | null;
+  title?: string | null;
+  url?: string | null;
+  imported: boolean;
 }
 
-export interface DocumentBlock {
+export interface ArtifactBlock {
   id: string;
   index: number;
   text: string;
 }
 
-export interface NormalizedDocument {
+export interface ArtifactDocument {
   id: string;
   title: string;
   source_type: SourceType;
   source_label: string;
   text: string;
-  blocks: DocumentBlock[];
+  blocks: ArtifactBlock[];
 }
 
-export interface TextAnchor {
+export interface ArtifactAnchor {
   id: string;
   block_id: string;
   start_offset: number;
@@ -37,7 +41,7 @@ export interface TextAnchor {
   quote: string;
 }
 
-export interface CommentReply {
+export interface ArtifactReply {
   id: string;
   comment_id: string;
   author_type: AuthorType;
@@ -47,9 +51,9 @@ export interface CommentReply {
   updated_at: string;
 }
 
-export interface Comment {
+export interface ArtifactComment {
   id: string;
-  run_id: string;
+  artifact_id: string;
   anchor_id: string;
   author_type: AuthorType;
   author_label: string;
@@ -59,12 +63,12 @@ export interface Comment {
   review_state: ReviewState;
   created_at: string;
   updated_at: string;
-  replies: CommentReply[];
+  replies: ArtifactReply[];
 }
 
-export interface CommentThread {
-  anchor: TextAnchor;
-  comments: Comment[];
+export interface ArtifactThread {
+  anchor: ArtifactAnchor;
+  comments: ArtifactComment[];
 }
 
 export interface AgentFinding {
@@ -79,7 +83,32 @@ export interface AgentFinding {
   metadata: Record<string, unknown>;
 }
 
-export interface RunSummary {
+export interface ArtifactAgentPlanItem {
+  agent_id: string;
+  display_name: string;
+  category: AgentCategory;
+  depends_on: string[];
+  provider_kind: ProviderKind;
+  execution_mode: AgentExecutionMode;
+  instruction_file: string;
+  status: AgentPlanStatus;
+  model_name?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  message?: string | null;
+}
+
+export interface ArtifactAgentResult {
+  agent_id: string;
+  category: AgentCategory;
+  status: AgentPlanStatus;
+  findings: AgentFinding[];
+  summary?: string | null;
+  raw_output: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+}
+
+export interface ArtifactSummary {
   overall_score: number;
   verdict: string;
   value_summary: string;
@@ -88,24 +117,60 @@ export interface RunSummary {
   ai_likelihood: number;
 }
 
-export interface RunEvent {
+export interface ArtifactEvent {
   id: string;
-  run_id: string;
+  artifact_id: string;
+  event_type: EventType;
   stage: string;
   message: string;
   status: string;
+  progress?: number | null;
+  agent_id?: string | null;
   agent_name?: string | null;
   model_name?: string | null;
+  snapshot_available: boolean;
   created_at: string;
   metadata: Record<string, unknown>;
 }
 
-export interface RunDetail {
-  run: RunMetadata;
-  document: NormalizedDocument | null;
-  anchors: TextAnchor[];
-  threads: CommentThread[];
-  findings: AgentFinding[];
-  summary: RunSummary | null;
-  events: RunEvent[];
+export interface ArtifactDebug {
+  traces: Array<Record<string, unknown>>;
+}
+
+export interface RunConfig {
+  selected_agents: string[];
+  resolved_agents: string[];
+  runtime_mode: RuntimeMode;
+  persistence_mode: PersistenceMode;
+  include_debug_trace: boolean;
+}
+
+export interface AnalysisArtifact {
+  schema_version: string;
+  artifact_id: string;
+  status: RunStatus;
+  created_at: string;
+  updated_at: string;
+  source: ArtifactSource;
+  document: ArtifactDocument | null;
+  run_config: RunConfig;
+  agent_plan: ArtifactAgentPlanItem[];
+  agent_results: ArtifactAgentResult[];
+  anchors: ArtifactAnchor[];
+  threads: ArtifactThread[];
+  summary: ArtifactSummary | null;
+  events: ArtifactEvent[];
+  debug?: ArtifactDebug | null;
+  error_message?: string | null;
+}
+
+export interface AgentCatalogEntry {
+  agent_id: string;
+  display_name: string;
+  category: AgentCategory;
+  depends_on: string[];
+  execution_mode: AgentExecutionMode;
+  provider_kind: ProviderKind;
+  description: string;
+  default_enabled: boolean;
 }

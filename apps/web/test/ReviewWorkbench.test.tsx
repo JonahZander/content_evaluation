@@ -1,13 +1,25 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 
 import { ReviewWorkbench } from "@/components/ReviewWorkbench";
-import { mockRunDetail } from "@/lib/mock-data";
+import { mockArtifact } from "@/lib/mock-data";
 import * as api from "@/lib/api";
 
 vi.mock("@/lib/api", () => ({
+  fetchAgents: vi.fn().mockResolvedValue([
+    {
+      agent_id: "similarity",
+      display_name: "Similarity Research",
+      category: "similarity",
+      depends_on: [],
+      execution_mode: "multi_step",
+      provider_kind: "search",
+      description: "Looks for similar public posts and framing overlap.",
+      default_enabled: true,
+    },
+  ]),
   createRun: vi.fn(),
-  createRunFromFile: vi.fn(),
-  fetchRun: vi.fn(),
+  fetchArtifact: vi.fn(),
+  importArtifact: vi.fn(),
   createComment: vi.fn().mockResolvedValue(undefined),
   addReply: vi.fn().mockResolvedValue(undefined),
   updateReviewState: vi.fn().mockResolvedValue(undefined),
@@ -38,12 +50,12 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
-  vi.mocked(api.fetchRun).mockResolvedValue(mockRunDetail);
+  vi.mocked(api.fetchArtifact).mockResolvedValue(mockArtifact);
 });
 
 describe("ReviewWorkbench", () => {
   it("renders text, threads, and connector paths", () => {
-    render(<ReviewWorkbench initialRun={mockRunDetail} />);
+    render(<ReviewWorkbench initialArtifact={mockArtifact} />);
 
     expect(screen.getByText("How Editorial Teams Can Evaluate AI-Written Posts")).toBeInTheDocument();
     expect(screen.getByTestId("thread-anchor-2")).toBeInTheDocument();
@@ -52,7 +64,7 @@ describe("ReviewWorkbench", () => {
   });
 
   it("shows review buttons and reply controls", () => {
-    render(<ReviewWorkbench initialRun={mockRunDetail} />);
+    render(<ReviewWorkbench initialArtifact={mockArtifact} />);
 
     expect(screen.getAllByRole("button", { name: "Accept" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("button", { name: "Reject" }).length).toBeGreaterThan(0);
@@ -62,7 +74,7 @@ describe("ReviewWorkbench", () => {
 
   it("opens export URLs", () => {
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
-    render(<ReviewWorkbench initialRun={mockRunDetail} />);
+    render(<ReviewWorkbench initialArtifact={mockArtifact} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Export Markdown" }));
     expect(openSpy).toHaveBeenCalled();

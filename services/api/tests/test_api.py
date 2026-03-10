@@ -19,7 +19,7 @@ def _wait_for_run_completion(client: TestClient, run_id: str) -> dict[str, objec
         response = client.get(f"/api/v1/runs/{run_id}")
         assert response.status_code == 200
         payload = response.json()
-        if payload["run"]["status"] in {"completed", "failed"}:
+        if payload["status"] in {"completed", "failed"}:
             return payload
         time.sleep(0.05)
 
@@ -41,10 +41,10 @@ def test_api_run_flow_and_exports() -> None:
             },
         )
         assert response.status_code == 200
-        run_id = response.json()["id"]
+        run_id = response.json()["artifact_id"]
 
         run_payload = _wait_for_run_completion(client, run_id)
-        assert run_payload["run"]["status"] == "completed"
+        assert run_payload["status"] == "completed"
         threads = run_payload["threads"]
         assert threads
 
@@ -106,7 +106,7 @@ def test_run_events_stream_in_completion_order() -> None:
             },
         )
         assert response.status_code == 200
-        run_id = response.json()["id"]
+        run_id = response.json()["artifact_id"]
         _wait_for_run_completion(client, run_id)
 
         with client.stream("GET", f"/api/v1/runs/{run_id}/events") as stream_response:

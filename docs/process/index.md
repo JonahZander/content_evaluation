@@ -8,6 +8,8 @@ Read this section for repository workflow and documentation maintenance rules.
   - Rules for keeping the knowledge base current
 - `commit-conventions.md`
   - Standard commit message structure for this repository
+- `codebase-walkthrough.md`
+  - Top-level implementation map and suggested review order for the codebase
 
 ## Related Repo-Local Skills
 

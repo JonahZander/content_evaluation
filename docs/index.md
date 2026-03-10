@@ -35,6 +35,8 @@ Load only the section needed for the current task.
   - `docs/operations/index.md`
 - Workflow or repo rules:
   - `docs/process/index.md`
+- Code walkthrough and review order:
+  - `docs/process/codebase-walkthrough.md`
 
 ## Current Product Surface
 

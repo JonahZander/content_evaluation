@@ -1,0 +1,21 @@
+{
+  "name": "content-evaluation",
+  "private": true,
+  "engines": {
+    "node": "20.19.6"
+  },
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "dev:web": "npm --workspace apps/web run dev",
+    "build:web": "npm --workspace apps/web run build",
+    "test:web": "npm --workspace apps/web run test",
+    "typecheck:web": "npm --workspace apps/web run typecheck",
+    "dev:api": "uv run --directory services/api uvicorn content_evaluation.api.main:app --reload",
+    "test:api": "uv run --directory services/api pytest",
+    "lint:api": "uv run --directory services/api ruff check .",
+    "typecheck:api": "uv run --directory services/api mypy src",
+    "test": "npm run test:web && npm run test:api"
+  }
+}

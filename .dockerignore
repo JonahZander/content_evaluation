@@ -1,0 +1,8 @@
+.git
+node_modules
+apps/web/node_modules
+services/api/.venv
+__pycache__
+.pytest_cache
+.mypy_cache
+.next

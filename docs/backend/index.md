@@ -6,3 +6,5 @@ Read this section for ingestion, orchestration, analysis services, and result sy
 
 - `analysis-pipeline.md`
   - Planned processing flow for intake, agent execution, and aggregation
+- `python-standards.md`
+  - Backend coding standards, layering rules, and provider abstractions

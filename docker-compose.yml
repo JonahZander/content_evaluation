@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: content_evaluation
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    environment:
+      CONTENT_EVAL_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/content_evaluation
+      CONTENT_EVAL_API_BASE_URL: http://api:8000
+      CONTENT_EVAL_WEB_BASE_URL: http://web:3000
+      CONTENT_EVAL_OPENAI_API_KEY: ${CONTENT_EVAL_OPENAI_API_KEY:-}
+      CONTENT_EVAL_TAVILY_API_KEY: ${CONTENT_EVAL_TAVILY_API_KEY:-}
+    depends_on:
+      - postgres
+    ports:
+      - "8000:8000"
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://api:8000
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres-data:

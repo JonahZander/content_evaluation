@@ -2,6 +2,8 @@
 node_modules/
 .next/
 out/
+services/api/.venv/
+apps/web/.vitest/
 
 # Logs
 *.log

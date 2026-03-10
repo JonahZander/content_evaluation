@@ -1,0 +1,46 @@
+:root {
+  --bg: #f4efe7;
+  --bg-panel: rgba(255, 252, 245, 0.84);
+  --bg-card: rgba(255, 248, 236, 0.9);
+  --ink: #171310;
+  --muted: #675d54;
+  --line: rgba(39, 31, 21, 0.15);
+  --amber: #c77a00;
+  --vermilion: #b84c24;
+  --teal: #0f7c7a;
+  --cobalt: #2d5ecf;
+  --olive: #607737;
+  --human: #2d2d2d;
+  --paper-shadow: 0 24px 60px rgba(42, 31, 18, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.8), transparent 32%),
+    linear-gradient(160deg, #f7f0e4 0%, #ece0cf 42%, #efe8dc 100%);
+  color: var(--ink);
+  font-family: Baskerville, "Palatino Linotype", "Book Antiqua", serif;
+}
+
+body {
+  min-height: 100vh;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}

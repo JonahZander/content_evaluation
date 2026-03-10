@@ -1,35 +1,35 @@
 # Architecture Map
 
-This project will be implemented as an agent-readable Next.js monorepo-style application structure, even if it starts as a single app.
+This project is implemented as an agent-readable monorepo with a Next.js frontend and a FastAPI backend.
 
 ## Top-Level Domains
 
 - `docs/`
   - System of record for product, architecture, process, and plans
-- `app/` or `src/app/`
-  - Future Next.js routes and UI shells
-- `src/features/ingestion/`
-  - URL fetch, file upload, pasted-text intake, normalization
-- `src/features/analysis/`
-  - Multi-agent orchestration, prompts, model routing, result aggregation
-- `src/features/review/`
-  - Annotation UI, inline comments, suggestions, reviewer actions
-- `src/features/evaluation/`
-  - Final scoring, reading-worthiness assessment, summary synthesis
-- `src/features/observability/`
-  - Logs, traces, run metadata, model usage, audit surfaces
+- `apps/web/`
+  - Next.js routes, review workbench UI, export actions
+- `services/api/`
+  - FastAPI API, provider adapters, repositories, orchestration services
 - `.codex/skills/`
   - Repo-local skills for recurring agent workflows
 
-## Planned Layering
+## Layering
 
-Each feature should converge toward the same internal shape:
+Frontend features should converge toward:
 
 1. `types`
-2. `schemas`
-3. `services`
-4. `runtime`
-5. `ui`
+2. `lib`
+3. `components`
+4. `app`
+
+Backend features should converge toward:
+
+1. `domain`
+2. `providers/interfaces`
+3. `providers/*`
+4. `repositories`
+5. `services`
+6. `api`
 
 Cross-cutting concerns should stay explicit:
 
@@ -46,11 +46,11 @@ Cross-cutting concerns should stay explicit:
 - `docs/frontend/`
   - UI behaviors, review interactions, annotation patterns
 - `docs/backend/`
-  - Pipelines, ingestion, orchestration, result synthesis
+  - Pipelines, ingestion, Python standards, orchestration, result synthesis
 - `docs/agents/`
   - Agent responsibilities and evaluation workflow
 - `docs/operations/`
-  - Logging, traceability, metrics, run inspection
+  - Logging, traceability, metrics, run inspection, local/devops workflows
 - `docs/process/`
   - Documentation hygiene, commit conventions, repo workflow
 - `docs/plans/`

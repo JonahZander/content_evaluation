@@ -9,7 +9,11 @@ from fastapi import Request
 from content_evaluation.config import Settings, get_settings
 from content_evaluation.domain.models import ReadinessReport
 from content_evaluation.logging import get_logger
-from content_evaluation.providers.extraction.client import TrafilaturaExtractionProvider
+from content_evaluation.providers.extraction.client import (
+    FallbackExtractionProvider,
+    TavilyExtractionProvider,
+    TrafilaturaExtractionProvider,
+)
 from content_evaluation.providers.interfaces.analysis import AnalysisProvider
 from content_evaluation.providers.interfaces.extraction import ContentExtractionProvider
 from content_evaluation.providers.interfaces.search import SimilaritySearchProvider
@@ -105,8 +109,14 @@ class AppServices:
                     settings.tavily_api_key or "",
                     timeout_seconds=settings.provider_timeout_seconds,
                 ),
-                extraction_provider=TrafilaturaExtractionProvider(
-                    timeout_seconds=settings.request_timeout_seconds,
+                extraction_provider=FallbackExtractionProvider(
+                    primary=TrafilaturaExtractionProvider(
+                        timeout_seconds=settings.request_timeout_seconds,
+                    ),
+                    fallback=TavilyExtractionProvider(
+                        settings.tavily_api_key or "",
+                        timeout_seconds=settings.request_timeout_seconds,
+                    ),
                 ),
                 providers_ready=True,
             )

@@ -25,6 +25,13 @@ class SourceType(StrEnum):
     ARTIFACT = "artifact"
 
 
+class ContentFormat(StrEnum):
+    """Enumerate stored content formats."""
+
+    PLAIN_TEXT = "plain_text"
+    MARKDOWN = "markdown"
+
+
 class RunStatus(StrEnum):
     """Enumerate artifact lifecycle states."""
 
@@ -145,12 +152,41 @@ class ArtifactSource(BaseModel):
     imported: bool = False
 
 
+class ArtifactBlockKind(StrEnum):
+    """Enumerate supported rendered document block kinds."""
+
+    PARAGRAPH = "paragraph"
+    HEADING = "heading"
+    CODE = "code"
+
+
+class ArtifactInlineMarkKind(StrEnum):
+    """Enumerate supported inline markdown marks."""
+
+    STRONG = "strong"
+    EMPHASIS = "emphasis"
+    CODE = "code"
+
+
+class ArtifactInlineMark(BaseModel):
+    """Store one inline formatting span within a block."""
+
+    start_offset: int
+    end_offset: int
+    kind: ArtifactInlineMarkKind
+
+
 class ArtifactBlock(BaseModel):
     """Store one normalized text block."""
 
     id: str = Field(default_factory=lambda: f"block-{uuid4()}")
     index: int
     text: str
+    kind: ArtifactBlockKind = ArtifactBlockKind.PARAGRAPH
+    markdown: str | None = None
+    level: int | None = None
+    language: str | None = None
+    marks: list[ArtifactInlineMark] = Field(default_factory=list)
 
 
 class ArtifactDocument(BaseModel):
@@ -160,8 +196,19 @@ class ArtifactDocument(BaseModel):
     title: str
     source_type: SourceType
     source_label: str
+    content_format: ContentFormat = ContentFormat.PLAIN_TEXT
+    raw_content: str = ""
     text: str
     blocks: list[ArtifactBlock]
+
+
+class ExtractedContent(BaseModel):
+    """Store one extracted source payload before normalization."""
+
+    title: str
+    content: str
+    content_format: ContentFormat = ContentFormat.PLAIN_TEXT
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ArtifactAnchor(BaseModel):
@@ -313,7 +360,7 @@ class RunConfig(BaseModel):
 class AnalysisArtifact(BaseModel):
     """Store the complete artifact consumed by the UI and exports."""
 
-    schema_version: str = "1.0"
+    schema_version: str = "1.1"
     artifact_id: UUID = Field(default_factory=uuid4)
     status: RunStatus = RunStatus.QUEUED
     created_at: datetime = Field(default_factory=now_utc)
@@ -375,8 +422,10 @@ class GraphRunState(BaseModel):
     resolved_agents: list[str] = Field(default_factory=list)
     completed_nodes: list[str] = Field(default_factory=list)
     completed_agents: list[str] = Field(default_factory=list)
-    extracted_text: str | None = None
+    extracted_content: str | None = None
     extracted_title: str | None = None
+    extracted_content_format: ContentFormat = ContentFormat.PLAIN_TEXT
+    extracted_metadata: dict[str, Any] = Field(default_factory=dict)
     node_results: list[GraphNodeResult] = Field(default_factory=list)
     error_message: str | None = None
     checkpoint_version: int = 0

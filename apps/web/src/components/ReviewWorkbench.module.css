@@ -348,6 +348,65 @@
   color: rgba(23, 19, 16, 0.92);
 }
 
+.documentBlock {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  color: rgba(23, 19, 16, 0.92);
+}
+
+.documentBlockHeading {
+  margin: 0;
+}
+
+.documentBlockCode {
+  margin: 0;
+}
+
+.headingLevel1,
+.headingLevel2,
+.headingLevel3 {
+  margin: 0;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+
+.headingLevel1 {
+  font-size: clamp(2.3rem, 4vw, 3.4rem);
+}
+
+.headingLevel2 {
+  font-size: clamp(1.8rem, 3vw, 2.5rem);
+}
+
+.headingLevel3 {
+  font-size: clamp(1.4rem, 2vw, 1.9rem);
+}
+
+.codeBlock {
+  margin: 0;
+  padding: 18px 20px;
+  border-radius: 22px;
+  overflow-x: auto;
+  border: 1px solid rgba(42, 31, 18, 0.16);
+  background:
+    linear-gradient(180deg, rgba(33, 28, 24, 0.98), rgba(22, 19, 16, 0.96)),
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.08), transparent 40%);
+  color: rgba(255, 248, 240, 0.96);
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-size: 0.96rem;
+  line-height: 1.7;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.inlineCode {
+  padding: 0.1em 0.34em;
+  border-radius: 0.45em;
+  background: rgba(40, 31, 22, 0.08);
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-size: 0.92em;
+}
+
 .paragraphRow {
   position: relative;
   display: grid;

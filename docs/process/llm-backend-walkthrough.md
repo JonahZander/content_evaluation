@@ -7,6 +7,7 @@ This document explains how the backend chooses an analysis model, where the agen
 1. The API receives a run request and creates an `AnalysisArtifact`.
 2. The worker picks up the queued job and calls the LangGraph-backed orchestrator.
 3. The orchestrator resolves source content, normalizes the document, and schedules agent nodes.
+   - URL inputs try direct fetch first and fall back to Tavily extract when needed.
 4. Analysis agents use the LangChain provider layer.
 5. Search-based similarity uses Tavily directly.
 6. Artifact assembly turns agent outputs into anchors, comments, threads, events, and summary data.
@@ -79,6 +80,7 @@ Then:
 3. Keep the default agent selection or toggle agents on/off
 4. Click `Analyze content`
 5. Watch the progress timeline and run log while the worker executes the graph
+6. For markdown-capable inputs, the review pane will render headings, inline emphasis, and fenced code blocks without fetching images
 
 To verify that you are in live mode, open:
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from content_evaluation.domain.models import (
+    ContentFormat,
     GraphCheckpoint,
     GraphRunState,
     OrchestratorBackend,
@@ -89,8 +90,9 @@ async def test_langgraph_resume_uses_existing_checkpoint() -> None:
                 input_data=input_data,
                 selected_agents=artifact.run_config.selected_agents,
                 resolved_agents=artifact.run_config.resolved_agents,
-                extracted_text=input_data.text,
+                extracted_content=input_data.text,
                 extracted_title=input_data.title,
+                extracted_content_format=ContentFormat.MARKDOWN,
                 completed_nodes=["resolve_source"],
             ),
         )

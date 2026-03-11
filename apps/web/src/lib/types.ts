@@ -1,4 +1,5 @@
 export type SourceType = "url" | "text" | "file" | "artifact";
+export type ContentFormat = "plain_text" | "markdown";
 export type RunStatus = "queued" | "running" | "completed" | "failed";
 export type ReviewState = "unreviewed" | "accepted" | "rejected" | "uncertain";
 export type AuthorType = "agent" | "human";
@@ -9,6 +10,8 @@ export type AgentPlanStatus = "pending" | "queued" | "running" | "completed" | "
 export type AgentExecutionMode = "single_turn" | "multi_step";
 export type ProviderKind = "search" | "analysis" | "extract";
 export type EventType = "run" | "artifact" | "agent";
+export type ArtifactBlockKind = "paragraph" | "heading" | "code";
+export type ArtifactInlineMarkKind = "strong" | "emphasis" | "code";
 
 export interface ArtifactSource {
   source_type: SourceType;
@@ -22,6 +25,17 @@ export interface ArtifactBlock {
   id: string;
   index: number;
   text: string;
+  kind?: ArtifactBlockKind;
+  markdown?: string | null;
+  level?: number | null;
+  language?: string | null;
+  marks?: ArtifactInlineMark[];
+}
+
+export interface ArtifactInlineMark {
+  start_offset: number;
+  end_offset: number;
+  kind: ArtifactInlineMarkKind;
 }
 
 export interface ArtifactDocument {
@@ -29,6 +43,8 @@ export interface ArtifactDocument {
   title: string;
   source_type: SourceType;
   source_label: string;
+  content_format?: ContentFormat;
+  raw_content?: string;
   text: string;
   blocks: ArtifactBlock[];
 }

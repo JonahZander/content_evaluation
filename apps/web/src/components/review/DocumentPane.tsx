@@ -3,7 +3,16 @@ import { useEffect, useMemo, useRef, useState, type MutableRefObject, type React
 import styles from "@/components/ReviewWorkbench.module.css";
 import { ConnectorCanvas } from "@/components/review/ConnectorCanvas";
 import { categoryColors, colorForCategory } from "@/components/review/category-colors";
-import type { ArtifactAnchor, ArtifactComment, ArtifactDocument, ArtifactThread, ReviewState } from "@/lib/types";
+import type {
+  ArtifactAnchor,
+  ArtifactBlock,
+  ArtifactComment,
+  ArtifactDocument,
+  ArtifactInlineMark,
+  ArtifactInlineMarkKind,
+  ArtifactThread,
+  ReviewState,
+} from "@/lib/types";
 
 interface AnchorThread {
   colors: string[];
@@ -43,7 +52,7 @@ const reviewActions: ReviewState[] = ["accepted", "rejected", "uncertain"];
 
 function renderAnchor(
   anchor: ArtifactAnchor,
-  blockText: string,
+  children: ReactNode,
   colors: string[],
   isHovered: boolean,
   anchorRefs: MutableRefObject<Record<string, HTMLSpanElement | null>>,
@@ -78,14 +87,75 @@ function renderAnchor(
         borderBottom: `2px solid ${colors[0]}`,
       }}
     >
-      {blockText.slice(anchor.start_offset, anchor.end_offset)}
+      {children}
     </span>
   );
 }
 
-function renderParagraph(
-  blockId: string,
-  blockText: string,
+function wrapInlineMarks(content: ReactNode, marks: ArtifactInlineMarkKind[], key: string): ReactNode {
+  return marks.reduce<ReactNode>((wrapped, kind, index) => {
+    const markKey = `${key}-${kind}-${index}`;
+    if (kind === "strong") {
+      return <strong key={markKey}>{wrapped}</strong>;
+    }
+    if (kind === "emphasis") {
+      return <em key={markKey}>{wrapped}</em>;
+    }
+    if (kind === "code") {
+      return (
+        <code key={markKey} className={styles.inlineCode}>
+          {wrapped}
+        </code>
+      );
+    }
+    return wrapped;
+  }, content);
+}
+
+function renderMarkedRange(block: ArtifactBlock, startOffset: number, endOffset: number, keyPrefix: string): ReactNode[] {
+  if (startOffset >= endOffset) {
+    return [];
+  }
+
+  const marks = (block.marks ?? []).filter(
+    (mark) => mark.start_offset < endOffset && mark.end_offset > startOffset,
+  );
+  if (marks.length === 0) {
+    return [block.text.slice(startOffset, endOffset)];
+  }
+
+  const boundaries = new Set<number>([startOffset, endOffset]);
+  marks.forEach((mark) => {
+    boundaries.add(Math.max(startOffset, mark.start_offset));
+    boundaries.add(Math.min(endOffset, mark.end_offset));
+  });
+
+  const orderedBoundaries = [...boundaries].sort((left, right) => left - right);
+  const fragments: ReactNode[] = [];
+  for (let index = 0; index < orderedBoundaries.length - 1; index += 1) {
+    const segmentStart = orderedBoundaries[index];
+    const segmentEnd = orderedBoundaries[index + 1];
+    if (segmentStart === segmentEnd) {
+      continue;
+    }
+    const text = block.text.slice(segmentStart, segmentEnd);
+    const activeMarks = marks
+      .filter((mark) => mark.start_offset <= segmentStart && mark.end_offset >= segmentEnd)
+      .sort((left, right) => MARK_ORDER[left.kind] - MARK_ORDER[right.kind])
+      .map((mark) => mark.kind);
+    fragments.push(wrapInlineMarks(text, activeMarks, `${keyPrefix}-${segmentStart}-${segmentEnd}`));
+  }
+  return fragments;
+}
+
+const MARK_ORDER: Record<ArtifactInlineMarkKind, number> = {
+  emphasis: 0,
+  strong: 1,
+  code: 2,
+};
+
+function renderBlockText(
+  block: ArtifactBlock,
   anchors: ArtifactAnchor[],
   anchorThreadMap: Map<string, AnchorThread>,
   hoveredAnchorId: string | null,
@@ -93,33 +163,40 @@ function renderParagraph(
   onHoverAnchor: (anchorId: string | null) => void,
 ): ReactNode {
   const blockAnchors = anchors
-    .filter((anchor) => anchor.block_id === blockId)
+    .filter((anchor) => anchor.block_id === block.id)
     .sort((left, right) => left.start_offset - right.start_offset);
 
   if (blockAnchors.length === 0) {
-    return blockText;
+    return renderMarkedRange(block, 0, block.text.length, `${block.id}-plain`);
   }
 
   const fragments: ReactNode[] = [];
   let cursor = 0;
   blockAnchors.forEach((anchor) => {
     if (cursor < anchor.start_offset) {
-      fragments.push(blockText.slice(cursor, anchor.start_offset));
+      fragments.push(...renderMarkedRange(block, cursor, anchor.start_offset, `${block.id}-before-${cursor}`));
     }
     const colors = anchorThreadMap.get(anchor.id)?.colors ?? [colorForCategory("human")];
     fragments.push(
-      renderAnchor(anchor, blockText, colors, hoveredAnchorId === anchor.id, anchorRefs, onHoverAnchor),
+      renderAnchor(
+        anchor,
+        renderMarkedRange(block, anchor.start_offset, anchor.end_offset, `${block.id}-anchor-${anchor.id}`),
+        colors,
+        hoveredAnchorId === anchor.id,
+        anchorRefs,
+        onHoverAnchor,
+      ),
     );
     cursor = anchor.end_offset;
   });
-  if (cursor < blockText.length) {
-    fragments.push(blockText.slice(cursor));
+  if (cursor < block.text.length) {
+    fragments.push(...renderMarkedRange(block, cursor, block.text.length, `${block.id}-after-${cursor}`));
   }
   return fragments;
 }
 
 function resolveSelectionDraft(
-  paragraph: HTMLParagraphElement,
+  container: HTMLElement,
   selection: Selection | null,
   blockId: string,
 ): SelectionDraft | null {
@@ -128,7 +205,7 @@ function resolveSelectionDraft(
   }
 
   const range = selection.getRangeAt(0);
-  if (!paragraph.contains(range.commonAncestorContainer)) {
+  if (!container.contains(range.commonAncestorContainer)) {
     return null;
   }
 
@@ -138,7 +215,7 @@ function resolveSelectionDraft(
   }
 
   const offsetRange = range.cloneRange();
-  offsetRange.selectNodeContents(paragraph);
+  offsetRange.selectNodeContents(container);
   offsetRange.setEnd(range.startContainer, range.startOffset);
   const startOffset = offsetRange.toString().length;
 
@@ -430,24 +507,42 @@ export function DocumentPane({
             data-testid={`document-block-${block.index}`}
           >
             <ConnectorCanvas paths={pathsByBlockId[block.id] ?? []} />
-            <p
-              className={styles.paragraph}
+            <div
+              className={`${styles.documentBlock} ${
+                block.kind === "heading"
+                  ? styles.documentBlockHeading
+                  : block.kind === "code"
+                    ? styles.documentBlockCode
+                    : styles.paragraph
+              }`}
               data-block-id={block.id}
               onMouseUp={(event) => {
                 const draft = resolveSelectionDraft(event.currentTarget, window.getSelection(), block.id);
                 onSelectionDraft(draft);
               }}
             >
-              {renderParagraph(
-                block.id,
-                block.text,
-                anchors,
-                anchorThreadMap,
-                hoveredAnchorId,
-                anchorRefs,
-                onHoverAnchor,
+              {block.kind === "heading" ? (
+                block.level === 1 ? (
+                  <h1 className={styles.headingLevel1}>
+                    {renderBlockText(block, anchors, anchorThreadMap, hoveredAnchorId, anchorRefs, onHoverAnchor)}
+                  </h1>
+                ) : block.level === 2 ? (
+                  <h2 className={styles.headingLevel2}>
+                    {renderBlockText(block, anchors, anchorThreadMap, hoveredAnchorId, anchorRefs, onHoverAnchor)}
+                  </h2>
+                ) : (
+                  <h3 className={styles.headingLevel3}>
+                    {renderBlockText(block, anchors, anchorThreadMap, hoveredAnchorId, anchorRefs, onHoverAnchor)}
+                  </h3>
+                )
+              ) : block.kind === "code" ? (
+                <pre className={styles.codeBlock}>
+                  <code>{renderBlockText(block, anchors, anchorThreadMap, hoveredAnchorId, anchorRefs, onHoverAnchor)}</code>
+                </pre>
+              ) : (
+                renderBlockText(block, anchors, anchorThreadMap, hoveredAnchorId, anchorRefs, onHoverAnchor)
               )}
-            </p>
+            </div>
             <div className={styles.paragraphComments}>
               {(blockThreads.get(block.id) ?? []).length ? (
                 (blockThreads.get(block.id) ?? []).map((thread) => (

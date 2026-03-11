@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from content_evaluation.domain.models import ArtifactBlock, ProviderRoute
+from content_evaluation.domain.models import ArtifactBlock, ContentFormat, ExtractedContent, ProviderRoute
 
 
 class MockSimilaritySearchProvider:
@@ -33,7 +33,7 @@ class MockSimilaritySearchProvider:
 class MockContentExtractionProvider:
     """Return synthetic extracted content."""
 
-    async def extract(self, url: str) -> dict[str, str]:
+    async def extract(self, url: str) -> ExtractedContent:
         """Return deterministic content for one URL."""
 
         title = url.replace("https://", "").replace("http://", "")
@@ -41,7 +41,12 @@ class MockContentExtractionProvider:
             f"This article was fetched from {url}. "
             "It discusses how AI-assisted editorial systems review originality, value, and audience fit."
         )
-        return {"title": title, "text": text}
+        return ExtractedContent(
+            title=title,
+            content=text,
+            content_format=ContentFormat.PLAIN_TEXT,
+            metadata={"provider_name": "mock-extract", "content_format": ContentFormat.PLAIN_TEXT.value},
+        )
 
 
 class MockAnalysisProvider:

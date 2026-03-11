@@ -14,6 +14,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
   - Overall score, originality, value, audience fit, AI-likelihood
 - Source text pane
   - Selectable text with highlighted spans in paragraph rows
+  - Supports lightweight markdown presentation for headings, inline emphasis, and fenced code blocks
 - Comment area
   - Each paragraph row owns its own right-side comment stack so later text does not continue until that paragraph's comments end
 - Optional debug panel
@@ -45,6 +46,12 @@ Provide a high-legibility review surface where users can inspect source text, wa
 ## Target Behaviors
 
 - Highlight colors are category-based and consistent across the text pane, comment labels, and connector lines.
+- Supported markdown rendering is intentionally narrow in v1:
+  - headings
+  - `strong`
+  - `em`
+  - fenced code blocks
+- Unsupported markdown should stay readable as text rather than render rich embeds or media.
 - Agent comments are immutable in content; reviewer input happens through replies and review-state actions.
 - Reviewer comments use the `human` category and are attached to an existing or newly created anchor.
 - Run status is visible in the toolbar and progress panel.

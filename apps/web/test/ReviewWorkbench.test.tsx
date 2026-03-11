@@ -72,6 +72,15 @@ describe("ReviewWorkbench", () => {
     expect(screen.getAllByPlaceholderText("Reply to this comment").length).toBeGreaterThan(0);
   });
 
+  it("renders markdown headings, inline emphasis, and code blocks", () => {
+    render(<ReviewWorkbench initialArtifact={mockArtifact} />);
+
+    expect(screen.getByRole("heading", { name: "Inline Markdown Example" })).toBeInTheDocument();
+    expect(screen.getByText("bold").tagName).toBe("STRONG");
+    expect(screen.getByText("italic").tagName).toBe("EM");
+    expect(screen.getByText("const verdict = 'worth revising';").tagName).toBe("CODE");
+  });
+
   it("opens export URLs", () => {
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
     render(<ReviewWorkbench initialArtifact={mockArtifact} />);

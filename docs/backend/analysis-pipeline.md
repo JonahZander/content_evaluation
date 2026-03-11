@@ -19,7 +19,8 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
    - Starts or resumes LangGraph execution from the latest stored checkpoint
 4. Normalization
    - Extract text and metadata into a shared document schema
-   - Split text into ordered document blocks
+   - Use direct fetch + Trafilatura first for URLs, then Tavily extract fallback for blocked or unreadable pages
+   - Normalize markdown-aware content into ordered document blocks with render metadata and plain-text anchor offsets
    - Save the normalized document into the artifact
 5. Agent planning
    - Validate selected agent ids
@@ -44,6 +45,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 ## Artifact-First Rules
 
 - `AnalysisArtifact` is the canonical backend output.
+- `ArtifactDocument` preserves raw source content for rendering and normalized plain text for anchoring.
 - The event stream narrates artifact construction; it is not the primary data model.
 - Human comments, replies, and review-state changes live inside the artifact from the start.
 - Persistence is an adapter around artifact snapshots, not the core business model.

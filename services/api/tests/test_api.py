@@ -4,11 +4,25 @@ from __future__ import annotations
 
 import time
 
+import pytest
 from fastapi.testclient import TestClient
 
 from content_evaluation.api.dependencies import AppServices
 from content_evaluation.api.main import app
 from content_evaluation.config import Settings
+
+
+def _mock_settings() -> Settings:
+    """Build settings pinned to mock mode regardless of local env files."""
+
+    return Settings(
+        app_env="test",
+        analysis_provider_family="mock",
+        openai_api_key=None,
+        anthropic_api_key=None,
+        gemini_api_key=None,
+        tavily_api_key=None,
+    )
 
 
 def _wait_for_run_completion(client: TestClient, run_id: str) -> dict[str, object]:
@@ -26,10 +40,10 @@ def _wait_for_run_completion(client: TestClient, run_id: str) -> dict[str, objec
     raise AssertionError("Run did not complete before timeout")
 
 
-def test_api_run_flow_and_exports() -> None:
+def test_api_run_flow_and_exports(monkeypatch: pytest.MonkeyPatch) -> None:
     """Create a run, wait for completion, and export it."""
 
-    app.state.services = AppServices(Settings())
+    monkeypatch.setattr("content_evaluation.api.main.build_services", lambda: AppServices(_mock_settings()))
     with TestClient(app) as client:
         response = client.post(
             "/api/v1/runs",
@@ -67,10 +81,10 @@ def test_api_run_flow_and_exports() -> None:
         assert json_export.status_code == 200
 
 
-def test_api_rejects_invalid_upload_type() -> None:
+def test_api_rejects_invalid_upload_type(monkeypatch: pytest.MonkeyPatch) -> None:
     """Reject unsupported file uploads."""
 
-    app.state.services = AppServices(Settings())
+    monkeypatch.setattr("content_evaluation.api.main.build_services", lambda: AppServices(_mock_settings()))
     with TestClient(app) as client:
         response = client.post(
             "/api/v1/runs",
@@ -80,10 +94,10 @@ def test_api_rejects_invalid_upload_type() -> None:
     assert response.status_code == 415
 
 
-def test_ready_endpoint_reports_mock_mode() -> None:
+def test_ready_endpoint_reports_mock_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     """Return readiness data for local mock mode."""
 
-    app.state.services = AppServices(Settings())
+    monkeypatch.setattr("content_evaluation.api.main.build_services", lambda: AppServices(_mock_settings()))
     with TestClient(app) as client:
         response = client.get("/ready")
 
@@ -91,10 +105,10 @@ def test_ready_endpoint_reports_mock_mode() -> None:
     assert response.json()["processing_mode"] == "mock"
 
 
-def test_run_events_stream_in_completion_order() -> None:
+def test_run_events_stream_in_completion_order(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stream run events until completion."""
 
-    app.state.services = AppServices(Settings())
+    monkeypatch.setattr("content_evaluation.api.main.build_services", lambda: AppServices(_mock_settings()))
     with TestClient(app) as client:
         response = client.post(
             "/api/v1/runs",

@@ -32,6 +32,8 @@ from content_evaluation.domain.models import (
     ArtifactComment,
     ArtifactDebug,
     ArtifactEvent,
+    ContentFormat,
+    ExtractedContent,
     ArtifactSource,
     ArtifactSummary,
     AuthorType,
@@ -76,8 +78,10 @@ class LangGraphState(TypedDict):
     input_data: RunInput
     selected_agents: list[str]
     resolved_agents: list[str]
-    extracted_text: str | None
+    extracted_content: str | None
     extracted_title: str | None
+    extracted_content_format: ContentFormat
+    extracted_metadata: dict[str, object]
     completed_nodes: Annotated[list[str], operator.add]
     completed_agents: Annotated[list[str], operator.add]
     node_results: Annotated[list[dict[str, object]], operator.add]
@@ -179,7 +183,22 @@ class RunOrchestrator:
 
         try:
             extracted = await self._resolve_source(input_data)
-            artifact.document = normalize_text(input_data, extracted["text"], extracted.get("title"))
+            await self._append_event(
+                artifact,
+                EventType.ARTIFACT,
+                "extraction",
+                "completed",
+                _source_message(extracted),
+                progress=0.02,
+                snapshot_available=True,
+                metadata=extracted.metadata,
+            )
+            artifact.document = normalize_text(
+                input_data,
+                extracted.content,
+                extracted.title,
+                content_format=extracted.content_format,
+            )
             artifact.source.title = artifact.document.title
             await self._append_event(
                 artifact,
@@ -254,13 +273,22 @@ class RunOrchestrator:
             raise
         await self._repository.delete_graph_checkpoint(artifact_id)
 
-    async def _resolve_source(self, input_data: RunInput) -> dict[str, str]:
-        """Resolve one source payload into text and title."""
+    async def _resolve_source(self, input_data: RunInput) -> ExtractedContent:
+        """Resolve one source payload into extracted content."""
 
         if input_data.source_type.value == "url" and input_data.url:
             return await self._extraction_provider.extract(input_data.url)
         text = input_data.text or ""
-        return {"title": input_data.title or input_data.source_label, "text": text}
+        return ExtractedContent(
+            title=input_data.title or input_data.source_label,
+            content=text,
+            content_format=ContentFormat.MARKDOWN,
+            metadata={
+                "provider_name": "inline-input",
+                "content_format": ContentFormat.MARKDOWN.value,
+                "source_type": input_data.source_type.value,
+            },
+        )
 
     def _build_langgraph_app(self, resolved_agents: list[str]) -> object:
         """Compile a LangGraph app for one resolved agent plan."""
@@ -311,9 +339,22 @@ class RunOrchestrator:
         if "resolve_source" in state.get("completed_nodes", []):
             return {}
         resolved = await self._resolve_source(state["input_data"])
+        artifact = await self._require_artifact(state["artifact_id"])
+        await self._append_event(
+            artifact,
+            EventType.ARTIFACT,
+            "extraction",
+            "completed",
+            _source_message(resolved),
+            progress=0.02,
+            snapshot_available=True,
+            metadata=resolved.metadata,
+        )
         updates: dict[str, object] = {
-            "extracted_text": resolved["text"],
-            "extracted_title": resolved.get("title"),
+            "extracted_content": resolved.content,
+            "extracted_title": resolved.title,
+            "extracted_content_format": resolved.content_format,
+            "extracted_metadata": resolved.metadata,
             "completed_nodes": ["resolve_source"],
             "node_results": [GraphNodeResult(node_id="resolve_source", status="completed").model_dump(mode="json")],
         }
@@ -326,9 +367,15 @@ class RunOrchestrator:
         if "normalize_document" in state.get("completed_nodes", []):
             return {}
         artifact = await self._require_artifact(state["artifact_id"])
-        extracted_text = state.get("extracted_text") or state["input_data"].text or ""
+        extracted_content = state.get("extracted_content") or state["input_data"].text or ""
         extracted_title = state.get("extracted_title")
-        artifact.document = normalize_text(state["input_data"], extracted_text, extracted_title)
+        content_format = state.get("extracted_content_format", ContentFormat.PLAIN_TEXT)
+        artifact.document = normalize_text(
+            state["input_data"],
+            extracted_content,
+            extracted_title,
+            content_format=content_format,
+        )
         artifact.source.title = artifact.document.title
         await self._append_event(
             artifact,
@@ -675,6 +722,7 @@ class RunOrchestrator:
         agent_name: str | None = None,
         model_name: str | None = None,
         snapshot_available: bool = False,
+        metadata: dict[str, object] | None = None,
     ) -> None:
         """Append one event and persist the current artifact."""
 
@@ -689,6 +737,7 @@ class RunOrchestrator:
             agent_name=agent_name,
             model_name=model_name,
             snapshot_available=snapshot_available,
+            metadata=metadata or {},
         )
         artifact.events.append(event)
         artifact.updated_at = datetime.now(UTC)
@@ -729,8 +778,16 @@ class RunOrchestrator:
             input_data=state["input_data"],
             selected_agents=list(state.get("selected_agents", [])),
             resolved_agents=list(state.get("resolved_agents", [])),
-            extracted_text=_coerce_str(updates.get("extracted_text")) or state.get("extracted_text"),
+            extracted_content=_coerce_str(updates.get("extracted_content")) or state.get("extracted_content"),
             extracted_title=_coerce_str(updates.get("extracted_title")) or state.get("extracted_title"),
+            extracted_content_format=cast(
+                ContentFormat,
+                updates.get("extracted_content_format") or state.get("extracted_content_format") or ContentFormat.PLAIN_TEXT,
+            ),
+            extracted_metadata={
+                **cast(dict[str, object], state.get("extracted_metadata", {})),
+                **cast(dict[str, object], updates.get("extracted_metadata", {})),
+            },
             completed_nodes=[*state.get("completed_nodes", []), *_coerce_str_list(updates.get("completed_nodes"))],
             completed_agents=[*state.get("completed_agents", []), *_coerce_str_list(updates.get("completed_agents"))],
             node_results=[
@@ -750,8 +807,10 @@ class RunOrchestrator:
             "input_data": state.input_data,
             "selected_agents": list(state.selected_agents),
             "resolved_agents": list(state.resolved_agents),
-            "extracted_text": state.extracted_text,
+            "extracted_content": state.extracted_content,
             "extracted_title": state.extracted_title,
+            "extracted_content_format": state.extracted_content_format,
+            "extracted_metadata": dict(state.extracted_metadata),
             "completed_nodes": list(state.completed_nodes),
             "completed_agents": list(state.completed_agents),
             "node_results": [item.model_dump(mode="json") for item in state.node_results],
@@ -771,6 +830,20 @@ def _require_plan_item(artifact: AnalysisArtifact, agent_id: str) -> ArtifactAge
     if plan_item is None:
         raise ValidationError(f"Agent plan item {agent_id} not found")
     return plan_item
+
+
+def _source_message(extracted: ExtractedContent) -> str:
+    """Describe how source content was resolved."""
+
+    provider_name = extracted.metadata.get("provider_name")
+    fallback_used = extracted.metadata.get("fallback_used") is True
+    if provider_name == "tavily-extract" and fallback_used:
+        return "Source extracted via Tavily fallback"
+    if provider_name == "tavily-extract":
+        return "Source extracted via Tavily"
+    if provider_name == "direct":
+        return "Source extracted via direct fetch"
+    return "Source content resolved"
 
 
 def _default_agent_ids() -> list[str]:

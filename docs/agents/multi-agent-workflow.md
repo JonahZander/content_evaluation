@@ -93,7 +93,8 @@ Each agent should be declared with:
   - Tavily in live mode
   - Mock search provider in development/test fallback
 - Content extraction
-  - Trafilatura-backed extraction provider in live mode
+  - Direct fetch + Trafilatura first in live mode
+  - Tavily extract fallback for blocked or unreadable URLs
   - Mock extractor in development/test fallback
 - Analysis categories
   - LangChain-routed OpenAI, Anthropic, or Gemini in live mode

@@ -24,4 +24,11 @@ def test_production_settings_require_live_dependencies() -> None:
     """Fail fast when production mode is missing required settings."""
 
     with pytest.raises(ConfigurationError, match="configured analysis provider key"):
-        Settings(app_env="production", cors_origins=["https://app.example.com"])
+        Settings(
+            app_env="production",
+            cors_origins=["https://app.example.com"],
+            openai_api_key=None,
+            anthropic_api_key=None,
+            gemini_api_key=None,
+            tavily_api_key=None,
+        )

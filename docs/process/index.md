@@ -10,6 +10,8 @@ Read this section for repository workflow and documentation maintenance rules.
   - Standard commit message structure for this repository
 - `codebase-walkthrough.md`
   - Top-level implementation map and suggested review order for the codebase
+- `llm-backend-walkthrough.md`
+  - How provider routing, prompts, and live model setup work in the backend
 
 ## Related Repo-Local Skills
 

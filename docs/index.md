@@ -37,6 +37,8 @@ Load only the section needed for the current task.
   - `docs/process/index.md`
 - Code walkthrough and review order:
   - `docs/process/codebase-walkthrough.md`
+- LLM backend setup and prompt locations:
+  - `docs/process/llm-backend-walkthrough.md`
 
 ## Current Product Surface
 

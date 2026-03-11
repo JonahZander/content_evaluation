@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from content_evaluation.domain.models import ArtifactBlock
+from content_evaluation.domain.models import ArtifactBlock, ProviderRoute
 
 
 class MockSimilaritySearchProvider:
@@ -47,6 +47,8 @@ class MockContentExtractionProvider:
 class MockAnalysisProvider:
     """Return deterministic findings from local heuristics."""
 
+    model_name = "mock-analysis"
+
     async def analyze(
         self,
         agent_id: str,
@@ -54,10 +56,12 @@ class MockAnalysisProvider:
         title: str,
         blocks: list[ArtifactBlock],
         context: dict[str, object] | None = None,
+        route: ProviderRoute | None = None,
     ) -> dict[str, object]:
         """Return deterministic JSON for one analysis agent."""
 
         del instruction
+        del route
         primary = blocks[0].text if blocks else title
         secondary = blocks[min(1, len(blocks) - 1)].text if blocks else title
         result: dict[str, object] = {"findings": []}
@@ -119,3 +123,9 @@ class MockAnalysisProvider:
             )
             result["summary"] = f"Synthesized from: {context_summary}" if context_summary else "Synthesis complete"
         return result
+
+    def resolve_model_name(self, route: ProviderRoute | None = None) -> str:
+        """Return the configured mock model name."""
+
+        del route
+        return self.model_name

@@ -13,12 +13,12 @@ from content_evaluation.providers.extraction.client import TrafilaturaExtraction
 from content_evaluation.providers.interfaces.analysis import AnalysisProvider
 from content_evaluation.providers.interfaces.extraction import ContentExtractionProvider
 from content_evaluation.providers.interfaces.search import SimilaritySearchProvider
+from content_evaluation.providers.langchain.client import LangChainAnalysisProvider
 from content_evaluation.providers.mock.providers import (
     MockAnalysisProvider,
     MockContentExtractionProvider,
     MockSimilaritySearchProvider,
 )
-from content_evaluation.providers.openai.client import OpenAIAnalysisProvider
 from content_evaluation.providers.tavily.client import TavilySearchProvider
 from content_evaluation.repositories.base import RunRepository
 from content_evaluation.repositories.in_memory import InMemoryRunRepository
@@ -55,6 +55,7 @@ class AppServices:
             provider_health.extraction_provider,
             settings.runtime_mode,
             settings.persistent_storage_enabled,
+            settings.orchestrator_backend,
         )
         self.comments = CommentService(self.repository, settings.reviewer_name)
         self.worker = RunWorker(self.repository, self.orchestrator, settings)
@@ -82,6 +83,7 @@ class AppServices:
             persistent_storage=self.settings.persistent_storage_enabled,
             database_ready=database_ready,
             providers_ready=self.providers_ready,
+            orchestrator_backend=self.settings.orchestrator_backend,
         )
 
     @staticmethod
@@ -98,10 +100,7 @@ class AppServices:
 
         if settings.runtime_mode.value == "live":
             return ProviderHealth(
-                analysis_provider=OpenAIAnalysisProvider(
-                    settings.openai_api_key or "",
-                    timeout_seconds=settings.provider_timeout_seconds,
-                ),
+                analysis_provider=LangChainAnalysisProvider(settings),
                 search_provider=TavilySearchProvider(
                     settings.tavily_api_key or "",
                     timeout_seconds=settings.provider_timeout_seconds,

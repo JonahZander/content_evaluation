@@ -16,6 +16,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
    - `RunWorker` claims queued jobs
    - Resets in-flight jobs on startup
    - Requeues failed attempts up to the configured max attempts
+   - Starts or resumes LangGraph execution from the latest stored checkpoint
 4. Normalization
    - Extract text and metadata into a shared document schema
    - Split text into ordered document blocks
@@ -26,12 +27,14 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
    - Topologically sort the dependency graph
    - Record agent plan items with execution status
 6. Agent execution
-   - Run independent agents in parallel
+   - Run independent agents in parallel through LangGraph nodes
    - Run dependent agents after prerequisites complete
    - Emit progress events and partial artifact updates as each agent completes
+   - Use LangChain chat-model adapters for analysis nodes
 7. Artifact assembly
    - Convert agent outputs into anchors, comments, results, summary data, and debug traces
    - Keep human comment/reply/review-state data in the same artifact structure
+   - Keep artifact assembly outside the graph-state model
 8. Export and import
    - Export the artifact as JSON
    - Export Markdown derived from the artifact
@@ -44,13 +47,16 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 - Human comments, replies, and review-state changes live inside the artifact from the start.
 - Persistence is an adapter around artifact snapshots, not the core business model.
 - Backend services should be usable independently of the web app.
+- `GraphRunState` is internal runtime state, not a public API contract.
 
 ## Current Refactor Direction
 
 - `api/main.py`
   - HTTP routes, SSE event stream, upload validation, artifact endpoints
 - `services/orchestration.py`
-  - Session/workspace run lifecycle, agent planning, dependency-driven execution, artifact assembly
+  - Session/workspace run lifecycle, LangGraph execution, dependency-driven scheduling, checkpoint persistence, artifact assembly
+- `providers/langchain/client.py`
+  - LangChain-backed provider routing across OpenAI, Anthropic, and Gemini
 - `services/comments.py`
   - Human comment creation, reply creation, inline edit/delete checks, agent review-state updates against the artifact
 - `services/exporting.py`
@@ -66,6 +72,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 
 - Agent instructions belong in `agents/`, not inline inside provider code.
 - Provider-specific details should live near adapters, not in orchestration logic.
+- LangGraph state should stay smaller than the artifact contract.
 - Shared artifact schemas should be stable and explicit.
 - Services should not contain raw SQL or raw provider HTTP calls.
 - Production mode should not silently fall back to mock providers or in-memory storage.

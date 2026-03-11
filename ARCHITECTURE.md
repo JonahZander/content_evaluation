@@ -9,7 +9,7 @@ This project is an agent-readable monorepo with a Next.js frontend and a FastAPI
 - `apps/web/`
   - Next.js review workbench for intake, live progress, artifact rendering, review actions, and import/export
 - `services/api/`
-  - FastAPI API, artifact orchestration, agent registry, provider adapters, repositories, and backend tests
+  - FastAPI API, artifact orchestration, LangGraph execution, LangChain provider routing, repositories, and backend tests
 - `.codex/skills/`
   - Repo-local skills for recurring agent workflows
 
@@ -51,11 +51,11 @@ Backend features should converge toward:
   - `agents/`
     - Declarative agent registry and instruction files
   - `providers/`
-    - OpenAI analysis adapter, Tavily similarity search adapter, Trafilatura extraction adapter, mock fallback adapters for local development
+    - LangChain-backed analysis routing for OpenAI, Anthropic, and Gemini plus Tavily search, Trafilatura extraction, and mock fallback adapters
   - `repositories/`
-    - Session-first in-memory artifact storage and optional PostgreSQL-backed artifact persistence
+    - Session-first in-memory artifact storage, optional PostgreSQL-backed artifact persistence, and graph checkpoints
   - `services/`
-    - Normalization, agent planning/scheduling, artifact assembly, review mutations, export building, worker loop
+    - Normalization, LangGraph orchestration, artifact assembly, review mutations, export building, worker loop
 
 ## Primary Architecture Decisions
 
@@ -64,8 +64,11 @@ Backend features should converge toward:
 - Live progress is a separate event stream, not the artifact itself.
 - Session plus artifact export/import is the default local and open-source workflow.
 - Workspace persistence remains optional for team or production deployments.
-- Multi-agent execution is code-orchestrated:
-  - one orchestrator
+- LangChain owns model/provider abstraction for analysis agents.
+- LangGraph owns orchestration/runtime flow for analysis runs.
+- Artifact assembly stays in domain code and remains independent of LangGraph state.
+- Multi-agent execution remains registry-driven:
+  - one graph-backed orchestrator
   - a registry of specialist agents
   - explicit dependencies
   - parallel execution for independent agents
@@ -86,14 +89,16 @@ Backend features should converge toward:
   - Default provider mode when live keys are absent
   - Uses deterministic local analysis/search/extraction providers
 - `live`
-  - Enabled when both OpenAI and Tavily keys are present
-  - Uses real provider adapters
+  - Enabled when one configured analysis-provider key and Tavily are present
+  - Uses LangChain-backed real analysis adapters plus real search/extraction providers
 
 ## Cross-Cutting Concerns
 
 - artifact schema stability
 - agent instructions and result schemas
+- provider-family routing and model configuration
 - dependency-driven orchestration
+- graph checkpoints and restart recovery
 - event streaming and debug traces
 - optional persistence adapters
 - export contracts

@@ -4,7 +4,7 @@ import pytest
 
 from content_evaluation.config import Settings
 from content_evaluation.domain.exceptions import ConfigurationError
-from content_evaluation.domain.models import RuntimeMode
+from content_evaluation.domain.models import AnalysisProviderFamily, OrchestratorBackend, RuntimeMode
 
 
 def test_settings_report_live_mode_when_provider_keys_exist() -> None:
@@ -16,10 +16,12 @@ def test_settings_report_live_mode_when_provider_keys_exist() -> None:
     )
 
     assert settings.runtime_mode is RuntimeMode.LIVE
+    assert settings.analysis_provider_family is AnalysisProviderFamily.OPENAI
+    assert settings.orchestrator_backend is OrchestratorBackend.LANGGRAPH
 
 
 def test_production_settings_require_live_dependencies() -> None:
     """Fail fast when production mode is missing required settings."""
 
-    with pytest.raises(ConfigurationError, match="CONTENT_EVAL_OPENAI_API_KEY"):
+    with pytest.raises(ConfigurationError, match="configured analysis provider key"):
         Settings(app_env="production", cors_origins=["https://app.example.com"])

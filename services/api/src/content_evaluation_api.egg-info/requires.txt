@@ -1,5 +1,10 @@
 fastapi<1.0.0,>=0.116.0
 httpx<1.0.0,>=0.28.0
+langchain-anthropic<1.0.0,>=0.3.0
+langchain-core<1.0.0,>=0.3.0
+langchain-google-genai<3.0.0,>=2.0.0
+langchain-openai<1.0.0,>=0.3.0
+langgraph<1.0.0,>=0.3.0
 psycopg[binary]<4.0.0,>=3.2.0
 pydantic<3.0.0,>=2.10.0
 pydantic-settings<3.0.0,>=2.6.0

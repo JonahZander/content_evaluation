@@ -41,6 +41,22 @@ class RuntimeMode(StrEnum):
     LIVE = "live"
 
 
+class OrchestratorBackend(StrEnum):
+    """Enumerate orchestration engines."""
+
+    LEGACY = "legacy"
+    LANGGRAPH = "langgraph"
+
+
+class AnalysisProviderFamily(StrEnum):
+    """Enumerate supported LLM provider families."""
+
+    OPENAI = "openai"
+    ANTHROPIC = "anthropic"
+    GEMINI = "gemini"
+    MOCK = "mock"
+
+
 class PersistenceMode(StrEnum):
     """Enumerate persistence strategies."""
 
@@ -272,12 +288,24 @@ class ArtifactDebug(BaseModel):
     traces: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class ProviderRoute(BaseModel):
+    """Store provider routing settings for one agent execution."""
+
+    family: AnalysisProviderFamily
+    model_name: str
+    temperature: float = 0.0
+    timeout_seconds: float = 45.0
+    max_retries: int = 3
+    streaming: bool = False
+
+
 class RunConfig(BaseModel):
     """Store run configuration that shapes artifact creation."""
 
     selected_agents: list[str]
     resolved_agents: list[str] = Field(default_factory=list)
     runtime_mode: RuntimeMode
+    orchestrator_backend: OrchestratorBackend = OrchestratorBackend.LANGGRAPH
     persistence_mode: PersistenceMode = PersistenceMode.SESSION
     include_debug_trace: bool = False
 
@@ -327,6 +355,43 @@ class RunJob(BaseModel):
     updated_at: datetime = Field(default_factory=now_utc)
 
 
+class GraphNodeResult(BaseModel):
+    """Store one node-level execution result used by graph checkpoints."""
+
+    node_id: str
+    agent_id: str | None = None
+    status: str
+    summary: str | None = None
+    model_name: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class GraphRunState(BaseModel):
+    """Store the resumable internal graph state for one artifact run."""
+
+    artifact_id: UUID
+    input_data: RunInput
+    selected_agents: list[str] = Field(default_factory=list)
+    resolved_agents: list[str] = Field(default_factory=list)
+    completed_nodes: list[str] = Field(default_factory=list)
+    completed_agents: list[str] = Field(default_factory=list)
+    extracted_text: str | None = None
+    extracted_title: str | None = None
+    node_results: list[GraphNodeResult] = Field(default_factory=list)
+    error_message: str | None = None
+    checkpoint_version: int = 0
+    last_updated_at: datetime = Field(default_factory=now_utc)
+
+
+class GraphCheckpoint(BaseModel):
+    """Store the most recent durable graph checkpoint for one artifact."""
+
+    artifact_id: UUID
+    state: GraphRunState
+    created_at: datetime = Field(default_factory=now_utc)
+    updated_at: datetime = Field(default_factory=now_utc)
+
+
 class AgentCatalogEntry(BaseModel):
     """Expose one agent definition over the API."""
 
@@ -338,6 +403,8 @@ class AgentCatalogEntry(BaseModel):
     provider_kind: ProviderKind
     description: str
     default_enabled: bool = True
+    preferred_provider_family: AnalysisProviderFamily | None = None
+    preferred_model_name: str | None = None
 
 
 class ReadinessReport(BaseModel):
@@ -349,3 +416,4 @@ class ReadinessReport(BaseModel):
     persistent_storage: bool
     database_ready: bool
     providers_ready: bool
+    orchestrator_backend: OrchestratorBackend

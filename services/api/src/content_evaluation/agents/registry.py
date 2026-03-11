@@ -12,6 +12,7 @@ from content_evaluation.domain.models import (
     AgentCategory,
     AgentExecutionMode,
     ProviderKind,
+    ProviderRoute,
 )
 
 
@@ -38,6 +39,7 @@ class AgentDefinition:
     instruction_file: str
     result_schema: type[BaseModel]
     default_enabled: bool = True
+    preferred_route: ProviderRoute | None = None
 
     def instruction_path(self) -> Path:
         """Return the absolute instruction path."""
@@ -56,6 +58,12 @@ class AgentDefinition:
             execution_mode=self.execution_mode,
             provider_kind=self.provider_kind,
             default_enabled=self.default_enabled,
+            preferred_provider_family=(
+                self.preferred_route.family if self.preferred_route is not None else None
+            ),
+            preferred_model_name=(
+                self.preferred_route.model_name if self.preferred_route is not None else None
+            ),
         )
 
 

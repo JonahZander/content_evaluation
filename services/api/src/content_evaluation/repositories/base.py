@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Protocol
 from uuid import UUID
 
-from content_evaluation.domain.models import AnalysisArtifact, RunJob
+from content_evaluation.domain.models import AnalysisArtifact, GraphCheckpoint, RunJob
 
 
 class RunRepository(Protocol):
@@ -40,3 +40,12 @@ class RunRepository(Protocol):
 
     async def readiness_check(self) -> bool:
         """Return whether the storage backend is ready."""
+
+    async def save_graph_checkpoint(self, checkpoint: GraphCheckpoint) -> GraphCheckpoint:
+        """Persist the latest graph checkpoint for one artifact."""
+
+    async def get_graph_checkpoint(self, artifact_id: UUID) -> GraphCheckpoint | None:
+        """Return the latest graph checkpoint for one artifact."""
+
+    async def delete_graph_checkpoint(self, artifact_id: UUID) -> None:
+        """Remove the stored graph checkpoint for one artifact."""

@@ -4,7 +4,7 @@
 
 This project uses a code-orchestrated multi-agent model:
 
-- one orchestrator plans and schedules the run
+- one LangGraph-backed orchestrator plans and schedules the run
 - specialist agents perform narrow analysis tasks
 - agents do not autonomously spawn other agents
 - dependencies determine execution order
@@ -38,6 +38,7 @@ Each agent should be declared with:
 - `execution_mode`
 - `instruction_file`
 - `result_schema`
+- optional provider/model routing metadata
 
 ## Execution Rules
 
@@ -47,6 +48,7 @@ Each agent should be declared with:
 - Dependent agents wait for prerequisites.
 - Synthesis/scoring runs after upstream specialist agents finish.
 - Each status transition emits a durable event for the live timeline.
+- Each completed node writes a resumable graph checkpoint.
 
 ## Instruction Organization
 
@@ -66,6 +68,7 @@ Each agent should be declared with:
 - Source metadata
 - Upstream agent outputs when a dependency exists
 - Run configuration including selected agents and debug settings
+- Internal graph checkpoint state for resuming interrupted runs
 
 ## Shared Outputs
 
@@ -93,5 +96,5 @@ Each agent should be declared with:
   - Trafilatura-backed extraction provider in live mode
   - Mock extractor in development/test fallback
 - Analysis categories
-  - OpenAI in live mode
+  - LangChain-routed OpenAI, Anthropic, or Gemini in live mode
   - Mock deterministic analysis provider in development/test fallback

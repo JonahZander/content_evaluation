@@ -8,7 +8,7 @@ from uuid import UUID
 import psycopg
 from psycopg.rows import dict_row
 
-from content_evaluation.domain.models import AnalysisArtifact, RunJob
+from content_evaluation.domain.models import AnalysisArtifact, GraphCheckpoint, RunJob
 from content_evaluation.repositories.in_memory import InMemoryRunRepository
 
 
@@ -33,6 +33,12 @@ class PostgresRunRepository(InMemoryRunRepository):
             """,
             """
             create table if not exists run_jobs (
+                artifact_id uuid primary key,
+                payload jsonb not null
+            )
+            """,
+            """
+            create table if not exists graph_checkpoints (
                 artifact_id uuid primary key,
                 payload jsonb not null
             )
@@ -132,6 +138,46 @@ class PostgresRunRepository(InMemoryRunRepository):
         except psycopg.Error:
             return False
         return True
+
+    async def save_graph_checkpoint(self, checkpoint: GraphCheckpoint) -> GraphCheckpoint:
+        """Persist one graph checkpoint."""
+
+        self._graph_checkpoints[checkpoint.artifact_id] = checkpoint
+        await self._upsert_json(
+            "graph_checkpoints",
+            "artifact_id",
+            str(checkpoint.artifact_id),
+            checkpoint.model_dump(mode="json"),
+        )
+        return checkpoint
+
+    async def get_graph_checkpoint(self, artifact_id: UUID) -> GraphCheckpoint | None:
+        """Return one graph checkpoint, loading from PostgreSQL if needed."""
+
+        checkpoint = self._graph_checkpoints.get(artifact_id)
+        if checkpoint is not None:
+            return checkpoint
+        async with await psycopg.AsyncConnection.connect(self._database_url, row_factory=dict_row) as connection:
+            async with connection.cursor() as cursor:
+                await cursor.execute(
+                    "select payload from graph_checkpoints where artifact_id = %s",
+                    (str(artifact_id),),
+                )
+                row = await cursor.fetchone()
+        if row is None:
+            return None
+        parsed = GraphCheckpoint.model_validate(row["payload"])
+        self._graph_checkpoints[artifact_id] = parsed
+        return parsed
+
+    async def delete_graph_checkpoint(self, artifact_id: UUID) -> None:
+        """Delete one graph checkpoint from PostgreSQL and memory."""
+
+        self._graph_checkpoints.pop(artifact_id, None)
+        async with await psycopg.AsyncConnection.connect(self._database_url) as connection:
+            async with connection.cursor() as cursor:
+                await cursor.execute("delete from graph_checkpoints where artifact_id = %s", (str(artifact_id),))
+            await connection.commit()
 
     async def _upsert_json(self, table: str, key_column: str, key_value: str, payload: dict[str, object]) -> None:
         """Upsert one JSON payload into PostgreSQL."""

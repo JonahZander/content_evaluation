@@ -6,7 +6,7 @@ from copy import deepcopy
 from uuid import UUID
 
 from content_evaluation.domain.exceptions import NotFoundError
-from content_evaluation.domain.models import AnalysisArtifact, RunJob, RunJobStatus, now_utc
+from content_evaluation.domain.models import AnalysisArtifact, GraphCheckpoint, RunJob, RunJobStatus, now_utc
 
 
 class InMemoryRunRepository:
@@ -17,6 +17,7 @@ class InMemoryRunRepository:
 
         self._artifacts: dict[UUID, AnalysisArtifact] = {}
         self._jobs: dict[UUID, RunJob] = {}
+        self._graph_checkpoints: dict[UUID, GraphCheckpoint] = {}
 
     async def create_artifact(self, artifact: AnalysisArtifact) -> AnalysisArtifact:
         """Persist a new artifact."""
@@ -100,6 +101,24 @@ class InMemoryRunRepository:
         """Return storage readiness for the in-memory repository."""
 
         return True
+
+    async def save_graph_checkpoint(self, checkpoint: GraphCheckpoint) -> GraphCheckpoint:
+        """Persist one graph checkpoint in memory."""
+
+        checkpoint.updated_at = now_utc()
+        self._graph_checkpoints[checkpoint.artifact_id] = deepcopy(checkpoint)
+        return deepcopy(checkpoint)
+
+    async def get_graph_checkpoint(self, artifact_id: UUID) -> GraphCheckpoint | None:
+        """Return one graph checkpoint snapshot."""
+
+        checkpoint = self._graph_checkpoints.get(artifact_id)
+        return deepcopy(checkpoint) if checkpoint is not None else None
+
+    async def delete_graph_checkpoint(self, artifact_id: UUID) -> None:
+        """Delete one persisted graph checkpoint."""
+
+        self._graph_checkpoints.pop(artifact_id, None)
 
     def _require_job(self, artifact_id: UUID) -> RunJob:
         """Return a queued job or raise."""

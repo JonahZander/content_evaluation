@@ -1,4 +1,4 @@
-import { AgentCatalogEntry, AnalysisArtifact, PersistenceMode, ReviewState } from "@/lib/types";
+import { AgentCatalogEntry, AnalysisArtifact, ArtifactDocument, PersistenceMode, ReviewState } from "@/lib/types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
@@ -55,6 +55,24 @@ export async function createRun(payload: CreateRunPayload): Promise<AnalysisArti
   );
 }
 
+export async function previewSource(payload: Omit<CreateRunPayload, "selectedAgents" | "persistenceMode" | "includeDebugTrace">): Promise<ArtifactDocument> {
+  return parseJson(
+    await fetch(`${API_BASE_URL}/api/v1/sources/preview`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        source_type: payload.sourceType,
+        source_label: payload.sourceLabel,
+        title: payload.title,
+        text: payload.text,
+        url: payload.url,
+      }),
+    }),
+  );
+}
+
 export async function createRunFromFile(
   file: File,
   options: Pick<CreateRunPayload, "selectedAgents" | "persistenceMode" | "includeDebugTrace">,
@@ -75,6 +93,14 @@ export async function createRunFromFile(
 
 export async function fetchArtifact(artifactId: string): Promise<AnalysisArtifact> {
   return parseJson(await fetch(`${API_BASE_URL}/api/v1/runs/${artifactId}`));
+}
+
+export async function cancelRun(artifactId: string): Promise<AnalysisArtifact> {
+  return parseJson(
+    await fetch(`${API_BASE_URL}/api/v1/runs/${artifactId}/cancel`, {
+      method: "POST",
+    }),
+  );
 }
 
 export async function importArtifact(artifact: AnalysisArtifact): Promise<AnalysisArtifact> {

@@ -30,6 +30,7 @@ interface DocumentPaneProps {
   anchors: ArtifactAnchor[];
   threads: ArtifactThread[];
   anchorThreadMap: Map<string, AnchorThread>;
+  selectionEnabled?: boolean;
   hoveredAnchorId: string | null;
   anchorRefs: MutableRefObject<Record<string, HTMLSpanElement | null>>;
   commentRefs: MutableRefObject<Record<string, HTMLElement | null>>;
@@ -395,6 +396,7 @@ export function DocumentPane({
   anchors,
   threads,
   anchorThreadMap,
+  selectionEnabled = true,
   hoveredAnchorId,
   anchorRefs,
   commentRefs,
@@ -517,6 +519,9 @@ export function DocumentPane({
               }`}
               data-block-id={block.id}
               onMouseUp={(event) => {
+                if (!selectionEnabled) {
+                  return;
+                }
                 const draft = resolveSelectionDraft(event.currentTarget, window.getSelection(), block.id);
                 onSelectionDraft(draft);
               }}

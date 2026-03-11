@@ -12,6 +12,7 @@ import { SelectionBanner } from "@/components/review/SelectionBanner";
 import { categoryColors } from "@/components/review/category-colors";
 import {
   addReply,
+  cancelRun,
   createComment,
   createRun,
   deleteHumanComment,
@@ -19,10 +20,18 @@ import {
   fetchArtifact,
   getExportUrl,
   importArtifact,
+  previewSource,
   updateHumanComment,
   updateReviewState,
 } from "@/lib/api";
-import type { AgentCatalogEntry, AnalysisArtifact, ArtifactThread, ReviewState } from "@/lib/types";
+import type {
+  AgentCatalogEntry,
+  AnalysisArtifact,
+  ArtifactDocument,
+  ArtifactThread,
+  ReviewState,
+  RunStatus,
+} from "@/lib/types";
 
 interface SelectionDraft {
   blockId: string;
@@ -35,13 +44,33 @@ interface ReviewWorkbenchProps {
   initialArtifact: AnalysisArtifact | null;
 }
 
+interface StoredWorkbenchState {
+  artifact: AnalysisArtifact | null;
+  previewDocument: ArtifactDocument | null;
+  formState: ReviewFormState;
+  hasDownloadedJson: boolean;
+}
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const SESSION_STORAGE_KEY = "content-evaluation:artifact";
+const TERMINAL_RUN_STATUSES = new Set<RunStatus>(["completed", "failed", "canceled"]);
+
+const DEFAULT_FORM_STATE: ReviewFormState = {
+  sourceType: "text",
+  title: "",
+  sourceLabel: "Manual input",
+  text: "",
+  url: "",
+  persistenceMode: "session",
+  includeDebugTrace: true,
+  selectedAgents: [],
+};
 
 export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   const [artifact, setArtifact] = useState<AnalysisArtifact | null>(initialArtifact);
+  const [previewDocument, setPreviewDocument] = useState<ArtifactDocument | null>(null);
   const [agents, setAgents] = useState<AgentCatalogEntry[]>([]);
-  const [statusMessage, setStatusMessage] = useState("Choose content, choose agents, and start a session.");
+  const [statusMessage, setStatusMessage] = useState("Choose content, import it if needed, and start a session.");
   const [hoveredAnchorId, setHoveredAnchorId] = useState<string | null>(null);
   const [selectionDraft, setSelectionDraft] = useState<SelectionDraft | null>(null);
   const [commentDraft, setCommentDraft] = useState("");
@@ -49,20 +78,13 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingBody, setEditingBody] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isPreviewing, setIsPreviewing] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
   const [importInputKey, setImportInputKey] = useState(0);
   const [activeArtifactId, setActiveArtifactId] = useState<string | null>(initialArtifact?.artifact_id ?? null);
-  const [formState, setFormState] = useState<ReviewFormState>({
-    sourceType: "text",
-    title: "",
-    sourceLabel: "Manual input",
-    text: "",
-    url: "",
-    persistenceMode: "session",
-    includeDebugTrace: true,
-    selectedAgents: [],
-  });
+  const [hasDownloadedJson, setHasDownloadedJson] = useState(false);
+  const [formState, setFormState] = useState<ReviewFormState>(DEFAULT_FORM_STATE);
 
   const workspaceRef = useRef<HTMLDivElement | null>(null);
   const anchorRefs = useRef<Record<string, HTMLSpanElement | null>>({});
@@ -72,14 +94,15 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     fetchAgents()
       .then((catalog) => {
         setAgents(catalog);
-        setFormState((current) =>
-          current.selectedAgents.length
-            ? current
-            : {
-                ...current,
-                selectedAgents: catalog.filter((agent) => agent.default_enabled).map((agent) => agent.agent_id),
-              },
-        );
+        setFormState((current) => {
+          if (current.selectedAgents.length > 0) {
+            return current;
+          }
+          return {
+            ...current,
+            selectedAgents: catalog.filter((agent) => agent.default_enabled).map((agent) => agent.agent_id),
+          };
+        });
       })
       .catch(() => {
         setStatusMessage("Could not load the agent catalog.");
@@ -87,10 +110,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   }, []);
 
   useEffect(() => {
-    if (initialArtifact !== null) {
-      return;
-    }
-    if (typeof window === "undefined") {
+    if (initialArtifact !== null || typeof window === "undefined") {
       return;
     }
     const stored = window.sessionStorage.getItem(SESSION_STORAGE_KEY);
@@ -98,18 +118,39 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       return;
     }
     try {
-      const parsed = JSON.parse(stored) as AnalysisArtifact;
-      setArtifact(parsed);
-      setActiveArtifactId(parsed.status === "running" || parsed.status === "queued" ? parsed.artifact_id : null);
-      setStatusMessage(`Restored ${parsed.status} artifact from this browser session.`);
-      setFormState((current) => ({
-        ...current,
-        title: parsed.document?.title ?? parsed.source.title ?? current.title,
-        text: parsed.document?.text ?? current.text,
-        selectedAgents: parsed.run_config.selected_agents,
-        persistenceMode: parsed.run_config.persistence_mode,
-        includeDebugTrace: parsed.run_config.include_debug_trace,
-      }));
+      const parsed = JSON.parse(stored) as StoredWorkbenchState | AnalysisArtifact;
+      if (isStoredWorkbenchState(parsed)) {
+        setArtifact(parsed.artifact);
+        setPreviewDocument(parsed.previewDocument);
+        setFormState(parsed.formState);
+        setHasDownloadedJson(parsed.hasDownloadedJson);
+        if (parsed.artifact !== null) {
+          setActiveArtifactId(
+            parsed.artifact.status === "running" || parsed.artifact.status === "queued"
+              ? parsed.artifact.artifact_id
+              : null,
+          );
+          setStatusMessage(`Restored ${parsed.artifact.status} artifact from this browser session.`);
+        } else if (parsed.previewDocument !== null) {
+          setStatusMessage(`Restored imported draft preview for ${parsed.previewDocument.title}.`);
+        }
+        return;
+      }
+      if (isAnalysisArtifact(parsed)) {
+        setArtifact(parsed);
+        setActiveArtifactId(parsed.status === "running" || parsed.status === "queued" ? parsed.artifact_id : null);
+        setStatusMessage(`Restored ${parsed.status} artifact from this browser session.`);
+        setFormState((current) => ({
+          ...current,
+          title: parsed.document?.title ?? parsed.source.title ?? current.title,
+          text: parsed.document?.raw_content ?? parsed.document?.text ?? current.text,
+          url: parsed.source.url ?? current.url,
+          sourceLabel: parsed.source.source_label,
+          selectedAgents: parsed.run_config.selected_agents,
+          persistenceMode: parsed.run_config.persistence_mode,
+          includeDebugTrace: parsed.run_config.include_debug_trace,
+        }));
+      }
     } catch {
       window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
     }
@@ -119,16 +160,32 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     if (typeof window === "undefined") {
       return;
     }
-    if (artifact === null) {
+    const storedState: StoredWorkbenchState = {
+      artifact,
+      previewDocument,
+      formState,
+      hasDownloadedJson,
+    };
+    if (
+      artifact === null &&
+      previewDocument === null &&
+      !formState.title &&
+      !formState.text &&
+      !formState.url &&
+      formState.sourceType === "text"
+    ) {
       window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
       return;
     }
-    window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(artifact));
-  }, [artifact]);
+    window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(storedState));
+  }, [artifact, previewDocument, formState, hasDownloadedJson]);
 
   async function refreshArtifact(artifactId: string) {
     const updated = await fetchArtifact(artifactId);
     setArtifact(updated);
+    if (updated.document !== null) {
+      setPreviewDocument(null);
+    }
     setStatusMessage(`Run ${updated.status}`);
     return updated;
   }
@@ -143,7 +200,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       const parsed = JSON.parse(event.data) as { snapshot_available?: boolean };
       if (parsed.snapshot_available) {
         const updated = await refreshArtifact(activeArtifactId);
-        if (updated.status === "completed" || updated.status === "failed") {
+        if (TERMINAL_RUN_STATUSES.has(updated.status)) {
           setActiveArtifactId(null);
           eventSource.close();
         }
@@ -214,14 +271,101 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     return completed / artifact.agent_plan.length;
   }, [artifact]);
 
+  const displayDocument = artifact?.document ?? previewDocument;
+  const canStopRun = artifact !== null && (artifact.status === "queued" || artifact.status === "running");
+  const canPreviewUrl = formState.sourceType === "url" && formState.url.trim().length > 0;
+  const canAnalyze =
+    !isSubmitting &&
+    ((formState.sourceType === "url" && previewDocument !== null) ||
+      (formState.sourceType === "text" && formState.text.trim().length > 0) ||
+      (formState.sourceType === "file" && selectedFile !== null));
+
+  function clearAnalysisState(resetForm: boolean) {
+    setArtifact(null);
+    setPreviewDocument(null);
+    setActiveArtifactId(null);
+    setSelectionDraft(null);
+    setCommentDraft("");
+    setReplyDrafts({});
+    setEditingCommentId(null);
+    setEditingBody("");
+    setSelectedFile(null);
+    setFileInputKey((current) => current + 1);
+    setHasDownloadedJson(false);
+    if (resetForm) {
+      setFormState((current) => ({
+        ...DEFAULT_FORM_STATE,
+        selectedAgents: current.selectedAgents,
+        persistenceMode: current.persistenceMode,
+        includeDebugTrace: current.includeDebugTrace,
+      }));
+    }
+  }
+
+  async function maybeReplaceCurrentAnalysis(resetForm: boolean) {
+    const hasCurrentAnalysis = artifact !== null || previewDocument !== null;
+    if (!hasCurrentAnalysis) {
+      if (resetForm) {
+        clearAnalysisState(true);
+      }
+      return true;
+    }
+
+    if (!hasDownloadedJson && typeof window !== "undefined") {
+      const confirmed = window.confirm(
+        "Start a new analysis? The current analysis has not been downloaded as JSON and will be lost.",
+      );
+      if (!confirmed) {
+        return false;
+      }
+    }
+
+    if (artifact !== null && (artifact.status === "queued" || artifact.status === "running")) {
+      try {
+        await cancelRun(artifact.artifact_id);
+      } catch {
+        setStatusMessage("Could not stop the current run before starting over.");
+        return false;
+      }
+    }
+
+    clearAnalysisState(resetForm);
+    return true;
+  }
+
   async function handleSubmit() {
+    const isUrlPreviewRun = formState.sourceType === "url" && previewDocument !== null && artifact === null;
+    if (!isUrlPreviewRun && (artifact !== null || previewDocument !== null)) {
+      const replaced = await maybeReplaceCurrentAnalysis(false);
+      if (!replaced) {
+        return;
+      }
+    }
+
     setStatusMessage("Submitting analysis session...");
     setIsSubmitting(true);
     try {
-      if (formState.sourceType === "file" && selectedFile !== null && !/\.(txt|md)$/i.test(selectedFile.name)) {
-        setStatusMessage("Only .txt and .md uploads are supported");
+      if (formState.sourceType === "file") {
+        if (selectedFile === null) {
+          setStatusMessage("Choose a .txt or .md file first.");
+          return;
+        }
+        if (!/\.(txt|md)$/i.test(selectedFile.name)) {
+          setStatusMessage("Only .txt and .md uploads are supported.");
+          return;
+        }
+      }
+
+      if (formState.sourceType === "text" && !formState.text.trim()) {
+        setStatusMessage("Paste draft text before starting analysis.");
         return;
       }
+
+      if (formState.sourceType === "url" && previewDocument === null) {
+        setStatusMessage("Import the draft from the URL before starting analysis.");
+        return;
+      }
+
       const payload =
         formState.sourceType === "file" && selectedFile !== null
           ? {
@@ -233,16 +377,26 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
               persistenceMode: formState.persistenceMode,
               includeDebugTrace: formState.includeDebugTrace,
             }
-          : {
-              sourceType: formState.sourceType,
-              sourceLabel: formState.sourceLabel || (formState.sourceType === "url" ? formState.url : "Manual input"),
-              title: formState.title,
-              text: formState.text,
-              url: formState.url,
-              selectedAgents: resolveSelectedAgents(formState.selectedAgents, agents),
-              persistenceMode: formState.persistenceMode,
-              includeDebugTrace: formState.includeDebugTrace,
-            };
+          : formState.sourceType === "url" && previewDocument !== null
+            ? {
+                sourceType: "url" as const,
+                sourceLabel: formState.url,
+                title: formState.title || previewDocument.title,
+                text: previewDocument.raw_content || previewDocument.text,
+                url: formState.url,
+                selectedAgents: resolveSelectedAgents(formState.selectedAgents, agents),
+                persistenceMode: formState.persistenceMode,
+                includeDebugTrace: formState.includeDebugTrace,
+              }
+            : {
+                sourceType: "text" as const,
+                sourceLabel: formState.sourceLabel || "Manual input",
+                title: formState.title,
+                text: formState.text,
+                selectedAgents: resolveSelectedAgents(formState.selectedAgents, agents),
+                persistenceMode: formState.persistenceMode,
+                includeDebugTrace: formState.includeDebugTrace,
+              };
 
       const createdArtifact = await createRun(payload);
       setArtifact(createdArtifact);
@@ -250,6 +404,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       setSelectionDraft(null);
       setCommentDraft("");
       setEditingCommentId(null);
+      setHasDownloadedJson(false);
       setStatusMessage(`Artifact ${createdArtifact.artifact_id} queued`);
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Could not submit run");
@@ -258,21 +413,93 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     }
   }
 
+  async function handlePreviewUrl() {
+    if (!formState.url.trim()) {
+      setStatusMessage("Enter a URL first.");
+      return;
+    }
+
+    const replacingCurrentAnalysis = artifact !== null || previewDocument !== null;
+    if (replacingCurrentAnalysis) {
+      const replaced = await maybeReplaceCurrentAnalysis(false);
+      if (!replaced) {
+        return;
+      }
+    }
+
+    setIsPreviewing(true);
+    setStatusMessage("Importing draft from URL...");
+    try {
+      const document = await previewSource({
+        sourceType: "url",
+        sourceLabel: formState.url,
+        title: formState.title,
+        url: formState.url,
+      });
+      setPreviewDocument(document);
+      setHasDownloadedJson(false);
+      setStatusMessage(`Imported draft preview from ${formState.url}`);
+      setFormState((current) => ({
+        ...current,
+        title: current.title || document.title,
+        sourceLabel: current.url || current.sourceLabel,
+      }));
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Could not import draft from URL");
+    } finally {
+      setIsPreviewing(false);
+    }
+  }
+
   async function handleImportFile(file: File | null) {
     if (file === null) {
       return;
     }
+
+    const replacingCurrentAnalysis = artifact !== null || previewDocument !== null;
+    if (replacingCurrentAnalysis) {
+      const replaced = await maybeReplaceCurrentAnalysis(false);
+      if (!replaced) {
+        setImportInputKey((current) => current + 1);
+        return;
+      }
+    }
+
     try {
       const parsed = JSON.parse(await file.text()) as AnalysisArtifact;
       const imported = await importArtifact(parsed);
       setArtifact(imported);
+      setPreviewDocument(null);
       setActiveArtifactId(null);
+      setHasDownloadedJson(true);
       setStatusMessage(`Imported artifact ${imported.artifact_id}`);
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Could not import artifact");
     } finally {
       setImportInputKey((current) => current + 1);
     }
+  }
+
+  async function handleStopRun() {
+    if (artifact === null || (artifact.status !== "queued" && artifact.status !== "running")) {
+      return;
+    }
+    try {
+      const canceledArtifact = await cancelRun(artifact.artifact_id);
+      setArtifact(canceledArtifact);
+      setActiveArtifactId(null);
+      setStatusMessage("Run canceled");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Could not stop the run");
+    }
+  }
+
+  async function handleStartNewAnalysis() {
+    const replaced = await maybeReplaceCurrentAnalysis(true);
+    if (!replaced) {
+      return;
+    }
+    setStatusMessage("Started a new analysis draft.");
   }
 
   async function handleCreateComment() {
@@ -339,13 +566,19 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     if (artifact === null) {
       return;
     }
+    if (format === "json") {
+      setHasDownloadedJson(true);
+    }
     window.open(getExportUrl(artifact.artifact_id, format), "_blank", "noopener,noreferrer");
   }
 
   return (
     <main className={styles.page}>
       <div className={styles.shell}>
-        <ReviewHero overallScore={artifact?.summary?.overall_score ?? 0} verdict={artifact?.summary?.verdict ?? "No artifact loaded"} />
+        <ReviewHero
+          overallScore={artifact?.summary?.overall_score ?? 0}
+          verdict={artifact?.summary?.verdict ?? (displayDocument ? "Imported draft ready for review" : "No artifact loaded")}
+        />
 
         <ReviewToolbar
           formState={formState}
@@ -354,6 +587,10 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
           selectedFile={selectedFile}
           statusMessage={statusMessage}
           submitting={isSubmitting}
+          previewing={isPreviewing}
+          canAnalyze={canAnalyze}
+          canPreviewUrl={canPreviewUrl}
+          canStopRun={canStopRun}
           importInputKey={importInputKey}
           onFormChange={(updater) =>
             setFormState((current) => {
@@ -370,10 +607,17 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
           onFileChange={(file) => {
             setSelectedFile(file);
             setFileInputKey((current) => current + 1);
-            setFormState((current) => ({ ...current, sourceLabel: file?.name ?? "upload" }));
+            setFormState((current) => ({
+              ...current,
+              sourceLabel: file?.name ?? "upload",
+              title: file?.name ?? current.title,
+            }));
           }}
           onImportFileChange={handleImportFile}
+          onPreviewUrl={handlePreviewUrl}
           onSubmit={handleSubmit}
+          onStopRun={handleStopRun}
+          onStartNewAnalysis={handleStartNewAnalysis}
           onExport={handleExport}
         />
 
@@ -394,7 +638,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
           </div>
           <div className={styles.progressMeta}>
             <span>{Math.round(progress * 100)}% complete</span>
-            <span>{artifact?.status ?? "idle"}</span>
+            <span>{artifact?.status ?? (previewDocument ? "draft imported" : "idle")}</span>
           </div>
           <div className={styles.agentStatusGrid}>
             {(artifact?.agent_plan ?? []).map((item) => (
@@ -411,15 +655,16 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
 
         <section className={styles.workspace} ref={workspaceRef}>
           <DocumentPane
-            document={artifact?.document ?? null}
+            document={displayDocument}
             anchors={artifact?.anchors ?? []}
             threads={normalizedThreads}
             anchorThreadMap={anchorThreadMap}
+            selectionEnabled={artifact !== null}
             hoveredAnchorId={hoveredAnchorId}
             anchorRefs={anchorRefs}
             commentRefs={commentRefs}
             onHoverAnchor={setHoveredAnchorId}
-            onSelectionDraft={setSelectionDraft}
+            onSelectionDraft={(draft) => setSelectionDraft(artifact !== null ? draft : null)}
             replyDrafts={replyDrafts}
             editingCommentId={editingCommentId}
             editingBody={editingBody}
@@ -462,4 +707,12 @@ function resolveSelectedAgents(selectedAgents: string[], agents: AgentCatalogEnt
 
   selectedAgents.forEach(visit);
   return [...visited];
+}
+
+function isStoredWorkbenchState(value: unknown): value is StoredWorkbenchState {
+  return typeof value === "object" && value !== null && "formState" in value;
+}
+
+function isAnalysisArtifact(value: unknown): value is AnalysisArtifact {
+  return typeof value === "object" && value !== null && "artifact_id" in value && "status" in value;
 }

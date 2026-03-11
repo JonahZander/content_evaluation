@@ -7,7 +7,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 ## Target UI Regions
 
 - Intake panel
-  - URL input, file upload, pasted text, artifact import, and agent selectors
+  - URL input with explicit draft-import preview, file upload, pasted text, artifact import, and agent selectors
 - Progress panel
   - Visually pleasing progress bar, per-agent status, stage timeline, and partial findings
 - Analysis summary
@@ -31,6 +31,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 ## Key Interaction Patterns
 
 - Selecting a text span opens a reviewer comment composer for a new standalone human comment.
+- URL sources should be imported and previewed before analysis starts so the reviewer can inspect the normalized draft first.
 - Comments identify the agent or reviewer that produced them.
 - Agent comments are replyable by the human reviewer.
 - Agent comments expose immediate `Accept`, `Reject`, and `Uncertain` actions.
@@ -41,6 +42,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Multiple comments on the same span should stack vertically while connecting back to the same text selection.
 - Paragraphs with comments should reserve the vertical space needed for those comments before the next paragraph begins.
 - Export and import actions should be visible from the main toolbar.
+- The toolbar should expose a stop-run action for queued/running work and a new-analysis reset action.
 - Invalid review actions should be disabled when no real artifact is loaded.
 
 ## Target Behaviors
@@ -51,12 +53,15 @@ Provide a high-legibility review surface where users can inspect source text, wa
   - `strong`
   - `em`
   - fenced code blocks
+- URL mode should not display the pasted-text textarea because analysis runs from the imported URL preview content.
 - Unsupported markdown should stay readable as text rather than render rich embeds or media.
 - Agent comments are immutable in content; reviewer input happens through replies and review-state actions.
 - Reviewer comments use the `human` category and are attached to an existing or newly created anchor.
 - Run status is visible in the toolbar and progress panel.
+- Starting a new analysis should warn before discarding a not-yet-downloaded JSON artifact.
 - Debug visibility should be toggleable when the artifact includes debug trace data.
 - Empty states are shown when no artifact or no comment threads are present.
+- When an anchor cannot be matched to a rendered block, its thread should render after the article in an unmatched-reference section instead of attaching to the first paragraph.
 
 ## Boundaries
 

@@ -19,11 +19,18 @@ interface ReviewToolbarProps {
   selectedFile: File | null;
   statusMessage: string;
   submitting: boolean;
+  previewing: boolean;
+  canAnalyze: boolean;
+  canPreviewUrl: boolean;
+  canStopRun: boolean;
   importInputKey: number;
   onFormChange: (updater: (current: ReviewFormState) => ReviewFormState) => void;
   onFileChange: (file: File | null) => void;
   onImportFileChange: (file: File | null) => void;
+  onPreviewUrl: () => void;
   onSubmit: () => void;
+  onStopRun: () => void;
+  onStartNewAnalysis: () => void;
   onExport: (format: "md" | "json") => void;
 }
 
@@ -34,11 +41,18 @@ export function ReviewToolbar({
   selectedFile,
   statusMessage,
   submitting,
+  previewing,
+  canAnalyze,
+  canPreviewUrl,
+  canStopRun,
   importInputKey,
   onFormChange,
   onFileChange,
   onImportFileChange,
+  onPreviewUrl,
   onSubmit,
+  onStopRun,
+  onStartNewAnalysis,
   onExport,
 }: ReviewToolbarProps) {
   return (
@@ -122,19 +136,30 @@ export function ReviewToolbar({
 
       <div className={styles.toolbarGroup}>
         {formState.sourceType === "url" ? (
-          <input
-            className={styles.toolbarInput}
-            data-testid="draft-url-input"
-            value={formState.url}
-            onChange={(event) =>
-              onFormChange((current) => ({
-                ...current,
-                url: event.target.value,
-                sourceLabel: event.target.value,
-              }))
-            }
-            placeholder="https://example.com/post"
-          />
+          <>
+            <input
+              className={styles.toolbarInput}
+              data-testid="draft-url-input"
+              value={formState.url}
+              onChange={(event) =>
+                onFormChange((current) => ({
+                  ...current,
+                  url: event.target.value,
+                  sourceLabel: event.target.value,
+                }))
+              }
+              placeholder="https://example.com/post"
+            />
+            <button
+              className={styles.ghostButton}
+              data-testid="import-url-button"
+              type="button"
+              onClick={onPreviewUrl}
+              disabled={!canPreviewUrl || previewing}
+            >
+              {previewing ? "Importing..." : "Import draft from URL"}
+            </button>
+          </>
         ) : null}
         {formState.sourceType === "file" ? (
           <div className={styles.fileInputWrap}>
@@ -148,7 +173,7 @@ export function ReviewToolbar({
             />
             {selectedFile ? <span className={styles.fileMeta}>{selectedFile.name}</span> : null}
           </div>
-        ) : (
+        ) : formState.sourceType === "text" ? (
           <textarea
             className={styles.toolbarTextarea}
             data-testid="draft-text-input"
@@ -156,19 +181,39 @@ export function ReviewToolbar({
             onChange={(event) => onFormChange((current) => ({ ...current, text: event.target.value }))}
             placeholder="Paste draft text"
           />
-        )}
+        ) : null}
       </div>
 
       <div className={styles.toolbarGroup}>
         <button
           className={styles.button}
+          data-testid="new-analysis-button"
+          type="button"
+          onClick={onStartNewAnalysis}
+        >
+          New analysis
+        </button>
+        <button
+          className={styles.button}
           data-testid="analyze-button"
           type="button"
           onClick={onSubmit}
-          disabled={submitting}
+          disabled={submitting || !canAnalyze}
         >
           {submitting ? "Submitting..." : "Analyze content"}
         </button>
+        <button
+          className={styles.ghostButton}
+          data-testid="stop-run-button"
+          type="button"
+          onClick={onStopRun}
+          disabled={!canStopRun}
+        >
+          Stop run
+        </button>
+      </div>
+
+      <div className={styles.toolbarGroup}>
         <label className={styles.ghostButton}>
           Import artifact
           <input

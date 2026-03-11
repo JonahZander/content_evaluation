@@ -18,7 +18,9 @@ vi.mock("@/lib/api", () => ({
     },
   ]),
   createRun: vi.fn(),
+  previewSource: vi.fn(),
   fetchArtifact: vi.fn(),
+  cancelRun: vi.fn(),
   importArtifact: vi.fn(),
   createComment: vi.fn().mockResolvedValue(undefined),
   addReply: vi.fn().mockResolvedValue(undefined),
@@ -50,7 +52,15 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  window.sessionStorage.clear();
+  vi.spyOn(window, "confirm").mockReturnValue(true);
   vi.mocked(api.fetchArtifact).mockResolvedValue(mockArtifact);
+  vi.mocked(api.previewSource).mockResolvedValue(mockArtifact.document!);
+  vi.mocked(api.cancelRun).mockResolvedValue({ ...mockArtifact, status: "canceled" });
+});
+
+afterEach(() => {
+  vi.clearAllMocks();
 });
 
 describe("ReviewWorkbench", () => {
@@ -88,5 +98,21 @@ describe("ReviewWorkbench", () => {
     fireEvent.click(screen.getByRole("button", { name: "Export Markdown" }));
     expect(openSpy).toHaveBeenCalled();
     openSpy.mockRestore();
+  });
+
+  it("uses a preview-first flow for URL sources", async () => {
+    render(<ReviewWorkbench initialArtifact={null} />);
+
+    fireEvent.change(screen.getByTestId("source-type-select"), { target: { value: "url" } });
+
+    expect(screen.getByTestId("draft-url-input")).toBeInTheDocument();
+    expect(screen.queryByTestId("draft-text-input")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId("draft-url-input"), {
+      target: { value: "https://example.com/post" },
+    });
+    fireEvent.click(screen.getByTestId("import-url-button"));
+
+    expect(await screen.findByText("How Editorial Teams Can Evaluate AI-Written Posts")).toBeInTheDocument();
   });
 });

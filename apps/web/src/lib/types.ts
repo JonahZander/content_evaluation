@@ -1,6 +1,6 @@
 export type SourceType = "url" | "text" | "file" | "artifact";
 export type ContentFormat = "plain_text" | "markdown";
-export type RunStatus = "queued" | "running" | "completed" | "failed";
+export type RunStatus = "draft" | "queued" | "running" | "completed" | "failed" | "canceled";
 export type ReviewState = "unreviewed" | "accepted" | "rejected" | "uncertain";
 export type AuthorType = "agent" | "human";
 export type AgentCategory = "similarity" | "ai_likelihood" | "value" | "audience" | "editorial" | "synthesis" | "human";

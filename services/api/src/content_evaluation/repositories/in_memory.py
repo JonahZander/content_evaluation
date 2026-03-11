@@ -65,7 +65,7 @@ class InMemoryRunRepository:
         """Mark one job as completed."""
 
         job = self._jobs.get(artifact_id)
-        if job is not None:
+        if job is not None and job.status is not RunJobStatus.CANCELED:
             job.status = RunJobStatus.COMPLETED
             job.updated_at = now_utc()
 
@@ -73,8 +73,18 @@ class InMemoryRunRepository:
         """Mark one job as failed."""
 
         job = self._require_job(artifact_id)
+        if job.status is RunJobStatus.CANCELED:
+            return
         job.status = RunJobStatus.FAILED
         job.updated_at = now_utc()
+
+    async def cancel_run_job(self, artifact_id: UUID) -> None:
+        """Mark one job as canceled."""
+
+        job = self._jobs.get(artifact_id)
+        if job is not None:
+            job.status = RunJobStatus.CANCELED
+            job.updated_at = now_utc()
 
     async def requeue_run_job(self, artifact_id: UUID) -> RunJob | None:
         """Move one job back to queued state."""
@@ -82,6 +92,8 @@ class InMemoryRunRepository:
         job = self._jobs.get(artifact_id)
         if job is None:
             return None
+        if job.status is RunJobStatus.CANCELED:
+            return deepcopy(job)
         job.status = RunJobStatus.QUEUED
         job.updated_at = now_utc()
         return deepcopy(job)

@@ -111,6 +111,14 @@ class PostgresRunRepository(InMemoryRunRepository):
         if job is not None:
             await self._upsert_json("run_jobs", "artifact_id", str(artifact_id), job.model_dump(mode="json"))
 
+    async def cancel_run_job(self, artifact_id: UUID) -> None:
+        """Mark one run job as canceled."""
+
+        await super().cancel_run_job(artifact_id)
+        job = self._jobs.get(artifact_id)
+        if job is not None:
+            await self._upsert_json("run_jobs", "artifact_id", str(artifact_id), job.model_dump(mode="json"))
+
     async def requeue_run_job(self, artifact_id: UUID) -> RunJob | None:
         """Move one run job back to queued state."""
 

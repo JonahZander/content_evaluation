@@ -18,7 +18,7 @@ from content_evaluation.agents.registry import (
     get_agent_definition,
     load_instruction_text,
 )
-from content_evaluation.domain.exceptions import NotFoundError, ValidationError
+from content_evaluation.domain.exceptions import NotFoundError, RunCancelledError, ValidationError
 from content_evaluation.domain.models import (
     AgentCatalogEntry,
     AgentCategory,
@@ -29,7 +29,10 @@ from content_evaluation.domain.models import (
     ArtifactAgentPlanItem,
     ArtifactAgentResult,
     ArtifactAnchor,
+    ArtifactBlock,
+    ArtifactBlockKind,
     ArtifactComment,
+    ArtifactDocument,
     ArtifactDebug,
     ArtifactEvent,
     ContentFormat,
@@ -50,6 +53,7 @@ from content_evaluation.domain.models import (
     RunInput,
     RunStatus,
     RuntimeMode,
+    SourceType,
 )
 from content_evaluation.providers.interfaces.analysis import AnalysisProvider
 from content_evaluation.providers.interfaces.extraction import ContentExtractionProvider
@@ -165,6 +169,42 @@ class RunOrchestrator:
             return await self._repository.create_artifact(artifact)
         return await self._repository.update_artifact(artifact)
 
+    async def preview_source_document(self, input_data: RunInput) -> ArtifactDocument:
+        """Resolve and normalize one source without queueing a run."""
+
+        extracted = await self._resolve_source(input_data)
+        return normalize_text(
+            input_data,
+            extracted.content,
+            extracted.title,
+            content_format=extracted.content_format,
+        )
+
+    async def cancel_run(self, artifact_id: UUID) -> AnalysisArtifact:
+        """Cancel one queued or running run."""
+
+        artifact = await self._require_artifact(artifact_id)
+        if artifact.status in {RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELED}:
+            return artifact
+
+        artifact.status = RunStatus.CANCELED
+        artifact.error_message = "Run stopped by user"
+        for item in artifact.agent_plan:
+            if item.status in {AgentPlanStatus.PENDING, AgentPlanStatus.QUEUED, AgentPlanStatus.RUNNING}:
+                item.status = AgentPlanStatus.SKIPPED
+                item.message = "Run stopped by user"
+        await self._append_event(
+            artifact,
+            EventType.RUN,
+            "run",
+            "canceled",
+            "Run stopped by user",
+            progress=1.0,
+            snapshot_available=True,
+        )
+        await self._repository.cancel_run_job(artifact_id)
+        return artifact
+
     async def process_run(self, artifact_id: UUID, input_data: RunInput) -> None:
         """Process one queued artifact."""
 
@@ -182,6 +222,7 @@ class RunOrchestrator:
         await self._append_event(artifact, EventType.RUN, "run", "started", "Run started", snapshot_available=True)
 
         try:
+            await self._ensure_run_active(artifact_id)
             extracted = await self._resolve_source(input_data)
             await self._append_event(
                 artifact,
@@ -193,6 +234,7 @@ class RunOrchestrator:
                 snapshot_available=True,
                 metadata=extracted.metadata,
             )
+            await self._ensure_run_active(artifact_id)
             artifact.document = normalize_text(
                 input_data,
                 extracted.content,
@@ -211,9 +253,11 @@ class RunOrchestrator:
             )
 
             for batch in _execution_batches(artifact.run_config.resolved_agents):
+                await self._ensure_run_active(artifact_id)
                 await self._queue_batch(artifact, batch)
                 await self._run_batch(artifact, batch)
 
+            await self._ensure_run_active(artifact_id)
             artifact.summary = _build_summary(artifact)
             artifact.status = RunStatus.COMPLETED
             await self._append_event(
@@ -225,6 +269,10 @@ class RunOrchestrator:
                 progress=1.0,
                 snapshot_available=True,
             )
+        except RunCancelledError:
+            artifact = await self._require_artifact(artifact_id)
+            artifact.status = RunStatus.CANCELED
+            await self._repository.update_artifact(artifact)
         except Exception as error:
             artifact.status = RunStatus.FAILED
             artifact.error_message = str(error)
@@ -257,6 +305,10 @@ class RunOrchestrator:
         graph = cast(Any, self._build_langgraph_app(state.resolved_agents))
         try:
             await graph.ainvoke(self._graph_state_to_dict(state))
+        except RunCancelledError:
+            artifact = await self._require_artifact(artifact_id)
+            artifact.status = RunStatus.CANCELED
+            await self._repository.update_artifact(artifact)
         except Exception as error:
             artifact = await self._require_artifact(artifact_id)
             artifact.status = RunStatus.FAILED
@@ -276,12 +328,28 @@ class RunOrchestrator:
     async def _resolve_source(self, input_data: RunInput) -> ExtractedContent:
         """Resolve one source payload into extracted content."""
 
+        if input_data.text:
+            content_format = ContentFormat.MARKDOWN
+            if input_data.source_type is SourceType.URL and input_data.url:
+                provider_name = "url-preview"
+            else:
+                provider_name = "inline-input"
+            return ExtractedContent(
+                title=input_data.title or input_data.source_label,
+                content=input_data.text,
+                content_format=content_format,
+                metadata={
+                    "provider_name": provider_name,
+                    "content_format": content_format.value,
+                    "source_type": input_data.source_type.value,
+                    "used_inline_content": True,
+                },
+            )
         if input_data.source_type.value == "url" and input_data.url:
             return await self._extraction_provider.extract(input_data.url)
-        text = input_data.text or ""
         return ExtractedContent(
             title=input_data.title or input_data.source_label,
-            content=text,
+            content="",
             content_format=ContentFormat.MARKDOWN,
             metadata={
                 "provider_name": "inline-input",
@@ -338,6 +406,7 @@ class RunOrchestrator:
 
         if "resolve_source" in state.get("completed_nodes", []):
             return {}
+        await self._ensure_run_active(state["artifact_id"])
         resolved = await self._resolve_source(state["input_data"])
         artifact = await self._require_artifact(state["artifact_id"])
         await self._append_event(
@@ -366,6 +435,7 @@ class RunOrchestrator:
 
         if "normalize_document" in state.get("completed_nodes", []):
             return {}
+        await self._ensure_run_active(state["artifact_id"])
         artifact = await self._require_artifact(state["artifact_id"])
         extracted_content = state.get("extracted_content") or state["input_data"].text or ""
         extracted_title = state.get("extracted_title")
@@ -400,6 +470,7 @@ class RunOrchestrator:
 
         if "plan_agents" in state.get("completed_nodes", []):
             return {}
+        await self._ensure_run_active(state["artifact_id"])
         updates: dict[str, object] = {
             "completed_nodes": ["plan_agents"],
             "node_results": [GraphNodeResult(node_id="plan_agents", status="completed").model_dump(mode="json")],
@@ -418,6 +489,7 @@ class RunOrchestrator:
 
             if definition.agent_id in state.get("completed_agents", []):
                 return {}
+            await self._ensure_run_active(state["artifact_id"])
             async with self._artifact_lock(state["artifact_id"]):
                 artifact = await self._require_artifact(state["artifact_id"])
                 plan_item = _require_plan_item(artifact, definition.agent_id)
@@ -473,6 +545,7 @@ class RunOrchestrator:
 
         if "finalize_summary" in state.get("completed_nodes", []):
             return {}
+        await self._ensure_run_active(state["artifact_id"])
         artifact = await self._require_artifact(state["artifact_id"])
         artifact.summary = _build_summary(artifact)
         await self._repository.update_artifact(artifact)
@@ -490,6 +563,7 @@ class RunOrchestrator:
 
         if "persist_artifact_snapshot" in state.get("completed_nodes", []):
             return {}
+        await self._ensure_run_active(state["artifact_id"])
         artifact = await self._require_artifact(state["artifact_id"])
         await self._repository.update_artifact(artifact)
         updates: dict[str, object] = {
@@ -506,6 +580,7 @@ class RunOrchestrator:
 
         if "complete_run" in state.get("completed_nodes", []):
             return {}
+        await self._ensure_run_active(state["artifact_id"])
         artifact = await self._require_artifact(state["artifact_id"])
         artifact.status = RunStatus.COMPLETED
         await self._append_event(
@@ -528,6 +603,7 @@ class RunOrchestrator:
         """Mark one batch as queued and running."""
 
         for definition in batch:
+            await self._ensure_run_active(artifact.artifact_id)
             plan_item = _require_plan_item(artifact, definition.agent_id)
             plan_item.status = AgentPlanStatus.RUNNING
             plan_item.started_at = datetime.now(UTC)
@@ -555,6 +631,7 @@ class RunOrchestrator:
         ]
         for task in asyncio.as_completed(tasks):
             try:
+                await self._ensure_run_active(artifact.artifact_id)
                 definition, result = await task
             except Exception as error:
                 definition = next(
@@ -581,6 +658,7 @@ class RunOrchestrator:
                 )
                 raise
             await self._merge_agent_result(artifact, result)
+            await self._ensure_run_active(artifact.artifact_id)
 
     async def _execute_agent_with_definition(
         self,
@@ -594,6 +672,7 @@ class RunOrchestrator:
     async def _execute_agent(self, artifact: AnalysisArtifact, definition: AgentDefinition) -> AgentExecutionResult:
         """Execute one agent against the current artifact state."""
 
+        await self._ensure_run_active(artifact.artifact_id)
         if artifact.document is None:
             raise ValidationError("Artifact document is missing")
         context = _context_for_agent(artifact, definition)
@@ -751,6 +830,13 @@ class RunOrchestrator:
             raise NotFoundError(f"Artifact {artifact_id} not found")
         return artifact
 
+    async def _ensure_run_active(self, artifact_id: UUID) -> None:
+        """Raise when a run was stopped by the user."""
+
+        artifact = await self._require_artifact(artifact_id)
+        if artifact.status is RunStatus.CANCELED:
+            raise RunCancelledError("Run stopped by user")
+
     def _resolve_persistence_mode(self, requested: PersistenceMode) -> PersistenceMode:
         """Return a supported persistence mode."""
 
@@ -837,6 +923,8 @@ def _source_message(extracted: ExtractedContent) -> str:
 
     provider_name = extracted.metadata.get("provider_name")
     fallback_used = extracted.metadata.get("fallback_used") is True
+    if provider_name == "url-preview":
+        return "Source imported from URL preview"
     if provider_name == "tavily-extract" and fallback_used:
         return "Source extracted via Tavily fallback"
     if provider_name == "tavily-extract":
@@ -1083,6 +1171,8 @@ def _resolve_anchor(artifact: AnalysisArtifact, excerpt: str) -> ArtifactAnchor:
         raise RuntimeError("Cannot resolve anchors before the document is available")
 
     anchor = create_anchor_from_excerpt(artifact.document.blocks, excerpt)
+    if anchor is None:
+        anchor = _create_unmatched_anchor(artifact, excerpt)
     existing = next(
         (
             item
@@ -1098,3 +1188,62 @@ def _resolve_anchor(artifact: AnalysisArtifact, excerpt: str) -> ArtifactAnchor:
         return existing
     artifact.anchors.append(anchor)
     return anchor
+
+
+def _create_unmatched_anchor(artifact: AnalysisArtifact, excerpt: str) -> ArtifactAnchor:
+    """Append one unmatched reference block at the bottom of the document."""
+
+    if artifact.document is None:
+        raise RuntimeError("Cannot create unmatched anchors before the document is available")
+
+    heading_block = _ensure_unmatched_heading_block(artifact)
+    quote = excerpt.strip().strip('"') or "Referenced text could not be matched to a visible section."
+    existing_block = next(
+        (
+            block
+            for block in artifact.document.blocks
+            if block.id != heading_block.id and block.markdown == quote and block.text == quote
+        ),
+        None,
+    )
+    if existing_block is None:
+        existing_block = ArtifactBlock(
+            index=len(artifact.document.blocks),
+            text=quote,
+            kind=ArtifactBlockKind.PARAGRAPH,
+            markdown=quote,
+        )
+        artifact.document.blocks.append(existing_block)
+        artifact.document.text = "\n\n".join(block.text for block in artifact.document.blocks if block.text)
+
+    return ArtifactAnchor(
+        block_id=existing_block.id,
+        start_offset=0,
+        end_offset=len(existing_block.text),
+        quote=quote,
+    )
+
+
+def _ensure_unmatched_heading_block(artifact: AnalysisArtifact) -> ArtifactBlock:
+    """Ensure the document contains a bottom-of-page unmatched-reference section."""
+
+    if artifact.document is None:
+        raise RuntimeError("Cannot create unmatched blocks before the document is available")
+
+    existing = next(
+        (block for block in artifact.document.blocks if block.markdown == "## Unmatched references"),
+        None,
+    )
+    if existing is not None:
+        return existing
+
+    block = ArtifactBlock(
+        index=len(artifact.document.blocks),
+        text="Unmatched references",
+        kind=ArtifactBlockKind.HEADING,
+        markdown="## Unmatched references",
+        level=2,
+    )
+    artifact.document.blocks.append(block)
+    artifact.document.text = "\n\n".join(item.text for item in artifact.document.blocks if item.text)
+    return block

@@ -8,6 +8,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 
 1. Intake
    - Accept URL, uploaded `.txt`/`.md`, pasted text, and imported artifact JSON
+   - Support source preview for URL imports before a run is queued
    - Validate upload type and size at the API boundary
 2. Session or workspace run creation
    - Create an artifact skeleton with run config, selected agents, and empty result slots
@@ -16,6 +17,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
    - `RunWorker` claims queued jobs
    - Resets in-flight jobs on startup
    - Requeues failed attempts up to the configured max attempts
+   - Cancels queued or active jobs when the user stops a run
    - Starts or resumes LangGraph execution from the latest stored checkpoint
 4. Normalization
    - Extract text and metadata into a shared document schema
@@ -35,6 +37,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 7. Artifact assembly
    - Convert agent outputs into anchors, comments, results, summary data, and debug traces
    - Resolve anchors against normalized block text, including whitespace-normalized and ellipsis-truncated excerpts when possible
+   - When an excerpt cannot be mapped into one visible block, append a bottom-of-document unmatched-reference block instead of falling back to the first paragraph
    - Keep human comment/reply/review-state data in the same artifact structure
    - Keep artifact assembly outside the graph-state model
 8. Export and import
@@ -83,7 +86,9 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 ## Public API Surface
 
 - `POST /api/v1/runs`
+- `POST /api/v1/sources/preview`
 - `GET /api/v1/runs/{run_id}`
+- `POST /api/v1/runs/{run_id}/cancel`
 - `GET /api/v1/runs/{run_id}/events`
 - `POST /api/v1/comments`
 - `PATCH /api/v1/comments/{comment_id}`

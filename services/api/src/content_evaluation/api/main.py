@@ -25,11 +25,12 @@ from content_evaluation.api.schemas import (
     CreateReplyRequest,
     CreateRunRequest,
     ImportArtifactRequest,
+    PreviewSourceRequest,
     UpdateCommentRequest,
     UpdateReviewStateRequest,
 )
 from content_evaluation.domain.exceptions import ContentEvaluationError, NotFoundError
-from content_evaluation.domain.models import AnalysisArtifact, RunInput, RunJob, SourceType
+from content_evaluation.domain.models import AnalysisArtifact, ArtifactDocument, RunInput, RunJob, SourceType
 from content_evaluation.logging import configure_logging, request_logging_middleware
 from content_evaluation.repositories.base import RunRepository
 from content_evaluation.repositories.postgres import PostgresRunRepository
@@ -110,6 +111,13 @@ async def create_run(
     return artifact
 
 
+@app.post("/api/v1/sources/preview")
+async def preview_source(payload: PreviewSourceRequest, services: ServicesDependency) -> ArtifactDocument:
+    """Resolve and normalize one source without queueing a run."""
+
+    return await services.orchestrator.preview_source_document(RunInput.model_validate(payload.model_dump()))
+
+
 @app.post("/api/v1/artifacts/import")
 async def import_artifact(payload: ImportArtifactRequest, services: ServicesDependency) -> AnalysisArtifact:
     """Import one saved artifact into the current backend session."""
@@ -124,6 +132,15 @@ async def get_run(run_id: UUID, repository: RepositoryDependency) -> AnalysisArt
     artifact = await repository.get_artifact(run_id)
     if artifact is None:
         raise HTTPException(status_code=404, detail="Run not found")
+    return artifact
+
+
+@app.post("/api/v1/runs/{run_id}/cancel")
+async def cancel_run(run_id: UUID, services: ServicesDependency) -> AnalysisArtifact:
+    """Stop one queued or running artifact run."""
+
+    artifact = await services.orchestrator.cancel_run(run_id)
+    await services.worker.cancel_run(run_id)
     return artifact
 
 
@@ -149,7 +166,7 @@ async def stream_run_events(run_id: UUID, repository: RepositoryDependency) -> E
             else:
                 idle_loops += 1
 
-            if artifact.status in {"completed", "failed"} and idle_loops >= 2:
+            if artifact.status in {"completed", "failed", "canceled"} and idle_loops >= 2:
                 break
             await asyncio.sleep(0.15)
 

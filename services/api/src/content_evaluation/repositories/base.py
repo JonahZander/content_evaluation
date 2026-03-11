@@ -32,6 +32,9 @@ class RunRepository(Protocol):
     async def fail_run_job(self, artifact_id: UUID) -> None:
         """Mark one queued job as failed."""
 
+    async def cancel_run_job(self, artifact_id: UUID) -> None:
+        """Mark one queued or running job as canceled."""
+
     async def requeue_run_job(self, artifact_id: UUID) -> RunJob | None:
         """Return a failed/running job back to the queue."""
 

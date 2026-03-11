@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 
 import pytest
@@ -33,7 +34,7 @@ def _wait_for_run_completion(client: TestClient, run_id: str) -> dict[str, objec
         response = client.get(f"/api/v1/runs/{run_id}")
         assert response.status_code == 200
         payload = response.json()
-        if payload["status"] in {"completed", "failed"}:
+        if payload["status"] in {"completed", "failed", "canceled"}:
             return payload
         time.sleep(0.05)
 
@@ -129,3 +130,57 @@ def test_run_events_stream_in_completion_order(monkeypatch: pytest.MonkeyPatch) 
     assert stream_response.status_code == 200
     assert '"status":"started"' in payload
     assert '"status":"completed"' in payload
+
+
+def test_preview_source_returns_normalized_document(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Preview a source before queueing analysis."""
+
+    monkeypatch.setattr("content_evaluation.api.main.build_services", lambda: AppServices(_mock_settings()))
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/sources/preview",
+            json={
+                "source_type": "url",
+                "source_label": "https://example.com/post",
+                "url": "https://example.com/post",
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["title"] == "example.com/post"
+    assert payload["blocks"]
+
+
+def test_cancel_run_stops_inflight_execution(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cancel a running job through the API."""
+
+    services = AppServices(_mock_settings())
+
+    async def slow_process_run(artifact_id: object, input_data: object) -> None:
+        del artifact_id
+        del input_data
+        await asyncio.sleep(0.2)
+
+    monkeypatch.setattr("content_evaluation.api.main.build_services", lambda: services)
+    monkeypatch.setattr(services.orchestrator, "process_run", slow_process_run)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/runs",
+            json={
+                "source_type": "text",
+                "source_label": "Draft",
+                "title": "Draft",
+                "text": "This draft helps editors assess content.\n\nIt repeats itself in places.",
+            },
+        )
+        assert response.status_code == 200
+        run_id = response.json()["artifact_id"]
+
+        cancel_response = client.post(f"/api/v1/runs/{run_id}/cancel")
+        assert cancel_response.status_code == 200
+        assert cancel_response.json()["status"] == "canceled"
+
+        run_payload = _wait_for_run_completion(client, run_id)
+        assert run_payload["status"] == "canceled"

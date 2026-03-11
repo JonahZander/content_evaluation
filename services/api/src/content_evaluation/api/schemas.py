@@ -9,14 +9,19 @@ from pydantic import BaseModel, Field
 from content_evaluation.domain.models import AnalysisArtifact, PersistenceMode, ReviewState, SourceType
 
 
-class CreateRunRequest(BaseModel):
-    """Store a JSON request for a new run."""
+class PreviewSourceRequest(BaseModel):
+    """Store a request to preview normalized source content."""
 
     source_type: SourceType
     source_label: str
     title: str | None = None
     text: str | None = None
     url: str | None = None
+
+
+class CreateRunRequest(PreviewSourceRequest):
+    """Store a JSON request for a new run."""
+
     selected_agents: list[str] = Field(default_factory=list)
     persistence_mode: PersistenceMode = PersistenceMode.SESSION
     include_debug_trace: bool = False

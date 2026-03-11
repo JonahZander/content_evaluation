@@ -35,10 +35,12 @@ class ContentFormat(StrEnum):
 class RunStatus(StrEnum):
     """Enumerate artifact lifecycle states."""
 
+    DRAFT = "draft"
     QUEUED = "queued"
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELED = "canceled"
 
 
 class RuntimeMode(StrEnum):
@@ -78,6 +80,7 @@ class RunJobStatus(StrEnum):
     RUNNING = "running"
     FAILED = "failed"
     COMPLETED = "completed"
+    CANCELED = "canceled"
 
 
 class AuthorType(StrEnum):

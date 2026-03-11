@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import suppress
+from uuid import UUID
 
 from content_evaluation.config import Settings
 from content_evaluation.logging import get_logger
@@ -23,6 +24,7 @@ class RunWorker:
         self._logger = get_logger("content_evaluation.worker")
         self._stop_event = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
+        self._active_runs: dict[UUID, asyncio.Task[None]] = {}
 
     async def start(self) -> None:
         """Start the worker loop."""
@@ -49,8 +51,17 @@ class RunWorker:
                 continue
 
             self._logger.info("worker claimed artifact_id=%s attempt=%s", job.artifact_id, job.attempts)
+            run_task = asyncio.create_task(
+                self._orchestrator.process_run(job.artifact_id, job.input_data),
+                name=f"content-evaluation-run-{job.artifact_id}",
+            )
+            self._active_runs[job.artifact_id] = run_task
             try:
-                await self._orchestrator.process_run(job.artifact_id, job.input_data)
+                await run_task
+            except asyncio.CancelledError:
+                await self._repository.cancel_run_job(job.artifact_id)
+                await self._repository.delete_graph_checkpoint(job.artifact_id)
+                self._logger.info("worker canceled artifact_id=%s", job.artifact_id)
             except Exception:
                 if job.attempts < self._settings.worker_max_attempts:
                     await self._repository.requeue_run_job(job.artifact_id)
@@ -61,3 +72,16 @@ class RunWorker:
             else:
                 await self._repository.complete_run_job(job.artifact_id)
                 self._logger.info("worker completed artifact_id=%s", job.artifact_id)
+            finally:
+                self._active_runs.pop(job.artifact_id, None)
+
+    async def cancel_run(self, artifact_id: UUID) -> bool:
+        """Cancel one actively running artifact task if present."""
+
+        run_task = self._active_runs.get(artifact_id)
+        if run_task is None or run_task.done():
+            return False
+        run_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await run_task
+        return True

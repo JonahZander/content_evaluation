@@ -19,3 +19,7 @@ class ProviderError(ContentEvaluationError):
 
 class ConfigurationError(ContentEvaluationError):
     """Raise when the runtime configuration is invalid."""
+
+
+class RunCancelledError(ContentEvaluationError):
+    """Raise when a run is cancelled mid-execution."""

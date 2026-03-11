@@ -33,6 +33,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
    - Use LangChain chat-model adapters for analysis nodes
 7. Artifact assembly
    - Convert agent outputs into anchors, comments, results, summary data, and debug traces
+   - Resolve anchors against normalized block text, including whitespace-normalized and ellipsis-truncated excerpts when possible
    - Keep human comment/reply/review-state data in the same artifact structure
    - Keep artifact assembly outside the graph-state model
 8. Export and import

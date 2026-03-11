@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import styles from "@/components/ReviewWorkbench.module.css";
 import { CommentRail } from "@/components/review/CommentRail";
-import { ConnectorCanvas } from "@/components/review/ConnectorCanvas";
 import { DocumentPane } from "@/components/review/DocumentPane";
 import { ReviewHero } from "@/components/review/ReviewHero";
 import { ReviewToolbar, type ReviewFormState } from "@/components/review/ReviewToolbar";
@@ -23,7 +22,7 @@ import {
   updateHumanComment,
   updateReviewState,
 } from "@/lib/api";
-import type { AgentCatalogEntry, AnalysisArtifact, ReviewState } from "@/lib/types";
+import type { AgentCatalogEntry, AnalysisArtifact, ArtifactThread, ReviewState } from "@/lib/types";
 
 interface SelectionDraft {
   blockId: string;
@@ -68,7 +67,6 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   const workspaceRef = useRef<HTMLDivElement | null>(null);
   const anchorRefs = useRef<Record<string, HTMLSpanElement | null>>({});
   const commentRefs = useRef<Record<string, HTMLElement | null>>({});
-  const [paths, setPaths] = useState<Array<{ id: string; path: string; color: string }>>([]);
 
   useEffect(() => {
     fetchAgents()
@@ -158,55 +156,48 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     return () => eventSource.close();
   }, [activeArtifactId]);
 
-  useEffect(() => {
-    const updatePaths = () => {
-      const container = workspaceRef.current;
-      if (!container || artifact === null) {
-        setPaths([]);
-        return;
-      }
-      const containerRect = container.getBoundingClientRect();
-      const nextPaths = artifact.threads.flatMap((thread) => {
-        const anchorElement = anchorRefs.current[thread.anchor.id];
-        if (!anchorElement) {
-          return [];
-        }
-        const anchorRect = anchorElement.getBoundingClientRect();
-        const startX = anchorRect.right - containerRect.left;
-        const startY = anchorRect.top - containerRect.top + anchorRect.height / 2;
-        return thread.comments.flatMap((comment) => {
-          const commentElement = commentRefs.current[comment.id];
-          if (!commentElement) {
-            return [];
-          }
-          const commentRect = commentElement.getBoundingClientRect();
-          const endX = commentRect.left - containerRect.left;
-          const endY = commentRect.top - containerRect.top + commentRect.height / 2;
-          const controlOffset = Math.max(48, (endX - startX) / 2);
-          return {
-            id: comment.id,
-            color: categoryColors[comment.category] ?? "var(--ink)",
-            path: `M ${startX} ${startY} C ${startX + controlOffset} ${startY}, ${endX - controlOffset} ${endY}, ${endX} ${endY}`,
-          };
-        });
-      });
-      setPaths(nextPaths);
-    };
+  const normalizedThreads = useMemo(() => {
+    if (artifact === null || artifact.document === null) {
+      return [] as ArtifactThread[];
+    }
 
-    updatePaths();
-    window.addEventListener("resize", updatePaths);
-    return () => window.removeEventListener("resize", updatePaths);
+    const blockIndexById = new Map(artifact.document.blocks.map((block) => [block.id, block.index]));
+    return [...artifact.threads]
+      .map((thread) => ({
+        ...thread,
+        comments: [...thread.comments].sort((left, right) => {
+          const createdAtDifference = new Date(left.created_at).getTime() - new Date(right.created_at).getTime();
+          if (createdAtDifference !== 0) {
+            return createdAtDifference;
+          }
+          return left.id.localeCompare(right.id);
+        }),
+      }))
+      .sort((left, right) => {
+        const leftBlockIndex = blockIndexById.get(left.anchor.block_id) ?? Number.MAX_SAFE_INTEGER;
+        const rightBlockIndex = blockIndexById.get(right.anchor.block_id) ?? Number.MAX_SAFE_INTEGER;
+        if (leftBlockIndex !== rightBlockIndex) {
+          return leftBlockIndex - rightBlockIndex;
+        }
+        if (left.anchor.start_offset !== right.anchor.start_offset) {
+          return left.anchor.start_offset - right.anchor.start_offset;
+        }
+        if (left.anchor.end_offset !== right.anchor.end_offset) {
+          return left.anchor.end_offset - right.anchor.end_offset;
+        }
+        return left.anchor.id.localeCompare(right.anchor.id);
+      });
   }, [artifact]);
 
   const anchorThreadMap = useMemo(() => {
     const map = new Map<string, { colors: string[] }>();
-    (artifact?.threads ?? []).forEach((thread) => {
+    normalizedThreads.forEach((thread) => {
       map.set(thread.anchor.id, {
         colors: thread.comments.map((comment) => categoryColors[comment.category] ?? "var(--ink)"),
       });
     });
     return map;
-  }, [artifact]);
+  }, [normalizedThreads]);
 
   const progress = useMemo(() => {
     if (artifact === null) {
@@ -419,25 +410,19 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         <RunMetrics summary={artifact?.summary ?? null} />
 
         <section className={styles.workspace} ref={workspaceRef}>
-          <ConnectorCanvas paths={paths} />
           <DocumentPane
             document={artifact?.document ?? null}
             anchors={artifact?.anchors ?? []}
+            threads={normalizedThreads}
             anchorThreadMap={anchorThreadMap}
             hoveredAnchorId={hoveredAnchorId}
             anchorRefs={anchorRefs}
+            commentRefs={commentRefs}
             onHoverAnchor={setHoveredAnchorId}
             onSelectionDraft={setSelectionDraft}
-          />
-          <CommentRail
-            threads={artifact?.threads ?? []}
-            events={artifact?.events ?? []}
-            hoveredAnchorId={hoveredAnchorId}
-            commentRefs={commentRefs}
             replyDrafts={replyDrafts}
             editingCommentId={editingCommentId}
             editingBody={editingBody}
-            onHoverAnchor={setHoveredAnchorId}
             onReplyDraftChange={(commentId, value) => {
               setReplyDrafts((current) => ({ ...current, [commentId]: value }));
             }}
@@ -455,6 +440,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
             }}
             onDeleteComment={handleDeleteHumanComment}
           />
+          <CommentRail events={artifact?.events ?? []} />
         </section>
       </div>
     </main>

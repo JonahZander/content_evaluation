@@ -59,7 +59,7 @@ describe("ReviewWorkbench", () => {
 
     expect(screen.getByText("How Editorial Teams Can Evaluate AI-Written Posts")).toBeInTheDocument();
     expect(screen.getByTestId("thread-anchor-2")).toBeInTheDocument();
-    expect(screen.getByTestId("connector-canvas")).toBeInTheDocument();
+    expect(screen.getAllByTestId("connector-canvas").length).toBeGreaterThan(0);
     expect(screen.getByTestId("connector-comment-2")).toBeInTheDocument();
   });
 

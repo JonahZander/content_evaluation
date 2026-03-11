@@ -13,9 +13,9 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Analysis summary
   - Overall score, originality, value, audience fit, AI-likelihood
 - Source text pane
-  - Selectable text with highlighted spans on the left
-- Comment rail
-  - Comments, threaded replies, review-state buttons, and rationale on the right
+  - Selectable text with highlighted spans in paragraph rows
+- Comment area
+  - Each paragraph row owns its own right-side comment stack so later text does not continue until that paragraph's comments end
 - Optional debug panel
   - Downloadable trace details when debug output is enabled
 
@@ -23,8 +23,8 @@ Provide a high-legibility review surface where users can inspect source text, wa
 
 - `ReviewWorkbench.tsx` should coordinate run submission, artifact import/export, live progress, and review mutations against artifact snapshots.
 - Presentational review pieces live under `src/components/review/`.
-- Connector lines are rendered as a shared SVG overlay spanning the full workspace.
-- The workbench uses one visual workspace so text highlights and comment cards can be linked spatially.
+- Connector lines are rendered inside each paragraph row so the anchor-to-comment mapping remains local and legible.
+- The workbench uses paragraph-scoped rows so each source block and its comments stay spatially linked.
 - The UI should render directly from the artifact snapshot rather than a stitched backend-only view model.
 
 ## Key Interaction Patterns
@@ -38,6 +38,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Hovering or selecting a summary finding should highlight linked spans in the source text.
 - Connector lines should visually link each comment card to the relevant highlight.
 - Multiple comments on the same span should stack vertically while connecting back to the same text selection.
+- Paragraphs with comments should reserve the vertical space needed for those comments before the next paragraph begins.
 - Export and import actions should be visible from the main toolbar.
 - Invalid review actions should be disabled when no real artifact is loaded.
 

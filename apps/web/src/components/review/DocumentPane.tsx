@@ -1,8 +1,9 @@
-import type { MutableRefObject, ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 
 import styles from "@/components/ReviewWorkbench.module.css";
-import { colorForCategory } from "@/components/review/category-colors";
-import type { ArtifactAnchor, ArtifactDocument } from "@/lib/types";
+import { ConnectorCanvas } from "@/components/review/ConnectorCanvas";
+import { categoryColors, colorForCategory } from "@/components/review/category-colors";
+import type { ArtifactAnchor, ArtifactComment, ArtifactDocument, ArtifactThread, ReviewState } from "@/lib/types";
 
 interface AnchorThread {
   colors: string[];
@@ -18,12 +19,27 @@ interface SelectionDraft {
 interface DocumentPaneProps {
   document: ArtifactDocument | null;
   anchors: ArtifactAnchor[];
+  threads: ArtifactThread[];
   anchorThreadMap: Map<string, AnchorThread>;
   hoveredAnchorId: string | null;
   anchorRefs: MutableRefObject<Record<string, HTMLSpanElement | null>>;
+  commentRefs: MutableRefObject<Record<string, HTMLElement | null>>;
   onHoverAnchor: (anchorId: string | null) => void;
   onSelectionDraft: (draft: SelectionDraft | null) => void;
+  replyDrafts: Record<string, string>;
+  editingCommentId: string | null;
+  editingBody: string;
+  onReplyDraftChange: (commentId: string, value: string) => void;
+  onAddReply: (commentId: string) => void;
+  onReviewState: (commentId: string, state: ReviewState) => void;
+  onStartEditing: (commentId: string, body: string) => void;
+  onEditingBodyChange: (value: string) => void;
+  onSaveEdit: (commentId: string) => void;
+  onCancelEdit: () => void;
+  onDeleteComment: (commentId: string) => void;
 }
+
+const reviewActions: ReviewState[] = ["accepted", "rejected", "uncertain"];
 
 function renderAnchor(
   anchor: ArtifactAnchor,
@@ -134,41 +150,331 @@ function resolveSelectionDraft(
   };
 }
 
+function ThreadCards({
+  thread,
+  hoveredAnchorId,
+  commentRefs,
+  replyDrafts,
+  editingCommentId,
+  editingBody,
+  onHoverAnchor,
+  onReplyDraftChange,
+  onAddReply,
+  onReviewState,
+  onStartEditing,
+  onEditingBodyChange,
+  onSaveEdit,
+  onCancelEdit,
+  onDeleteComment,
+}: {
+  thread: ArtifactThread;
+  hoveredAnchorId: string | null;
+  commentRefs: MutableRefObject<Record<string, HTMLElement | null>>;
+  replyDrafts: Record<string, string>;
+  editingCommentId: string | null;
+  editingBody: string;
+  onHoverAnchor: (anchorId: string | null) => void;
+  onReplyDraftChange: (commentId: string, value: string) => void;
+  onAddReply: (commentId: string) => void;
+  onReviewState: (commentId: string, state: ReviewState) => void;
+  onStartEditing: (commentId: string, body: string) => void;
+  onEditingBodyChange: (value: string) => void;
+  onSaveEdit: (commentId: string) => void;
+  onCancelEdit: () => void;
+  onDeleteComment: (commentId: string) => void;
+}) {
+  return (
+    <section
+      className={`${styles.thread} ${hoveredAnchorId === thread.anchor.id ? styles.threadActive : ""}`}
+      data-testid={`thread-${thread.anchor.id}`}
+      onMouseEnter={() => onHoverAnchor(thread.anchor.id)}
+      onMouseLeave={() => onHoverAnchor(null)}
+    >
+      <div className={styles.threadHeader}>
+        <strong>Linked section</strong>
+        <span className={styles.threadQuote}>{thread.anchor.quote}</span>
+      </div>
+      <div className={styles.threadCards}>
+        {thread.comments.map((comment) => {
+          const isEditing = editingCommentId === comment.id;
+          return (
+            <article
+              key={comment.id}
+              ref={(element) => {
+                commentRefs.current[comment.id] = element;
+              }}
+              className={styles.card}
+              data-testid={`comment-${comment.id}`}
+            >
+              <div className={styles.cardHeader}>
+                <span className={styles.pill} style={{ color: colorForCategory(comment.category) }}>
+                  {comment.author_label}
+                </span>
+                <span className={styles.pill}>{comment.category.replace("_", " ")}</span>
+                <span className={styles.reviewBadge}>{comment.review_state}</span>
+              </div>
+              {isEditing ? (
+                <div className={styles.inlineEditor}>
+                  <textarea
+                    className={styles.replyInput}
+                    value={editingBody}
+                    onChange={(event) => onEditingBodyChange(event.target.value)}
+                    aria-label="Edit reviewer comment"
+                  />
+                  <div className={styles.toolbarGroup}>
+                    <button className={styles.button} type="button" onClick={() => onSaveEdit(comment.id)}>
+                      Save
+                    </button>
+                    <button className={styles.ghostButton} type="button" onClick={onCancelEdit}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className={styles.cardBody}>{comment.body}</p>
+              )}
+              {comment.suggestion ? <div className={styles.suggestion}>Suggestion: {comment.suggestion}</div> : null}
+              {comment.author_type === "agent" ? (
+                <div className={styles.toolbarGroup}>
+                  {reviewActions.map((state) => (
+                    <button
+                      key={state}
+                      data-testid={`review-state-${comment.id}-${state}`}
+                      className={`${styles.stateButton} ${comment.review_state === state ? styles.stateButtonActive : ""}`}
+                      type="button"
+                      onClick={() => onReviewState(comment.id, state)}
+                    >
+                      {state === "accepted" ? "Accept" : state === "rejected" ? "Reject" : "Uncertain"}
+                    </button>
+                  ))}
+                </div>
+              ) : !isEditing ? (
+                <div className={styles.toolbarGroup}>
+                  <button
+                    className={styles.ghostButton}
+                    data-testid={`edit-comment-${comment.id}`}
+                    type="button"
+                    onClick={() => onStartEditing(comment.id, comment.body)}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    className={styles.ghostButton}
+                    data-testid={`delete-comment-${comment.id}`}
+                    type="button"
+                    onClick={() => onDeleteComment(comment.id)}
+                  >
+                    Delete
+                  </button>
+                </div>
+              ) : null}
+
+              <div className={styles.replyList}>
+                {comment.replies.map((reply) => (
+                  <div key={reply.id} className={styles.reply}>
+                    <span className={styles.replyMeta}>{reply.author_label}</span>
+                    <div>{reply.body}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div className={styles.replyComposer}>
+                <textarea
+                  className={styles.replyInput}
+                  data-testid={`reply-input-${comment.id}`}
+                  value={replyDrafts[comment.id] ?? ""}
+                  onChange={(event) => onReplyDraftChange(comment.id, event.target.value)}
+                  placeholder="Reply to this comment"
+                />
+                <button
+                  className={styles.button}
+                  data-testid={`reply-submit-${comment.id}`}
+                  type="button"
+                  onClick={() => onAddReply(comment.id)}
+                >
+                  Add reply
+                </button>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function sortComments(comments: ArtifactComment[]): ArtifactComment[] {
+  return [...comments].sort((left, right) => {
+    const createdAtDifference = new Date(left.created_at).getTime() - new Date(right.created_at).getTime();
+    if (createdAtDifference !== 0) {
+      return createdAtDifference;
+    }
+    return left.id.localeCompare(right.id);
+  });
+}
+
 export function DocumentPane({
   document,
   anchors,
+  threads,
   anchorThreadMap,
   hoveredAnchorId,
   anchorRefs,
+  commentRefs,
   onHoverAnchor,
   onSelectionDraft,
+  replyDrafts,
+  editingCommentId,
+  editingBody,
+  onReplyDraftChange,
+  onAddReply,
+  onReviewState,
+  onStartEditing,
+  onEditingBodyChange,
+  onSaveEdit,
+  onCancelEdit,
+  onDeleteComment,
 }: DocumentPaneProps) {
+  const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [pathsByBlockId, setPathsByBlockId] = useState<Record<string, Array<{ id: string; path: string; color: string }>>>({});
+
+  const blockThreads = useMemo(() => {
+    const grouped = new Map<string, ArtifactThread[]>();
+    threads.forEach((thread) => {
+      const existing = grouped.get(thread.anchor.block_id) ?? [];
+      existing.push({
+        ...thread,
+        comments: sortComments(thread.comments),
+      });
+      grouped.set(thread.anchor.block_id, existing);
+    });
+    grouped.forEach((value, key) => {
+      value.sort((left, right) => {
+        if (left.anchor.start_offset !== right.anchor.start_offset) {
+          return left.anchor.start_offset - right.anchor.start_offset;
+        }
+        if (left.anchor.end_offset !== right.anchor.end_offset) {
+          return left.anchor.end_offset - right.anchor.end_offset;
+        }
+        return left.anchor.id.localeCompare(right.anchor.id);
+      });
+      grouped.set(key, value);
+    });
+    return grouped;
+  }, [threads]);
+
+  useEffect(() => {
+    if (!document) {
+      setPathsByBlockId({});
+      return;
+    }
+
+    const updatePaths = () => {
+      const nextPathsByBlockId: Record<string, Array<{ id: string; path: string; color: string }>> = {};
+
+      document.blocks.forEach((block) => {
+        const row = rowRefs.current[block.id];
+        const rowThreads = blockThreads.get(block.id) ?? [];
+        if (!row || rowThreads.length === 0) {
+          return;
+        }
+
+        const rowRect = row.getBoundingClientRect();
+        nextPathsByBlockId[block.id] = rowThreads.flatMap((thread) => {
+          const anchorElement = anchorRefs.current[thread.anchor.id];
+          if (!anchorElement) {
+            return [];
+          }
+          const anchorRect = anchorElement.getBoundingClientRect();
+          const startX = anchorRect.right - rowRect.left;
+          const startY = anchorRect.top - rowRect.top + anchorRect.height / 2;
+
+          return thread.comments.flatMap((comment) => {
+            const commentElement = commentRefs.current[comment.id];
+            if (!commentElement) {
+              return [];
+            }
+            const commentRect = commentElement.getBoundingClientRect();
+            const endX = commentRect.left - rowRect.left;
+            const endY = commentRect.top - rowRect.top + commentRect.height / 2;
+            const controlOffset = Math.max(32, (endX - startX) / 2);
+            return {
+              id: comment.id,
+              color: categoryColors[comment.category] ?? "var(--ink)",
+              path: `M ${startX} ${startY} C ${startX + controlOffset} ${startY}, ${endX - controlOffset} ${endY}, ${endX} ${endY}`,
+            };
+          });
+        });
+      });
+
+      setPathsByBlockId(nextPathsByBlockId);
+    };
+
+    updatePaths();
+    window.addEventListener("resize", updatePaths);
+    return () => window.removeEventListener("resize", updatePaths);
+  }, [anchorRefs, commentRefs, blockThreads, document]);
+
   return (
     <div className={styles.documentPane}>
       <div className={styles.sectionTitle}>Text under review</div>
       <h2 className={styles.documentTitle}>{document?.title ?? "No document loaded"}</h2>
       {document?.blocks.length ? (
         document.blocks.map((block) => (
-          <p
+          <div
             key={block.id}
-            className={styles.paragraph}
-            data-block-id={block.id}
-            data-testid={`document-block-${block.index}`}
-            onMouseUp={(event) => {
-              const draft = resolveSelectionDraft(event.currentTarget, window.getSelection(), block.id);
-              onSelectionDraft(draft);
+            ref={(element) => {
+              rowRefs.current[block.id] = element;
             }}
+            className={styles.paragraphRow}
+            data-testid={`document-block-${block.index}`}
           >
-            {renderParagraph(
-              block.id,
-              block.text,
-              anchors,
-              anchorThreadMap,
-              hoveredAnchorId,
-              anchorRefs,
-              onHoverAnchor,
-            )}
-          </p>
+            <ConnectorCanvas paths={pathsByBlockId[block.id] ?? []} />
+            <p
+              className={styles.paragraph}
+              data-block-id={block.id}
+              onMouseUp={(event) => {
+                const draft = resolveSelectionDraft(event.currentTarget, window.getSelection(), block.id);
+                onSelectionDraft(draft);
+              }}
+            >
+              {renderParagraph(
+                block.id,
+                block.text,
+                anchors,
+                anchorThreadMap,
+                hoveredAnchorId,
+                anchorRefs,
+                onHoverAnchor,
+              )}
+            </p>
+            <div className={styles.paragraphComments}>
+              {(blockThreads.get(block.id) ?? []).length ? (
+                (blockThreads.get(block.id) ?? []).map((thread) => (
+                  <ThreadCards
+                    key={thread.anchor.id}
+                    thread={thread}
+                    hoveredAnchorId={hoveredAnchorId}
+                    commentRefs={commentRefs}
+                    replyDrafts={replyDrafts}
+                    editingCommentId={editingCommentId}
+                    editingBody={editingBody}
+                    onHoverAnchor={onHoverAnchor}
+                    onReplyDraftChange={onReplyDraftChange}
+                    onAddReply={onAddReply}
+                    onReviewState={onReviewState}
+                    onStartEditing={onStartEditing}
+                    onEditingBodyChange={onEditingBodyChange}
+                    onSaveEdit={onSaveEdit}
+                    onCancelEdit={onCancelEdit}
+                    onDeleteComment={onDeleteComment}
+                  />
+                ))
+              ) : (
+                <div className={styles.paragraphCommentsSpacer} aria-hidden="true" />
+              )}
+            </div>
+          </div>
         ))
       ) : (
         <div className={styles.emptyState}>Submit a URL, pasted draft, or text file to start the review.</div>

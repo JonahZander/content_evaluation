@@ -49,7 +49,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 8. Export and import
    - Export the artifact as JSON
    - Export Markdown derived from the artifact
-   - Export accepted agent suggestions as a compact Markdown todo list ordered by source position
+   - Export accepted agent suggestions as a compact Markdown todo list ordered by source position, including both the agent comment text and the suggestion
    - Reopen a saved artifact without rerunning the pipeline
 
 ## Artifact-First Rules

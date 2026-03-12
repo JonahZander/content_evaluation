@@ -19,6 +19,7 @@ class _TodoItem:
     """Store one accepted suggestion ready for todo export."""
 
     quote: str
+    comment: str
     suggestion: str
     author_label: str
     unmatched: bool
@@ -62,10 +63,12 @@ def build_todo_export(artifact: AnalysisArtifact) -> str:
     lines.extend(["## Revision Todo", ""])
     for item in items:
         lines.append(f'- [ ] "{item.quote}"')
+        lines.append(f"  Note: {item.comment}")
         lines.append(f"  {item.suggestion}")
     lines.extend(["", "## Context", ""])
     for index, item in enumerate(items, start=1):
         lines.append(f'### {index}. "{item.quote}"')
+        lines.append(f"- Comment: {item.comment}")
         lines.append(f"- Suggestion: {item.suggestion}")
         lines.append(f"- Agent: {item.author_label}")
         if item.unmatched:
@@ -113,6 +116,7 @@ def _todo_items(artifact: AnalysisArtifact) -> list[_TodoItem]:
             items.append(
                 _TodoItem(
                     quote=_compact_text(thread.anchor.quote),
+                    comment=_compact_text(comment.body),
                     suggestion=_compact_text(comment.suggestion),
                     author_label=comment.author_label,
                     unmatched=thread.anchor.match_kind.value == "synthetic_unmatched",

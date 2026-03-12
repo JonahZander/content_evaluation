@@ -174,6 +174,9 @@ def test_todo_export_includes_only_accepted_agent_suggestions_in_article_order()
     assert "Trim the opening claim." in todo_export
     assert "Move the main takeaway earlier." in todo_export
     assert "Verify the unmatched source quote manually." in todo_export
+    assert "Comment: Tighten the alpha section." in todo_export
+    assert "Comment: Sharpen the beta takeaway." in todo_export
+    assert "Note: Tighten the alpha section." in todo_export
     assert "Ignore me." not in todo_export
     assert "Should not export." not in todo_export
     assert "Anchor: unmatched synthetic fallback" in todo_export

@@ -72,7 +72,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Retry and resume events should be visible in both the run log and the per-agent status area.
 - Starting a new analysis should warn before discarding a not-yet-downloaded JSON artifact.
 - The `New analysis` button should only appear once a real artifact exists.
-- Todo export should include only accepted agent suggestions, ordered by where they appear in the article, with a compact checklist followed by short context.
+- Todo export should include only accepted agent suggestions, ordered by where they appear in the article, with a compact checklist followed by short context that includes both the original agent comment and the suggested change.
 - Debug visibility should be toggleable when the artifact includes debug trace data.
 - Empty states are shown when no artifact or no comment threads are present.
 - Synthetic unmatched-reference blocks should render with visibly distinct fallback styling so reviewers can tell they are not original article text.

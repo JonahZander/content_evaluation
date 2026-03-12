@@ -16,6 +16,21 @@ class ValidationError(ContentEvaluationError):
 class ProviderError(ContentEvaluationError):
     """Raise when an upstream provider fails."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        kind: str = "provider_error",
+        retriable: bool = False,
+        provider_name: str | None = None,
+    ) -> None:
+        """Store retry and provider metadata alongside the message."""
+
+        super().__init__(message)
+        self.kind = kind
+        self.retriable = retriable
+        self.provider_name = provider_name
+
 
 class ConfigurationError(ContentEvaluationError):
     """Raise when the runtime configuration is invalid."""

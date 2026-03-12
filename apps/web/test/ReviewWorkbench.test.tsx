@@ -118,6 +118,87 @@ describe("ReviewWorkbench", () => {
     expect(await screen.findByText("How Editorial Teams Can Evaluate AI-Written Posts")).toBeInTheDocument();
   });
 
+  it("shows new analysis only when an artifact exists", () => {
+    const { unmount } = render(<ReviewWorkbench initialArtifact={null} />);
+
+    expect(screen.queryByTestId("new-analysis-button")).not.toBeInTheDocument();
+
+    unmount();
+    render(<ReviewWorkbench initialArtifact={mockArtifact} />);
+
+    expect(screen.getByTestId("new-analysis-button")).toBeInTheDocument();
+  });
+
+  it("renders the run log below the progress section", () => {
+    render(<ReviewWorkbench initialArtifact={mockArtifact} />);
+
+    const progressHeading = screen.getByText("Run progress");
+    const runLogHeading = screen.getByText("Run log");
+
+    expect(
+      progressHeading.compareDocumentPosition(runLogHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("adds active progress styling while a run is live", () => {
+    render(<ReviewWorkbench initialArtifact={{ ...mockArtifact, status: "running" }} />);
+
+    const activeTrack = screen.getByTestId("progress-track");
+    const activeFill = screen.getByTestId("progress-fill");
+
+    expect(activeTrack.className).toContain("progressTrackActive");
+    expect(activeFill.className).toContain("progressFillActive");
+  });
+
+  it("shows retry and resume events in the run log", () => {
+    const artifact = {
+      ...mockArtifact,
+      status: "running",
+      agent_plan: mockArtifact.agent_plan.map((item) =>
+        item.agent_id === "editorial" ? { ...item, status: "running", message: "Retry 1 of 2 after timeout" } : item,
+      ),
+      events: [
+        ...mockArtifact.events,
+        {
+          id: "event-run-resumed",
+          artifact_id: mockArtifact.artifact_id,
+          event_type: "run",
+          stage: "run",
+          status: "resumed",
+          message: "Run resumed after worker retry",
+          attempt: 2,
+          max_attempts: 2,
+          snapshot_available: true,
+          created_at: new Date().toISOString(),
+          metadata: {},
+        },
+        {
+          id: "event-agent-retrying",
+          artifact_id: mockArtifact.artifact_id,
+          event_type: "agent",
+          stage: "editorial",
+          status: "retrying",
+          message: "Editorial retrying after timeout",
+          agent_id: "editorial",
+          agent_name: "Editorial",
+          attempt: 2,
+          max_attempts: 3,
+          error_kind: "timeout",
+          provider_name: "openai",
+          snapshot_available: true,
+          created_at: new Date().toISOString(),
+          metadata: {},
+        },
+      ],
+    } as AnalysisArtifact;
+
+    render(<ReviewWorkbench initialArtifact={artifact} />);
+
+    expect(screen.getByTestId("run-resumed-note")).toHaveTextContent("Run resumed after worker retry");
+    expect(screen.getByText("Editorial retrying after timeout")).toBeInTheDocument();
+    expect(screen.getByText("Attempt 2 of 3")).toBeInTheDocument();
+  });
+
   it("renders overlap-heavy fixture blocks without duplicating text", () => {
     const artifact = reproDuplicateSections as AnalysisArtifact;
 

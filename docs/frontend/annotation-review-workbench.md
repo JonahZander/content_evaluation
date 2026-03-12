@@ -9,7 +9,9 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Intake panel
   - URL input with explicit draft-import preview, file upload, pasted text, artifact import, and agent selectors
 - Progress panel
-  - Visually pleasing progress bar, per-agent status, stage timeline, and partial findings
+  - Visually pleasing progress bar, per-agent status, stage timeline, retry/resume notices, and partial findings
+- Run log
+  - Full-width activity list directly below the progress panel so users can inspect retries, resumptions, and failures without leaving the main flow
 - Analysis summary
   - Overall score, originality, value, audience fit, AI-likelihood
 - Source text pane
@@ -44,6 +46,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Paragraphs with comments should reserve the vertical space needed for those comments before the next paragraph begins.
 - Export and import actions should be visible from the main toolbar.
 - The toolbar should expose a stop-run action for queued/running work and a new-analysis reset action.
+- The toolbar should keep the pasted-text composer in its own full-width source row beneath source selection controls.
 - Invalid review actions should be disabled when no real artifact is loaded.
 
 ## Target Behaviors
@@ -60,7 +63,10 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Agent comments are immutable in content; reviewer input happens through replies and review-state actions.
 - Reviewer comments use the `human` category and are attached to an existing or newly created anchor.
 - Run status is visible in the toolbar and progress panel.
+- Queued or running progress bars should animate even while the percentage is unchanged so the reviewer can see that work is still active.
+- Retry and resume events should be visible in both the run log and the per-agent status area.
 - Starting a new analysis should warn before discarding a not-yet-downloaded JSON artifact.
+- The `New analysis` button should only appear once a real artifact exists.
 - Debug visibility should be toggleable when the artifact includes debug trace data.
 - Empty states are shown when no artifact or no comment threads are present.
 - When an anchor cannot be matched to a rendered block, its thread should render after the article in an unmatched-reference section instead of attaching to the first paragraph.

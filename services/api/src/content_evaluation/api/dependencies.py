@@ -60,6 +60,7 @@ class AppServices:
             settings.runtime_mode,
             settings.persistent_storage_enabled,
             settings.orchestrator_backend,
+            settings.agent_max_retries,
         )
         self.comments = CommentService(self.repository, settings.reviewer_name)
         self.worker = RunWorker(self.repository, self.orchestrator, settings)

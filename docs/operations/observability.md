@@ -17,8 +17,10 @@ Make every analysis run easy to inspect by humans and future agents.
 
 - Logs should use stable event names and structured payloads.
 - Each run should have a stable run identifier.
+- First-party logs should always format safely even when third-party libraries emit records without request context.
 - Each agent step should include timing and model metadata.
 - User-visible conclusions should reference the source run and evidence.
+- Routine successful provider transport logs should stay quiet; retry, failure, and resume signals should remain visible.
 
 ## Current Surfaces
 
@@ -29,7 +31,7 @@ Make every analysis run easy to inspect by humans and future agents.
 - `RunEvent` records
   - Persisted per run and exposed both in the API payload and via SSE
 - Review UI event panel
-  - Human-readable event stream with stage, agent, and model
+  - Human-readable event stream with stage, agent, model, and retry/resume attempt details
 - Structured request logging middleware
   - Request method, path, duration, and request id
 

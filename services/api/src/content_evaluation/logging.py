@@ -11,15 +11,28 @@ from uuid import uuid4
 from fastapi import Request, Response
 
 request_id_context: ContextVar[str] = ContextVar("request_id", default="-")
+_LOG_RECORD_FACTORY = logging.getLogRecordFactory()
+
+
+def _record_factory(*args: object, **kwargs: object) -> logging.LogRecord:
+    """Ensure every log record has the request id field expected by the formatter."""
+
+    record = _LOG_RECORD_FACTORY(*args, **kwargs)
+    if not hasattr(record, "request_id"):
+        record.request_id = request_id_context.get()
+    return record
 
 
 def configure_logging() -> None:
     """Configure the application logger once."""
 
+    logging.setLogRecordFactory(_record_factory)
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s request_id=%(request_id)s %(message)s",
     )
+    for logger_name in ("httpx", "httpcore", "openai", "openai._base_client"):
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
 
 
 def get_logger(name: str) -> logging.LoggerAdapter[logging.Logger]:

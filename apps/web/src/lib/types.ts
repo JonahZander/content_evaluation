@@ -144,6 +144,10 @@ export interface ArtifactEvent {
   agent_id?: string | null;
   agent_name?: string | null;
   model_name?: string | null;
+  attempt?: number | null;
+  max_attempts?: number | null;
+  error_kind?: string | null;
+  provider_name?: string | null;
   snapshot_available: boolean;
   created_at: string;
   metadata: Record<string, unknown>;

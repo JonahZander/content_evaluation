@@ -16,7 +16,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 3. Queued execution
    - `RunWorker` claims queued jobs
    - Resets in-flight jobs on startup
-   - Requeues failed attempts up to the configured max attempts
+   - Requeues failed attempts up to the configured max attempts only for worker/process recovery
    - Cancels queued or active jobs when the user stops a run
    - Starts or resumes LangGraph execution from the latest stored checkpoint
 4. Normalization
@@ -32,6 +32,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 6. Agent execution
    - Run independent agents in parallel through LangGraph nodes
    - Run dependent agents after prerequisites complete
+   - Retry transient provider timeouts and network failures inside the individual agent execution loop before failing the run
    - Emit progress events and partial artifact updates as each agent completes
    - Use LangChain chat-model adapters for analysis nodes
 7. Artifact assembly
@@ -55,6 +56,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 - Persistence is an adapter around artifact snapshots, not the core business model.
 - Backend services should be usable independently of the web app.
 - `GraphRunState` is internal runtime state, not a public API contract.
+- `ArtifactEvent` is the public place to surface run retries, worker resumptions, and provider failure metadata to the UI.
 
 ## Current Refactor Direction
 

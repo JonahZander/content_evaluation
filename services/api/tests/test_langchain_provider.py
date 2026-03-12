@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import warnings
+
 import pytest
 from langchain_core.runnables import RunnableLambda
 
@@ -28,6 +30,13 @@ class _StructuredResponse:
             ],
             "summary": "Structured summary",
         }
+
+
+class _ParsedStructuredResponse:
+    """Return one wrapper that mimics a parsed provider payload."""
+
+    def __init__(self) -> None:
+        self.parsed = _StructuredResponse()
 
 
 @pytest.mark.asyncio
@@ -72,3 +81,27 @@ def test_langchain_provider_resolves_override_route() -> None:
         )
         == "gemini-2.0-flash"
     )
+
+
+@pytest.mark.asyncio
+async def test_langchain_provider_normalizes_parsed_wrapper_without_warnings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Persist plain JSON even when the provider returns a parsed wrapper object."""
+
+    provider = LangChainAnalysisProvider(
+        Settings(openai_api_key="openai-key", tavily_api_key="tavily-key")
+    )
+    monkeypatch.setattr(provider, "_build_runnable", lambda route: RunnableLambda(lambda _: _ParsedStructuredResponse()))
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("error")
+        payload = await provider.analyze(
+            "value",
+            "Analyze value",
+            "Title",
+            [ArtifactBlock(index=0, text="Alpha text")],
+        )
+
+    assert payload["summary"] == "Structured summary"
+    assert caught == []

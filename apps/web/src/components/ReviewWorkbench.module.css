@@ -82,20 +82,17 @@
 }
 
 .toolbar {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
   gap: 12px;
-  align-items: center;
-  justify-content: space-between;
   padding: 18px 22px;
   background: rgba(255, 250, 241, 0.84);
   border: 1px solid var(--line);
   border-radius: 24px;
 }
 
-.toolbarGroup {
-  display: flex;
-  flex-wrap: wrap;
+.toolbarSettings {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
   gap: 10px;
   align-items: center;
 }
@@ -113,6 +110,24 @@
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.sourceComposer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+}
+
+.sourceComposer > :only-child {
+  grid-column: 1 / -1;
+}
+
+.toolbarActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
 }
 
 .agentChip {
@@ -141,7 +156,8 @@
 }
 
 .toolbarTextarea {
-  min-height: 110px;
+  min-height: 160px;
+  width: 100%;
   resize: vertical;
 }
 
@@ -234,11 +250,25 @@
   background: rgba(22, 18, 14, 0.08);
 }
 
+.progressTrackActive::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.4) 45%, transparent 75%);
+  transform: translateX(-100%);
+  animation: progressPulse 1.6s linear infinite;
+}
+
 .progressFill {
   height: 100%;
   border-radius: 999px;
   background: linear-gradient(90deg, #1d8f6f, #e0a92f, #c4542c);
   transition: width 180ms ease;
+}
+
+.progressFillActive {
+  position: relative;
+  z-index: 1;
 }
 
 .progressMeta {
@@ -249,6 +279,14 @@
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.12em;
+  color: var(--muted);
+}
+
+.progressNote {
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(48, 36, 24, 0.1);
   color: var(--muted);
 }
 
@@ -296,8 +334,8 @@
 .workspace {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  gap: 28px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
   min-height: 760px;
   padding: 24px;
   background: rgba(255, 252, 245, 0.88);
@@ -615,8 +653,9 @@
 }
 
 .eventItem {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(180px, 0.8fr);
+  align-items: start;
   gap: 12px;
   padding: 10px 0;
   border-bottom: 1px solid rgba(48, 36, 24, 0.08);
@@ -626,10 +665,29 @@
   border-bottom: 0;
 }
 
+.eventBody {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
 .eventMeta {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
   font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
   color: var(--muted);
   font-size: 12px;
+}
+
+@keyframes progressPulse {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(100%);
+  }
 }
 
 @media (max-width: 1080px) {
@@ -637,6 +695,20 @@
   .workspace,
   .metrics {
     grid-template-columns: 1fr;
+  }
+
+  .toolbarSettings,
+  .sourceComposer,
+  .eventItem {
+    grid-template-columns: 1fr;
+  }
+
+  .toolbarActions {
+    align-items: stretch;
+  }
+
+  .eventMeta {
+    justify-items: start;
   }
 
   .documentPane {

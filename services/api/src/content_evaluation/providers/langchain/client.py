@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+import httpx
 from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
+from openai import APITimeoutError
 from pydantic import BaseModel, Field, SecretStr
 
 from content_evaluation.config import Settings
@@ -80,12 +82,16 @@ class LangChainAnalysisProvider:
         try:
             response = await (prompt | runnable).ainvoke({"request": request})
         except Exception as error:  # pragma: no cover - framework exception types vary
-            raise ProviderError(f"LangChain analysis request failed: {error}") from error
+            raise self._classify_provider_error(error) from error
 
-        parsed = response.model_dump(mode="json")
+        parsed = self._normalize_response(response)
         findings = parsed.get("findings", [])
         if not isinstance(findings, list):
-            raise ProviderError("Structured analysis response had an invalid findings shape")
+            raise ProviderError(
+                "Structured analysis response had an invalid findings shape",
+                kind="invalid_response",
+                provider_name=resolved_route.family.value,
+            )
         return parsed
 
     def _build_runnable(self, route: ProviderRoute) -> Any:
@@ -93,6 +99,46 @@ class LangChainAnalysisProvider:
 
         model = self._build_chat_model(route)
         return model.with_structured_output(_StructuredAgentResponse)
+
+    def _normalize_response(self, response: object) -> dict[str, object]:
+        """Return one plain JSON payload regardless of the provider wrapper shape."""
+
+        parsed_response = getattr(response, "parsed", response)
+        if isinstance(parsed_response, _StructuredAgentResponse):
+            return cast(dict[str, object], parsed_response.model_dump(mode="json"))
+        if isinstance(parsed_response, dict):
+            validated = _StructuredAgentResponse.model_validate(parsed_response)
+            return cast(dict[str, object], validated.model_dump(mode="json"))
+        if hasattr(parsed_response, "model_dump"):
+            validated = _StructuredAgentResponse.model_validate(parsed_response.model_dump())
+            return cast(dict[str, object], validated.model_dump(mode="json"))
+        raise ProviderError("Structured analysis response had an unsupported payload shape", kind="invalid_response")
+
+    def _classify_provider_error(self, error: Exception) -> ProviderError:
+        """Map framework exceptions into stable provider errors."""
+
+        provider_name = self._settings.analysis_provider_family.value
+        if isinstance(error, (APITimeoutError, httpx.TimeoutException)):
+            return ProviderError(
+                f"LangChain analysis request failed: {error}",
+                kind="timeout",
+                retriable=True,
+                provider_name=provider_name,
+            )
+        if isinstance(error, httpx.HTTPError):
+            return ProviderError(
+                f"LangChain analysis request failed: {error}",
+                kind="network_error",
+                retriable=True,
+                provider_name=provider_name,
+            )
+        if isinstance(error, ProviderError):
+            return error
+        return ProviderError(
+            f"LangChain analysis request failed: {error}",
+            kind="provider_error",
+            provider_name=provider_name,
+        )
 
     def _build_chat_model(self, route: ProviderRoute) -> Any:
         """Construct one chat model instance for the requested provider family."""

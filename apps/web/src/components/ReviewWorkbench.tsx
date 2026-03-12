@@ -89,6 +89,8 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   const workspaceRef = useRef<HTMLDivElement | null>(null);
   const anchorRefs = useRef<Record<string, HTMLSpanElement | null>>({});
   const commentRefs = useRef<Record<string, HTMLElement | null>>({});
+  const refreshInFlightRef = useRef<Promise<AnalysisArtifact> | null>(null);
+  const queuedRefreshArtifactIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     fetchAgents()
@@ -190,6 +192,24 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     return updated;
   }
 
+  async function refreshArtifactCoalesced(artifactId: string) {
+    if (refreshInFlightRef.current !== null) {
+      queuedRefreshArtifactIdRef.current = artifactId;
+      return refreshInFlightRef.current;
+    }
+
+    const request = refreshArtifact(artifactId).finally(() => {
+      refreshInFlightRef.current = null;
+      const queuedArtifactId = queuedRefreshArtifactIdRef.current;
+      queuedRefreshArtifactIdRef.current = null;
+      if (queuedArtifactId !== null) {
+        void refreshArtifactCoalesced(queuedArtifactId);
+      }
+    });
+    refreshInFlightRef.current = request;
+    return request;
+  }
+
   useEffect(() => {
     if (!activeArtifactId) {
       return;
@@ -199,7 +219,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     eventSource.onmessage = async (event) => {
       const parsed = JSON.parse(event.data) as { snapshot_available?: boolean };
       if (parsed.snapshot_available) {
-        const updated = await refreshArtifact(activeArtifactId);
+        const updated = await refreshArtifactCoalesced(activeArtifactId);
         if (TERMINAL_RUN_STATUSES.has(updated.status)) {
           setActiveArtifactId(null);
           eventSource.close();
@@ -273,12 +293,21 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
 
   const displayDocument = artifact?.document ?? previewDocument;
   const canStopRun = artifact !== null && (artifact.status === "queued" || artifact.status === "running");
+  const showNewAnalysis = artifact !== null;
   const canPreviewUrl = formState.sourceType === "url" && formState.url.trim().length > 0;
   const canAnalyze =
     !isSubmitting &&
     ((formState.sourceType === "url" && previewDocument !== null) ||
       (formState.sourceType === "text" && formState.text.trim().length > 0) ||
       (formState.sourceType === "file" && selectedFile !== null));
+  const latestResumeEvent = useMemo(
+    () =>
+      [...(artifact?.events ?? [])]
+        .reverse()
+        .find((event) => event.event_type === "run" && event.status === "resumed"),
+    [artifact?.events],
+  );
+  const isProgressActive = artifact !== null && (artifact.status === "queued" || artifact.status === "running");
 
   function clearAnalysisState(resetForm: boolean) {
     setArtifact(null);
@@ -591,6 +620,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
           canAnalyze={canAnalyze}
           canPreviewUrl={canPreviewUrl}
           canStopRun={canStopRun}
+          showNewAnalysis={showNewAnalysis}
           importInputKey={importInputKey}
           onFormChange={(updater) =>
             setFormState((current) => {
@@ -633,13 +663,27 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
 
         <section className={styles.progressPanel}>
           <div className={styles.sectionTitle}>Run progress</div>
-          <div className={styles.progressTrack} aria-hidden="true">
-            <div className={styles.progressFill} style={{ width: `${Math.round(progress * 100)}%` }} />
+          <div
+            className={`${styles.progressTrack} ${isProgressActive ? styles.progressTrackActive : ""}`}
+            data-testid="progress-track"
+            aria-hidden="true"
+          >
+            <div
+              className={`${styles.progressFill} ${isProgressActive ? styles.progressFillActive : ""}`}
+              data-testid="progress-fill"
+              style={{ width: `${Math.round(progress * 100)}%` }}
+            />
           </div>
           <div className={styles.progressMeta}>
             <span>{Math.round(progress * 100)}% complete</span>
             <span>{artifact?.status ?? (previewDocument ? "draft imported" : "idle")}</span>
           </div>
+          {latestResumeEvent ? (
+            <div className={styles.progressNote} data-testid="run-resumed-note">
+              {latestResumeEvent.message}
+              {latestResumeEvent.attempt ? ` (${latestResumeEvent.attempt}${latestResumeEvent.max_attempts ? ` of ${latestResumeEvent.max_attempts}` : ""})` : ""}
+            </div>
+          ) : null}
           <div className={styles.agentStatusGrid}>
             {(artifact?.agent_plan ?? []).map((item) => (
               <article key={item.agent_id} className={styles.agentStatusCard} data-testid={`agent-plan-${item.agent_id}`}>
@@ -650,6 +694,8 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
             ))}
           </div>
         </section>
+
+        <CommentRail events={artifact?.events ?? []} />
 
         <RunMetrics summary={artifact?.summary ?? null} />
 
@@ -685,7 +731,6 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
             }}
             onDeleteComment={handleDeleteHumanComment}
           />
-          <CommentRail events={artifact?.events ?? []} />
         </section>
       </div>
     </main>

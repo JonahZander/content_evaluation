@@ -23,6 +23,7 @@ interface ReviewToolbarProps {
   canAnalyze: boolean;
   canPreviewUrl: boolean;
   canStopRun: boolean;
+  showNewAnalysis: boolean;
   importInputKey: number;
   onFormChange: (updater: (current: ReviewFormState) => ReviewFormState) => void;
   onFileChange: (file: File | null) => void;
@@ -45,6 +46,7 @@ export function ReviewToolbar({
   canAnalyze,
   canPreviewUrl,
   canStopRun,
+  showNewAnalysis,
   importInputKey,
   onFormChange,
   onFileChange,
@@ -57,7 +59,7 @@ export function ReviewToolbar({
 }: ReviewToolbarProps) {
   return (
     <section className={styles.toolbar}>
-      <div className={styles.toolbarGroup}>
+      <div className={styles.toolbarSettings}>
         <select
           className={styles.toolbarSelect}
           data-testid="source-type-select"
@@ -134,7 +136,7 @@ export function ReviewToolbar({
         })}
       </div>
 
-      <div className={styles.toolbarGroup}>
+      <div className={styles.sourceComposer}>
         {formState.sourceType === "url" ? (
           <>
             <input
@@ -184,15 +186,17 @@ export function ReviewToolbar({
         ) : null}
       </div>
 
-      <div className={styles.toolbarGroup}>
-        <button
-          className={styles.button}
-          data-testid="new-analysis-button"
-          type="button"
-          onClick={onStartNewAnalysis}
-        >
-          New analysis
-        </button>
+      <div className={styles.toolbarActions}>
+        {showNewAnalysis ? (
+          <button
+            className={styles.button}
+            data-testid="new-analysis-button"
+            type="button"
+            onClick={onStartNewAnalysis}
+          >
+            New analysis
+          </button>
+        ) : null}
         <button
           className={styles.button}
           data-testid="analyze-button"
@@ -211,9 +215,6 @@ export function ReviewToolbar({
         >
           Stop run
         </button>
-      </div>
-
-      <div className={styles.toolbarGroup}>
         <label className={styles.ghostButton}>
           Import artifact
           <input

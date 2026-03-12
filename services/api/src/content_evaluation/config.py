@@ -27,7 +27,8 @@ class Settings(BaseSettings):
     anthropic_model_name: str = Field(default="claude-3-5-sonnet-latest")
     gemini_model_name: str = Field(default="gemini-2.0-flash")
     analysis_temperature: float = Field(default=0.0)
-    analysis_max_retries: int = Field(default=3)
+    analysis_max_retries: int = Field(default=1)
+    agent_max_retries: int = Field(default=2)
     orchestrator_backend: OrchestratorBackend = Field(default=OrchestratorBackend.LANGGRAPH)
     api_base_url: str = Field(default="http://localhost:8000")
     web_base_url: str = Field(default="http://localhost:3000")
@@ -36,7 +37,7 @@ class Settings(BaseSettings):
     worker_poll_interval_seconds: float = Field(default=0.15)
     worker_max_attempts: int = Field(default=2)
     request_timeout_seconds: float = Field(default=30.0)
-    provider_timeout_seconds: float = Field(default=45.0)
+    provider_timeout_seconds: float = Field(default=90.0)
 
     @property
     def runtime_mode(self) -> RuntimeMode:

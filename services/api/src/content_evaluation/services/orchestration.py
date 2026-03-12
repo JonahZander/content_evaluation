@@ -18,7 +18,7 @@ from content_evaluation.agents.registry import (
     get_agent_definition,
     load_instruction_text,
 )
-from content_evaluation.domain.exceptions import NotFoundError, RunCancelledError, ValidationError
+from content_evaluation.domain.exceptions import NotFoundError, ProviderError, RunCancelledError, ValidationError
 from content_evaluation.domain.models import (
     AgentCatalogEntry,
     AgentCategory,
@@ -104,6 +104,7 @@ class RunOrchestrator:
         runtime_mode: RuntimeMode,
         persistent_storage_enabled: bool,
         orchestrator_backend: OrchestratorBackend,
+        agent_max_retries: int = 2,
     ) -> None:
         """Initialize the orchestrator."""
 
@@ -114,6 +115,7 @@ class RunOrchestrator:
         self._runtime_mode = runtime_mode
         self._persistent_storage_enabled = persistent_storage_enabled
         self._orchestrator_backend = orchestrator_backend
+        self._agent_max_retries = agent_max_retries
         self._artifact_locks: dict[UUID, asyncio.Lock] = {}
 
     def list_agents(self) -> list[AgentCatalogEntry]:
@@ -156,6 +158,18 @@ class RunOrchestrator:
                 for definition in _plan_order(resolved_agent_ids)
             ],
             debug=ArtifactDebug() if input_data.include_debug_trace else None,
+        )
+        artifact.events.append(
+            ArtifactEvent(
+                artifact_id=artifact.artifact_id,
+                event_type=EventType.RUN,
+                stage="run",
+                status="queued",
+                message="Run queued",
+                progress=0.0,
+                attempt=1,
+                max_attempts=1,
+            )
         )
         return await self._repository.create_artifact(artifact)
 
@@ -205,21 +219,56 @@ class RunOrchestrator:
         await self._repository.cancel_run_job(artifact_id)
         return artifact
 
-    async def process_run(self, artifact_id: UUID, input_data: RunInput) -> None:
+    async def process_run(
+        self,
+        artifact_id: UUID,
+        input_data: RunInput,
+        *,
+        attempt: int = 1,
+        max_attempts: int | None = None,
+    ) -> None:
         """Process one queued artifact."""
 
         if self._orchestrator_backend is OrchestratorBackend.LANGGRAPH:
-            await self._process_run_with_langgraph(artifact_id, input_data)
+            await self._process_run_with_langgraph(artifact_id, input_data, attempt=attempt, max_attempts=max_attempts)
             return
-        await self._process_run_legacy(artifact_id, input_data)
+        await self._process_run_legacy(artifact_id, input_data, attempt=attempt, max_attempts=max_attempts)
 
-    async def _process_run_legacy(self, artifact_id: UUID, input_data: RunInput) -> None:
+    async def _process_run_legacy(
+        self,
+        artifact_id: UUID,
+        input_data: RunInput,
+        *,
+        attempt: int,
+        max_attempts: int | None,
+    ) -> None:
         """Process one queued artifact through the legacy loop."""
 
         artifact = await self._require_artifact(artifact_id)
         artifact.status = RunStatus.RUNNING
         artifact.error_message = None
-        await self._append_event(artifact, EventType.RUN, "run", "started", "Run started", snapshot_available=True)
+        if attempt > 1:
+            await self._append_event(
+                artifact,
+                EventType.RUN,
+                "run",
+                "resumed",
+                "Run resumed after worker retry",
+                progress=_progress_for_artifact(artifact),
+                snapshot_available=True,
+                attempt=attempt,
+                max_attempts=max_attempts,
+            )
+        await self._append_event(
+            artifact,
+            EventType.RUN,
+            "run",
+            "started",
+            "Run started",
+            snapshot_available=True,
+            attempt=attempt,
+            max_attempts=max_attempts,
+        )
 
         try:
             await self._ensure_run_active(artifact_id)
@@ -276,6 +325,8 @@ class RunOrchestrator:
         except Exception as error:
             artifact.status = RunStatus.FAILED
             artifact.error_message = str(error)
+            error_kind = error.kind if isinstance(error, ProviderError) else None
+            provider_name = error.provider_name if isinstance(error, ProviderError) else None
             await self._append_event(
                 artifact,
                 EventType.RUN,
@@ -283,19 +334,48 @@ class RunOrchestrator:
                 "failed",
                 str(error),
                 progress=1.0,
+                error_kind=error_kind,
+                provider_name=provider_name,
                 snapshot_available=True,
             )
             raise
 
-    async def _process_run_with_langgraph(self, artifact_id: UUID, input_data: RunInput) -> None:
+    async def _process_run_with_langgraph(
+        self,
+        artifact_id: UUID,
+        input_data: RunInput,
+        *,
+        attempt: int,
+        max_attempts: int | None,
+    ) -> None:
         """Process one queued artifact through LangGraph."""
 
         artifact = await self._require_artifact(artifact_id)
         artifact.status = RunStatus.RUNNING
         artifact.error_message = None
-        await self._append_event(artifact, EventType.RUN, "run", "started", "Run started", snapshot_available=True)
-
         checkpoint = await self._repository.get_graph_checkpoint(artifact_id)
+        if attempt > 1 or checkpoint is not None:
+            await self._append_event(
+                artifact,
+                EventType.RUN,
+                "run",
+                "resumed",
+                "Run resumed after worker retry",
+                progress=_progress_for_artifact(artifact),
+                snapshot_available=True,
+                attempt=attempt,
+                max_attempts=max_attempts,
+            )
+        await self._append_event(
+            artifact,
+            EventType.RUN,
+            "run",
+            "started",
+            "Run started",
+            snapshot_available=True,
+            attempt=attempt,
+            max_attempts=max_attempts,
+        )
         state = checkpoint.state if checkpoint is not None else GraphRunState(
             artifact_id=artifact_id,
             input_data=input_data,
@@ -313,6 +393,8 @@ class RunOrchestrator:
             artifact = await self._require_artifact(artifact_id)
             artifact.status = RunStatus.FAILED
             artifact.error_message = str(error)
+            error_kind = error.kind if isinstance(error, ProviderError) else None
+            provider_name = error.provider_name if isinstance(error, ProviderError) else None
             await self._append_event(
                 artifact,
                 EventType.RUN,
@@ -320,6 +402,8 @@ class RunOrchestrator:
                 "failed",
                 str(error),
                 progress=1.0,
+                error_kind=error_kind,
+                provider_name=provider_name,
                 snapshot_available=True,
             )
             raise
@@ -518,7 +602,7 @@ class RunOrchestrator:
                             agent_id=definition.agent_id,
                             agent_name=definition.display_name,
                         )
-                result = await self._execute_agent(artifact, definition)
+                result = await self._execute_agent_with_retries(artifact, definition)
                 await self._merge_agent_result(artifact, result)
 
             updates: dict[str, object] = {
@@ -655,6 +739,11 @@ class RunOrchestrator:
                     progress=_progress_for_artifact(artifact),
                     agent_id=definition.agent_id,
                     agent_name=definition.display_name,
+                    attempt=self._agent_max_retries + 1 if isinstance(error, ProviderError) else None,
+                    max_attempts=self._agent_max_retries + 1 if isinstance(error, ProviderError) else None,
+                    error_kind=error.kind if isinstance(error, ProviderError) else None,
+                    provider_name=error.provider_name if isinstance(error, ProviderError) else None,
+                    snapshot_available=True,
                 )
                 raise
             await self._merge_agent_result(artifact, result)
@@ -667,7 +756,7 @@ class RunOrchestrator:
     ) -> tuple[AgentDefinition, AgentExecutionResult]:
         """Execute one agent and preserve its definition for merge ordering."""
 
-        return definition, await self._execute_agent(artifact, definition)
+        return definition, await self._execute_agent_with_retries(artifact, definition)
 
     async def _execute_agent(self, artifact: AnalysisArtifact, definition: AgentDefinition) -> AgentExecutionResult:
         """Execute one agent against the current artifact state."""
@@ -723,6 +812,42 @@ class RunOrchestrator:
                 _route_for_definition(definition, self._runtime_mode, self._analysis_provider)
             ),
         )
+
+    async def _execute_agent_with_retries(
+        self,
+        artifact: AnalysisArtifact,
+        definition: AgentDefinition,
+    ) -> AgentExecutionResult:
+        """Execute one agent with bounded retries for transient provider failures."""
+
+        total_attempts = self._agent_max_retries + 1
+        for attempt in range(1, total_attempts + 1):
+            try:
+                return await self._execute_agent(artifact, definition)
+            except ProviderError as error:
+                if not error.retriable or attempt >= total_attempts:
+                    raise
+                plan_item = _require_plan_item(artifact, definition.agent_id)
+                plan_item.status = AgentPlanStatus.RUNNING
+                plan_item.message = f"Retry {attempt} of {self._agent_max_retries} after {error.kind.replace('_', ' ')}"
+                await self._append_event(
+                    artifact,
+                    EventType.AGENT,
+                    definition.agent_id,
+                    "retrying",
+                    f"{definition.display_name} retrying after {error.kind.replace('_', ' ')}",
+                    progress=_progress_for_artifact(artifact),
+                    agent_id=definition.agent_id,
+                    agent_name=definition.display_name,
+                    attempt=attempt + 1,
+                    max_attempts=total_attempts,
+                    error_kind=error.kind,
+                    provider_name=error.provider_name,
+                    snapshot_available=True,
+                )
+                await asyncio.sleep(min(float(2 ** (attempt - 1)), 5.0))
+
+        raise ProviderError("Agent retry loop exited unexpectedly", kind="provider_error")
 
     async def _merge_agent_result(self, artifact: AnalysisArtifact, result: AgentExecutionResult) -> None:
         """Merge one completed agent result into the artifact snapshot."""
@@ -800,6 +925,10 @@ class RunOrchestrator:
         agent_id: str | None = None,
         agent_name: str | None = None,
         model_name: str | None = None,
+        attempt: int | None = None,
+        max_attempts: int | None = None,
+        error_kind: str | None = None,
+        provider_name: str | None = None,
         snapshot_available: bool = False,
         metadata: dict[str, object] | None = None,
     ) -> None:
@@ -815,6 +944,10 @@ class RunOrchestrator:
             agent_id=agent_id,
             agent_name=agent_name,
             model_name=model_name,
+            attempt=attempt,
+            max_attempts=max_attempts,
+            error_kind=error_kind,
+            provider_name=provider_name,
             snapshot_available=snapshot_available,
             metadata=metadata or {},
         )

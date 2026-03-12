@@ -7,6 +7,7 @@ from contextlib import suppress
 from uuid import UUID
 
 from content_evaluation.config import Settings
+from content_evaluation.domain.exceptions import ProviderError
 from content_evaluation.logging import get_logger
 from content_evaluation.repositories.base import RunRepository
 from content_evaluation.services.orchestration import RunOrchestrator
@@ -52,7 +53,12 @@ class RunWorker:
 
             self._logger.info("worker claimed artifact_id=%s attempt=%s", job.artifact_id, job.attempts)
             run_task = asyncio.create_task(
-                self._orchestrator.process_run(job.artifact_id, job.input_data),
+                self._orchestrator.process_run(
+                    job.artifact_id,
+                    job.input_data,
+                    attempt=job.attempts,
+                    max_attempts=self._settings.worker_max_attempts,
+                ),
                 name=f"content-evaluation-run-{job.artifact_id}",
             )
             self._active_runs[job.artifact_id] = run_task
@@ -62,8 +68,11 @@ class RunWorker:
                 await self._repository.cancel_run_job(job.artifact_id)
                 await self._repository.delete_graph_checkpoint(job.artifact_id)
                 self._logger.info("worker canceled artifact_id=%s", job.artifact_id)
-            except Exception:
-                if job.attempts < self._settings.worker_max_attempts:
+            except Exception as error:
+                if isinstance(error, ProviderError):
+                    await self._repository.fail_run_job(job.artifact_id)
+                    self._logger.exception("worker failed artifact_id=%s attempts=%s", job.artifact_id, job.attempts)
+                elif job.attempts < self._settings.worker_max_attempts:
                     await self._repository.requeue_run_job(job.artifact_id)
                     self._logger.exception("worker requeued artifact_id=%s attempt=%s", job.artifact_id, job.attempts)
                 else:

@@ -327,6 +327,10 @@ class ArtifactEvent(BaseModel):
     agent_id: str | None = None
     agent_name: str | None = None
     model_name: str | None = None
+    attempt: int | None = None
+    max_attempts: int | None = None
+    error_kind: str | None = None
+    provider_name: str | None = None
     snapshot_available: bool = False
     created_at: datetime = Field(default_factory=now_utc)
     metadata: dict[str, Any] = Field(default_factory=dict)

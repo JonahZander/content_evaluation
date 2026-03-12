@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from content_evaluation.domain.exceptions import ProviderError
 from content_evaluation.domain.models import (
     ArtifactBlock,
     ContentFormat,
@@ -53,6 +54,33 @@ class CrossParagraphAnalysisProvider(MockAnalysisProvider):
                 ]
             }
         return {"findings": []}
+
+
+class RetryOnceAnalysisProvider(MockAnalysisProvider):
+    """Fail once with a retriable provider timeout before succeeding."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._attempts = 0
+
+    async def analyze(
+        self,
+        agent_id: str,
+        instruction: str,
+        title: str,
+        blocks: list[ArtifactBlock],
+        context: dict[str, object] | None = None,
+        route: ProviderRoute | None = None,
+    ) -> dict[str, object]:
+        self._attempts += 1
+        if self._attempts == 1:
+            raise ProviderError(
+                "LangChain analysis request failed: Request timed out.",
+                kind="timeout",
+                retriable=True,
+                provider_name="openai",
+            )
+        return await super().analyze(agent_id, instruction, title, blocks, context, route)
 
 
 @pytest.mark.asyncio
@@ -137,6 +165,39 @@ async def test_langgraph_resume_uses_existing_checkpoint() -> None:
     assert updated is not None
     assert updated.document is not None
     assert updated.status.value == "completed"
+    assert any(event.status == "resumed" for event in updated.events)
+
+
+@pytest.mark.asyncio
+async def test_retriable_agent_timeout_retries_without_run_resume() -> None:
+    """Retry one transient provider timeout inside the agent execution loop."""
+
+    repository = InMemoryRunRepository()
+    orchestrator = RunOrchestrator(
+        repository,
+        RetryOnceAnalysisProvider(),
+        MockSimilaritySearchProvider(),
+        MockContentExtractionProvider(),
+        RuntimeMode.MOCK,
+        False,
+        OrchestratorBackend.LANGGRAPH,
+    )
+    input_data = RunInput(
+        source_type=SourceType.TEXT,
+        source_label="Draft",
+        title="Draft",
+        text="Alpha paragraph.\n\nBeta paragraph.",
+        selected_agents=["value"],
+    )
+    artifact = await orchestrator.create_run(input_data)
+
+    await orchestrator.process_run(artifact.artifact_id, input_data)
+
+    updated = await repository.get_artifact(artifact.artifact_id)
+    assert updated is not None
+    assert updated.status.value == "completed"
+    assert any(event.status == "retrying" and event.error_kind == "timeout" for event in updated.events)
+    assert not any(event.status == "resumed" for event in updated.events)
 
 
 @pytest.mark.asyncio

@@ -14,6 +14,7 @@ import {
   addReply,
   cancelRun,
   createComment,
+  deleteReply,
   createRun,
   deleteHumanComment,
   fetchAgents,
@@ -564,11 +565,23 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     setReplyDrafts((current) => ({ ...current, [commentId]: "" }));
   }
 
+  async function handleDeleteReply(replyId: string) {
+    if (artifact === null) {
+      return;
+    }
+    await deleteReply(replyId);
+    await refreshArtifact(artifact.artifact_id);
+  }
+
   async function handleReviewState(commentId: string, state: ReviewState) {
     if (artifact === null) {
       return;
     }
-    await updateReviewState(commentId, state);
+    const currentState =
+      artifact.threads.flatMap((thread) => thread.comments).find((comment) => comment.id === commentId)?.review_state
+      ?? "unreviewed";
+    const nextState: ReviewState = currentState === state ? "unreviewed" : state;
+    await updateReviewState(commentId, nextState);
     await refreshArtifact(artifact.artifact_id);
   }
 
@@ -594,7 +607,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     }
   }
 
-  function handleExport(format: "md" | "json") {
+  function handleExport(format: "md" | "json" | "todo") {
     if (artifact === null) {
       return;
     }
@@ -721,6 +734,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
               setReplyDrafts((current) => ({ ...current, [commentId]: value }));
             }}
             onAddReply={handleReply}
+            onDeleteReply={handleDeleteReply}
             onReviewState={handleReviewState}
             onStartEditing={(commentId, body) => {
               setEditingCommentId(commentId);

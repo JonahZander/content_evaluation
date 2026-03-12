@@ -59,6 +59,7 @@ interface DocumentPaneProps {
   editingBody: string;
   onReplyDraftChange: (commentId: string, value: string) => void;
   onAddReply: (commentId: string) => void;
+  onDeleteReply: (replyId: string) => void;
   onReviewState: (commentId: string, state: ReviewState) => void;
   onStartEditing: (commentId: string, body: string) => void;
   onEditingBodyChange: (value: string) => void;
@@ -303,6 +304,7 @@ function ThreadCards({
   onHoverAnchor,
   onReplyDraftChange,
   onAddReply,
+  onDeleteReply,
   onReviewState,
   onStartEditing,
   onEditingBodyChange,
@@ -319,6 +321,7 @@ function ThreadCards({
   onHoverAnchor: (anchorId: string | null) => void;
   onReplyDraftChange: (commentId: string, value: string) => void;
   onAddReply: (commentId: string) => void;
+  onDeleteReply: (replyId: string) => void;
   onReviewState: (commentId: string, state: ReviewState) => void;
   onStartEditing: (commentId: string, body: string) => void;
   onEditingBodyChange: (value: string) => void;
@@ -415,7 +418,20 @@ function ThreadCards({
               <div className={styles.replyList}>
                 {comment.replies.map((reply) => (
                   <div key={reply.id} className={styles.reply}>
-                    <span className={styles.replyMeta}>{reply.author_label}</span>
+                    <div className={styles.replyHeader}>
+                      <span className={styles.replyMeta}>{reply.author_label}</span>
+                      {reply.author_type === "human" ? (
+                        <button
+                          className={styles.replyDeleteButton}
+                          data-testid={`delete-reply-${reply.id}`}
+                          type="button"
+                          aria-label={`Delete reply by ${reply.author_label}`}
+                          onClick={() => onDeleteReply(reply.id)}
+                        >
+                          x
+                        </button>
+                      ) : null}
+                    </div>
                     <div>{reply.body}</div>
                   </div>
                 ))}
@@ -472,6 +488,7 @@ export function DocumentPane({
   editingBody,
   onReplyDraftChange,
   onAddReply,
+  onDeleteReply,
   onReviewState,
   onStartEditing,
   onEditingBodyChange,
@@ -635,6 +652,7 @@ export function DocumentPane({
                     onHoverAnchor={onHoverAnchor}
                     onReplyDraftChange={onReplyDraftChange}
                     onAddReply={onAddReply}
+                    onDeleteReply={onDeleteReply}
                     onReviewState={onReviewState}
                     onStartEditing={onStartEditing}
                     onEditingBodyChange={onEditingBodyChange}

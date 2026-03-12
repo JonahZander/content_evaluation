@@ -108,11 +108,19 @@ class CommentService:
         await self._repository.update_artifact(artifact)
         return reply
 
+    async def delete_reply(self, reply_id: str) -> None:
+        """Delete one human reply beneath a comment."""
+
+        artifact, comment, reply = await self._find_reply(reply_id)
+        if reply.author_type is not AuthorType.HUMAN:
+            raise ValidationError("Only human replies can be deleted")
+        comment.replies = [item for item in comment.replies if item.id != reply_id]
+        comment.updated_at = now_utc()
+        await self._repository.update_artifact(artifact)
+
     async def set_review_state(self, comment_id: str, state: ReviewState) -> ArtifactComment:
         """Set the review state for one agent comment."""
 
-        if state is ReviewState.UNREVIEWED:
-            raise ValidationError("Review state must be accepted, rejected, or uncertain")
         artifact, comment = await self._find_comment(comment_id)
         if comment.author_type is not AuthorType.AGENT:
             raise ValidationError("Only agent comments can receive review-state updates")
@@ -141,6 +149,20 @@ class CommentService:
                     if comment.id == comment_id:
                         return artifact, comment
         raise NotFoundError(f"Comment {comment_id} not found")
+
+    async def _find_reply(self, reply_id: str) -> tuple[AnalysisArtifact, ArtifactComment, ArtifactReply]:
+        """Return one reply plus its parent comment and artifact."""
+
+        for artifact_id in getattr(self._repository, "_artifacts", {}):
+            artifact = await self._repository.get_artifact(artifact_id)
+            if artifact is None:
+                continue
+            for thread in artifact.threads:
+                for comment in thread.comments:
+                    for reply in comment.replies:
+                        if reply.id == reply_id:
+                            return artifact, comment, reply
+        raise NotFoundError(f"Reply {reply_id} not found")
 
 
 def _require_thread_for_anchor(artifact: AnalysisArtifact, anchor_id: str) -> ArtifactThread:

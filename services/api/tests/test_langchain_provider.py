@@ -7,6 +7,7 @@ import warnings
 import pytest
 from langchain_core.runnables import RunnableLambda
 
+from content_evaluation.agents.registry import get_agent_definition, load_instruction_text
 from content_evaluation.config import Settings
 from content_evaluation.domain.models import AnalysisProviderFamily, ArtifactBlock, ProviderRoute
 from content_evaluation.providers.langchain.client import LangChainAnalysisProvider
@@ -105,3 +106,13 @@ async def test_langchain_provider_normalizes_parsed_wrapper_without_warnings(
 
     assert payload["summary"] == "Structured summary"
     assert caught == []
+
+
+def test_agent_instructions_define_exact_excerpt_and_ellipsis_rules() -> None:
+    """Keep excerpt and ellipsis guidance explicit in finding-producing agent prompts."""
+
+    for agent_id in ("editorial", "value", "audience", "ai_likelihood", "synthesis"):
+        instruction = load_instruction_text(get_agent_definition(agent_id))
+        assert "word for word" in instruction
+        assert "Use ellipses only" in instruction
+        assert "more than 3 paragraphs" in instruction

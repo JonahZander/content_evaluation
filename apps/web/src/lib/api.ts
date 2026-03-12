@@ -147,6 +147,15 @@ export async function addReply(commentId: string, body: string): Promise<void> {
   );
 }
 
+export async function deleteReply(replyId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/replies/${replyId}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    throw new Error(`Request failed with status ${response.status}`);
+  }
+}
+
 export async function updateReviewState(commentId: string, state: ReviewState): Promise<void> {
   await parseJson(
     await fetch(`${API_BASE_URL}/api/v1/comments/${commentId}/review-state`, {
@@ -180,6 +189,9 @@ export async function deleteHumanComment(commentId: string): Promise<void> {
   }
 }
 
-export function getExportUrl(artifactId: string, format: "md" | "json"): string {
+export function getExportUrl(artifactId: string, format: "md" | "json" | "todo"): string {
+  if (format === "todo") {
+    return `${API_BASE_URL}/api/v1/runs/${artifactId}/export.todo.md`;
+  }
   return `${API_BASE_URL}/api/v1/runs/${artifactId}/export.${format}`;
 }

@@ -605,6 +605,13 @@
   border: 1px solid rgba(49, 38, 23, 0.08);
 }
 
+.replyHeader {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .replyMeta {
   display: block;
   margin-bottom: 6px;
@@ -613,6 +620,21 @@
   text-transform: uppercase;
   letter-spacing: 0.12em;
   color: var(--muted);
+}
+
+.replyDeleteButton {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+}
+
+.replyDeleteButton:hover {
+  color: var(--ink);
 }
 
 .replyComposer {

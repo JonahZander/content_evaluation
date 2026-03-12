@@ -32,7 +32,7 @@ interface ReviewToolbarProps {
   onSubmit: () => void;
   onStopRun: () => void;
   onStartNewAnalysis: () => void;
-  onExport: (format: "md" | "json") => void;
+  onExport: (format: "md" | "json" | "todo") => void;
 }
 
 export function ReviewToolbar({
@@ -226,6 +226,14 @@ export function ReviewToolbar({
             hidden
           />
         </label>
+        <button
+          className={styles.ghostButton}
+          data-testid="export-todo-button"
+          type="button"
+          onClick={() => onExport("todo")}
+        >
+          Export Todo
+        </button>
         <button
           className={styles.ghostButton}
           data-testid="export-markdown-button"

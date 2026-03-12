@@ -36,6 +36,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
    - Retry transient provider timeouts and network failures inside the individual agent execution loop before failing the run
    - Emit progress events and partial artifact updates as each agent completes
    - Use LangChain chat-model adapters for analysis nodes
+   - Require finding-producing agents to quote source text word-for-word, use ellipses only for real omissions, and split evidence that would span more than 3 paragraphs into multiple findings
 7. Artifact assembly
    - Convert agent outputs into anchors, comments, results, summary data, and debug traces
    - Resolve anchors against normalized block text, including whitespace-normalized and ellipsis-truncated excerpts when possible
@@ -48,6 +49,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 8. Export and import
    - Export the artifact as JSON
    - Export Markdown derived from the artifact
+   - Export accepted agent suggestions as a compact Markdown todo list ordered by source position
    - Reopen a saved artifact without rerunning the pipeline
 
 ## Artifact-First Rules
@@ -72,9 +74,9 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 - `providers/langchain/client.py`
   - LangChain-backed provider routing across OpenAI, Anthropic, and Gemini
 - `services/comments.py`
-  - Human comment creation, reply creation, inline edit/delete checks, agent review-state updates against the artifact
+  - Human comment creation, reply creation/deletion, inline edit/delete checks, agent review-state updates against the artifact
 - `services/exporting.py`
-  - Artifact JSON and Markdown export builders
+  - Artifact JSON, Markdown, and compact todo export builders
 - `services/worker.py`
   - Repository-backed polling worker
 - `agents/`
@@ -102,9 +104,11 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 - `PATCH /api/v1/comments/{comment_id}`
 - `DELETE /api/v1/comments/{comment_id}`
 - `POST /api/v1/comments/{comment_id}/replies`
+- `DELETE /api/v1/replies/{reply_id}`
 - `PATCH /api/v1/comments/{comment_id}/review-state`
 - `POST /api/v1/artifacts/import`
 - `GET /api/v1/runs/{run_id}/export.md`
 - `GET /api/v1/runs/{run_id}/export.json`
+- `GET /api/v1/runs/{run_id}/export.todo.md`
 - `GET /health`
 - `GET /ready`

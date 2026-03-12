@@ -35,7 +35,7 @@ from content_evaluation.logging import configure_logging, request_logging_middle
 from content_evaluation.repositories.base import RunRepository
 from content_evaluation.repositories.postgres import PostgresRunRepository
 from content_evaluation.services.comments import CommentService
-from content_evaluation.services.exporting import build_json_export, build_markdown_export
+from content_evaluation.services.exporting import build_json_export, build_markdown_export, build_todo_export
 
 UploadFileInput = Annotated[UploadFile | None, File()]
 ServicesDependency = Annotated[AppServices, Depends(get_services)]
@@ -221,6 +221,14 @@ async def create_reply(
     return await comments.add_reply(comment_id, request.body)
 
 
+@app.delete("/api/v1/replies/{reply_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_reply(reply_id: str, comments: CommentServiceDependency) -> Response:
+    """Delete one human reply beneath a comment."""
+
+    await comments.delete_reply(reply_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @app.patch("/api/v1/comments/{comment_id}/review-state")
 async def update_review_state(
     comment_id: str,
@@ -250,6 +258,16 @@ async def export_json(run_id: UUID, repository: RepositoryDependency) -> Respons
     if artifact is None:
         raise HTTPException(status_code=404, detail="Run not found")
     return Response(build_json_export(artifact), media_type="application/json")
+
+
+@app.get("/api/v1/runs/{run_id}/export.todo.md")
+async def export_todo_markdown(run_id: UUID, repository: RepositoryDependency) -> PlainTextResponse:
+    """Return one Markdown todo export."""
+
+    artifact = await repository.get_artifact(run_id)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return PlainTextResponse(build_todo_export(artifact), media_type="text/markdown")
 
 
 @app.exception_handler(ContentEvaluationError)

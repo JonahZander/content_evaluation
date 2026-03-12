@@ -2,7 +2,7 @@
 
 import pytest
 
-from content_evaluation.domain.exceptions import ValidationError
+from content_evaluation.domain.exceptions import NotFoundError, ValidationError
 from content_evaluation.domain.models import (
     AgentCategory,
     AnalysisArtifact,
@@ -10,6 +10,7 @@ from content_evaluation.domain.models import (
     ArtifactBlock,
     ArtifactComment,
     ArtifactDocument,
+    ArtifactReply,
     ArtifactSource,
     ArtifactThread,
     AuthorType,
@@ -72,6 +73,32 @@ async def test_comment_service_creates_reply_and_review_state() -> None:
 
 
 @pytest.mark.asyncio
+async def test_comment_service_allows_resetting_review_state_to_unreviewed() -> None:
+    """Allow agent review states to be toggled back to unreviewed."""
+
+    repository = InMemoryRunRepository()
+    artifact = _build_artifact()
+    await repository.create_artifact(artifact)
+    anchor = artifact.anchors[0]
+    agent_comment = ArtifactComment(
+        artifact_id=artifact.artifact_id,
+        anchor_id=anchor.id,
+        author_type=AuthorType.AGENT,
+        author_label="editorial agent",
+        category=AgentCategory.EDITORIAL,
+        body="Trim this paragraph.",
+        review_state=ReviewState.ACCEPTED,
+    )
+    artifact.threads = [ArtifactThread(anchor=anchor, comments=[agent_comment])]
+    await repository.update_artifact(artifact)
+
+    service = CommentService(repository, "Reviewer")
+    updated = await service.set_review_state(agent_comment.id, ReviewState.UNREVIEWED)
+
+    assert updated.review_state is ReviewState.UNREVIEWED
+
+
+@pytest.mark.asyncio
 async def test_comment_service_creates_new_anchor_for_human_selection() -> None:
     """Create a human comment from a new text selection."""
 
@@ -131,3 +158,85 @@ async def test_comment_service_rejects_reviewing_human_comment() -> None:
 
     with pytest.raises(ValidationError, match="Only agent comments can receive review-state updates"):
         await service.set_review_state(human_comment.id, ReviewState.ACCEPTED)
+
+
+@pytest.mark.asyncio
+async def test_comment_service_deletes_human_reply() -> None:
+    """Allow reviewers to remove their own replies."""
+
+    repository = InMemoryRunRepository()
+    artifact = _build_artifact()
+    await repository.create_artifact(artifact)
+    anchor = artifact.anchors[0]
+    agent_comment = ArtifactComment(
+        artifact_id=artifact.artifact_id,
+        anchor_id=anchor.id,
+        author_type=AuthorType.AGENT,
+        author_label="editorial agent",
+        category=AgentCategory.EDITORIAL,
+        body="Trim this paragraph.",
+    )
+    agent_comment.replies.append(
+        ArtifactReply(
+            comment_id=agent_comment.id,
+            author_type=AuthorType.HUMAN,
+            author_label="Reviewer",
+            body="Keep the stat.",
+        )
+    )
+    artifact.threads = [ArtifactThread(anchor=anchor, comments=[agent_comment])]
+    await repository.update_artifact(artifact)
+
+    service = CommentService(repository, "Reviewer")
+    reply_id = agent_comment.replies[0].id
+    await service.delete_reply(reply_id)
+    updated = await repository.get_artifact(artifact.artifact_id)
+
+    assert updated is not None
+    assert updated.threads[0].comments[0].replies == []
+
+
+@pytest.mark.asyncio
+async def test_comment_service_delete_reply_raises_for_missing_reply() -> None:
+    """Raise when deleting a reply that does not exist."""
+
+    repository = InMemoryRunRepository()
+    artifact = _build_artifact()
+    await repository.create_artifact(artifact)
+    service = CommentService(repository, "Reviewer")
+
+    with pytest.raises(NotFoundError, match="Reply missing-reply not found"):
+        await service.delete_reply("missing-reply")
+
+
+@pytest.mark.asyncio
+async def test_comment_service_rejects_deleting_agent_reply() -> None:
+    """Prevent deletion of agent-authored replies."""
+
+    repository = InMemoryRunRepository()
+    artifact = _build_artifact()
+    await repository.create_artifact(artifact)
+    anchor = artifact.anchors[0]
+    agent_comment = ArtifactComment(
+        artifact_id=artifact.artifact_id,
+        anchor_id=anchor.id,
+        author_type=AuthorType.AGENT,
+        author_label="editorial agent",
+        category=AgentCategory.EDITORIAL,
+        body="Trim this paragraph.",
+    )
+    agent_comment.replies.append(
+        ArtifactReply(
+            comment_id=agent_comment.id,
+            author_type=AuthorType.AGENT,
+            author_label="editorial agent",
+            body="Follow up.",
+        )
+    )
+    artifact.threads = [ArtifactThread(anchor=anchor, comments=[agent_comment])]
+    await repository.update_artifact(artifact)
+
+    service = CommentService(repository, "Reviewer")
+
+    with pytest.raises(ValidationError, match="Only human replies can be deleted"):
+        await service.delete_reply(agent_comment.replies[0].id)

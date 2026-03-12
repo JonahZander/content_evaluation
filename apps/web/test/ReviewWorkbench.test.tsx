@@ -26,10 +26,11 @@ vi.mock("@/lib/api", () => ({
   importArtifact: vi.fn(),
   createComment: vi.fn().mockResolvedValue(undefined),
   addReply: vi.fn().mockResolvedValue(undefined),
+  deleteReply: vi.fn().mockResolvedValue(undefined),
   updateReviewState: vi.fn().mockResolvedValue(undefined),
   updateHumanComment: vi.fn().mockResolvedValue(undefined),
   deleteHumanComment: vi.fn().mockResolvedValue(undefined),
-  getExportUrl: vi.fn(() => "http://localhost:8000/export"),
+  getExportUrl: vi.fn((_artifactId: string, format: "md" | "json" | "todo") => `http://localhost:8000/export.${format}`),
 }));
 
 beforeAll(() => {
@@ -102,6 +103,17 @@ describe("ReviewWorkbench", () => {
     openSpy.mockRestore();
   });
 
+  it("opens the todo export URL", () => {
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    render(<ReviewWorkbench initialArtifact={mockArtifact} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Export Todo" }));
+
+    expect(api.getExportUrl).toHaveBeenCalledWith(mockArtifact.artifact_id, "todo");
+    expect(openSpy).toHaveBeenCalled();
+    openSpy.mockRestore();
+  });
+
   it("uses a preview-first flow for URL sources", async () => {
     render(<ReviewWorkbench initialArtifact={null} />);
 
@@ -127,6 +139,22 @@ describe("ReviewWorkbench", () => {
     render(<ReviewWorkbench initialArtifact={mockArtifact} />);
 
     expect(screen.getByTestId("new-analysis-button")).toBeInTheDocument();
+  });
+
+  it("toggles the active review state back to unreviewed", () => {
+    render(<ReviewWorkbench initialArtifact={mockArtifact} />);
+
+    fireEvent.click(screen.getByTestId("review-state-comment-2-accepted"));
+
+    expect(api.updateReviewState).toHaveBeenCalledWith("comment-2", "unreviewed");
+  });
+
+  it("deletes a human reply from the thread UI", () => {
+    render(<ReviewWorkbench initialArtifact={mockArtifact} />);
+
+    fireEvent.click(screen.getByTestId("delete-reply-reply-1"));
+
+    expect(api.deleteReply).toHaveBeenCalledWith("reply-1");
   });
 
   it("renders the run log below the progress section", () => {

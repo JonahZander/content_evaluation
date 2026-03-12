@@ -35,10 +35,10 @@ def configure_logging() -> None:
         logging.getLogger(logger_name).setLevel(logging.WARNING)
 
 
-def get_logger(name: str) -> logging.LoggerAdapter[logging.Logger]:
-    """Return one logger adapter that includes the current request id."""
+def get_logger(name: str) -> logging.Logger:
+    """Return one logger that relies on the record factory for request id injection."""
 
-    return logging.LoggerAdapter(logging.getLogger(name), {"request_id": request_id_context.get()})
+    return logging.getLogger(name)
 
 
 async def request_logging_middleware(

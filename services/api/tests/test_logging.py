@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from content_evaluation.logging import configure_logging, request_id_context
+from content_evaluation.logging import configure_logging, get_logger, request_id_context
 
 
 def test_configure_logging_injects_default_request_id() -> None:
@@ -26,3 +26,12 @@ def test_configure_logging_injects_default_request_id() -> None:
         request_id_context.reset(token)
 
     assert getattr(record, "request_id") == "req-test-123"
+
+
+def test_get_logger_does_not_overwrite_request_id() -> None:
+    """Return a plain logger so request id injection does not collide with extra fields."""
+
+    configure_logging()
+    logger = get_logger("content_evaluation.test")
+
+    assert not isinstance(logger, logging.LoggerAdapter)

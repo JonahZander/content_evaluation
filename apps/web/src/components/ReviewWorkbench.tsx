@@ -32,6 +32,7 @@ import type {
   ReviewState,
   RunStatus,
 } from "@/lib/types";
+import { anchorPrimarySegment } from "@/lib/types";
 
 interface SelectionDraft {
   blockId: string;
@@ -251,16 +252,18 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         }),
       }))
       .sort((left, right) => {
-        const leftBlockIndex = blockIndexById.get(left.anchor.block_id) ?? Number.MAX_SAFE_INTEGER;
-        const rightBlockIndex = blockIndexById.get(right.anchor.block_id) ?? Number.MAX_SAFE_INTEGER;
+        const leftPrimarySegment = anchorPrimarySegment(left.anchor);
+        const rightPrimarySegment = anchorPrimarySegment(right.anchor);
+        const leftBlockIndex = blockIndexById.get(leftPrimarySegment.block_id) ?? Number.MAX_SAFE_INTEGER;
+        const rightBlockIndex = blockIndexById.get(rightPrimarySegment.block_id) ?? Number.MAX_SAFE_INTEGER;
         if (leftBlockIndex !== rightBlockIndex) {
           return leftBlockIndex - rightBlockIndex;
         }
-        if (left.anchor.start_offset !== right.anchor.start_offset) {
-          return left.anchor.start_offset - right.anchor.start_offset;
+        if (leftPrimarySegment.start_offset !== rightPrimarySegment.start_offset) {
+          return leftPrimarySegment.start_offset - rightPrimarySegment.start_offset;
         }
-        if (left.anchor.end_offset !== right.anchor.end_offset) {
-          return left.anchor.end_offset - right.anchor.end_offset;
+        if (leftPrimarySegment.end_offset !== rightPrimarySegment.end_offset) {
+          return leftPrimarySegment.end_offset - rightPrimarySegment.end_offset;
         }
         return left.anchor.id.localeCompare(right.anchor.id);
       });

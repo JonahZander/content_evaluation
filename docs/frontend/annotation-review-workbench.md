@@ -28,6 +28,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Presentational review pieces live under `src/components/review/`.
 - Connector lines are rendered inside each paragraph row so the anchor-to-comment mapping remains local and legible.
 - The workbench uses paragraph-scoped rows so each source block and its comments stay spatially linked.
+- Adjacent multi-block agent anchors should highlight every linked source segment while keeping the thread card attached to the first block row.
 - The UI should render directly from the artifact snapshot rather than a stitched backend-only view model.
 
 ## Key Interaction Patterns
@@ -43,6 +44,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Connector lines should visually link each comment card to the relevant highlight.
 - Multiple comments on the same span should stack vertically while connecting back to the same text selection.
 - Overlapping anchors must render from one shared set of text segments so source text is never duplicated in the document pane.
+- Multi-block anchors must render continuation highlights in later adjacent rows without duplicating the same thread card.
 - Paragraphs with comments should reserve the vertical space needed for those comments before the next paragraph begins.
 - Export and import actions should be visible from the main toolbar.
 - The toolbar should expose a stop-run action for queued/running work and a new-analysis reset action.
@@ -69,7 +71,8 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - The `New analysis` button should only appear once a real artifact exists.
 - Debug visibility should be toggleable when the artifact includes debug trace data.
 - Empty states are shown when no artifact or no comment threads are present.
-- When an anchor cannot be matched to a rendered block, its thread should render after the article in an unmatched-reference section instead of attaching to the first paragraph.
+- Synthetic unmatched-reference blocks should render with visibly distinct fallback styling so reviewers can tell they are not original article text.
+- When an anchor cannot be matched into one contiguous set of adjacent rendered blocks, its thread should render after the article in an unmatched-reference section instead of attaching to the first paragraph.
 
 ## Boundaries
 

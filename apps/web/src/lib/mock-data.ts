@@ -3,7 +3,7 @@ import { AnalysisArtifact } from "@/lib/types";
 const timestamp = new Date().toISOString();
 
 export const mockArtifact: AnalysisArtifact = {
-  schema_version: "1.1",
+  schema_version: "1.2",
   artifact_id: "run-demo",
   status: "completed",
   created_at: timestamp,
@@ -49,6 +49,7 @@ export const mockArtifact: AnalysisArtifact = {
         index: 0,
         text: "Editorial teams need a fast way to decide whether a post is original, useful, and worth reader attention.",
         kind: "paragraph",
+        origin: "source",
         markdown: "Editorial teams need a fast way to decide whether a post is original, useful, and worth reader attention.",
         marks: [],
       },
@@ -57,6 +58,7 @@ export const mockArtifact: AnalysisArtifact = {
         index: 1,
         text: "The strongest value of this draft is that it turns vague editorial instincts into a review workflow with concrete review signals.",
         kind: "paragraph",
+        origin: "source",
         markdown:
           "The strongest value of this draft is that it turns vague editorial instincts into a review workflow with concrete review signals.",
         marks: [],
@@ -66,6 +68,7 @@ export const mockArtifact: AnalysisArtifact = {
         index: 2,
         text: "Some later sections restate the introduction without adding evidence, which weakens the pacing and makes the piece feel more generic.",
         kind: "paragraph",
+        origin: "source",
         markdown:
           "Some later sections restate the introduction without adding evidence, which weakens the pacing and makes the piece feel more generic.",
         marks: [],
@@ -75,6 +78,7 @@ export const mockArtifact: AnalysisArtifact = {
         index: 3,
         text: "Inline Markdown Example",
         kind: "heading",
+        origin: "source",
         markdown: "## Inline Markdown Example",
         level: 2,
         marks: [],
@@ -84,6 +88,7 @@ export const mockArtifact: AnalysisArtifact = {
         index: 4,
         text: "This paragraph uses bold and italic emphasis.",
         kind: "paragraph",
+        origin: "source",
         markdown: "This paragraph uses **bold** and *italic* emphasis.",
         marks: [
           { start_offset: 20, end_offset: 24, kind: "strong" },
@@ -95,6 +100,7 @@ export const mockArtifact: AnalysisArtifact = {
         index: 5,
         text: "const verdict = 'worth revising';",
         kind: "code",
+        origin: "source",
         markdown: "```ts\nconst verdict = 'worth revising';\n```",
         language: "ts",
         marks: [],
@@ -150,6 +156,8 @@ export const mockArtifact: AnalysisArtifact = {
       start_offset: 0,
       end_offset: 64,
       quote: "Editorial teams need a fast way to decide whether a post is original",
+      match_kind: "source",
+      segments: [{ block_id: "block-1", start_offset: 0, end_offset: 64 }],
     },
     {
       id: "anchor-2",
@@ -157,6 +165,8 @@ export const mockArtifact: AnalysisArtifact = {
       start_offset: 4,
       end_offset: 89,
       quote: "strongest value of this draft is that it turns vague editorial instincts into a review workflow",
+      match_kind: "source",
+      segments: [{ block_id: "block-2", start_offset: 4, end_offset: 89 }],
     },
     {
       id: "anchor-3",
@@ -164,6 +174,8 @@ export const mockArtifact: AnalysisArtifact = {
       start_offset: 0,
       end_offset: 76,
       quote: "Some later sections restate the introduction without adding evidence",
+      match_kind: "source",
+      segments: [{ block_id: "block-3", start_offset: 0, end_offset: 76 }],
     },
   ],
   threads: [
@@ -174,6 +186,8 @@ export const mockArtifact: AnalysisArtifact = {
         start_offset: 0,
         end_offset: 64,
         quote: "Editorial teams need a fast way to decide whether a post is original",
+        match_kind: "source",
+        segments: [{ block_id: "block-1", start_offset: 0, end_offset: 64 }],
       },
       comments: [
         {
@@ -209,6 +223,8 @@ export const mockArtifact: AnalysisArtifact = {
         start_offset: 4,
         end_offset: 89,
         quote: "strongest value of this draft is that it turns vague editorial instincts into a review workflow",
+        match_kind: "source",
+        segments: [{ block_id: "block-2", start_offset: 4, end_offset: 89 }],
       },
       comments: [
         {

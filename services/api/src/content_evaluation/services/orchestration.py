@@ -29,8 +29,11 @@ from content_evaluation.domain.models import (
     ArtifactAgentPlanItem,
     ArtifactAgentResult,
     ArtifactAnchor,
+    ArtifactAnchorMatchKind,
+    ArtifactAnchorSegment,
     ArtifactBlock,
     ArtifactBlockKind,
+    ArtifactBlockOrigin,
     ArtifactComment,
     ArtifactDocument,
     ArtifactDebug,
@@ -59,7 +62,7 @@ from content_evaluation.providers.interfaces.analysis import AnalysisProvider
 from content_evaluation.providers.interfaces.extraction import ContentExtractionProvider
 from content_evaluation.providers.interfaces.search import SimilaritySearchProvider
 from content_evaluation.repositories.base import RunRepository
-from content_evaluation.services.anchors import create_anchor_from_excerpt
+from content_evaluation.services.anchors import create_anchor_from_excerpt, sanitize_excerpt
 from content_evaluation.services.normalization import build_similarity_query, normalize_text
 
 
@@ -862,7 +865,8 @@ class RunOrchestrator:
 
         resolved_findings: list[AgentFinding] = []
         for finding in result.findings:
-            anchor = _resolve_anchor(artifact, finding.excerpt)
+            cleaned_excerpt = sanitize_excerpt(finding.excerpt) or finding.excerpt.strip().strip('"')
+            anchor = _resolve_anchor(artifact, cleaned_excerpt)
             resolved = AgentFinding(
                 category=result.definition.category,
                 agent_name=result.definition.agent_id,
@@ -871,7 +875,12 @@ class RunOrchestrator:
                 confidence=finding.confidence,
                 model_name=result.model_name,
                 suggestion=finding.suggestion,
-                metadata={"excerpt": finding.excerpt, **result.metadata},
+                metadata={
+                    "excerpt": cleaned_excerpt,
+                    "anchor_match_kind": anchor.match_kind.value,
+                    "matched_to_source": anchor.match_kind == ArtifactAnchorMatchKind.SOURCE,
+                    **result.metadata,
+                },
             )
             resolved_findings.append(resolved)
             _append_agent_comment(artifact, resolved, artifact.artifact_id, result.definition.display_name)
@@ -1141,7 +1150,7 @@ def _context_for_agent(artifact: AnalysisArtifact, definition: AgentDefinition) 
     for dependency in definition.depends_on:
         result = next((item for item in artifact.agent_results if item.agent_id == dependency), None)
         if result is not None:
-            context[dependency] = result.model_dump(mode="json")
+            context[dependency] = _result_context_payload(artifact, result)
     return context
 
 
@@ -1303,17 +1312,24 @@ def _resolve_anchor(artifact: AnalysisArtifact, excerpt: str) -> ArtifactAnchor:
     if artifact.document is None:
         raise RuntimeError("Cannot resolve anchors before the document is available")
 
-    anchor = create_anchor_from_excerpt(artifact.document.blocks, excerpt)
+    cleaned_excerpt = sanitize_excerpt(excerpt)
+    candidate_excerpt = cleaned_excerpt or excerpt.strip().strip('"')
+    anchor = create_anchor_from_excerpt(artifact.document.blocks, candidate_excerpt)
     if anchor is None:
-        anchor = _create_unmatched_anchor(artifact, excerpt)
+        anchor = _create_unmatched_anchor(artifact, candidate_excerpt)
     existing = next(
         (
             item
             for item in artifact.anchors
-            if item.block_id == anchor.block_id
-            and item.start_offset == anchor.start_offset
-            and item.end_offset == anchor.end_offset
+            if item.match_kind == anchor.match_kind
             and item.quote == anchor.quote
+            and len(item.segments) == len(anchor.segments)
+            and all(
+                left.block_id == right.block_id
+                and left.start_offset == right.start_offset
+                and left.end_offset == right.end_offset
+                for left, right in zip(item.segments, anchor.segments, strict=True)
+            )
         ),
         None,
     )
@@ -1335,7 +1351,12 @@ def _create_unmatched_anchor(artifact: AnalysisArtifact, excerpt: str) -> Artifa
         (
             block
             for block in artifact.document.blocks
-            if block.id != heading_block.id and block.markdown == quote and block.text == quote
+            if (
+                block.id != heading_block.id
+                and block.origin == ArtifactBlockOrigin.SYNTHETIC_UNMATCHED
+                and block.markdown == quote
+                and block.text == quote
+            )
         ),
         None,
     )
@@ -1344,16 +1365,22 @@ def _create_unmatched_anchor(artifact: AnalysisArtifact, excerpt: str) -> Artifa
             index=len(artifact.document.blocks),
             text=quote,
             kind=ArtifactBlockKind.PARAGRAPH,
+            origin=ArtifactBlockOrigin.SYNTHETIC_UNMATCHED,
             markdown=quote,
         )
         artifact.document.blocks.append(existing_block)
         artifact.document.text = "\n\n".join(block.text for block in artifact.document.blocks if block.text)
 
     return ArtifactAnchor(
-        block_id=existing_block.id,
-        start_offset=0,
-        end_offset=len(existing_block.text),
         quote=quote,
+        match_kind=ArtifactAnchorMatchKind.SYNTHETIC_UNMATCHED,
+        segments=[
+            ArtifactAnchorSegment(
+                block_id=existing_block.id,
+                start_offset=0,
+                end_offset=len(existing_block.text),
+            )
+        ],
     )
 
 
@@ -1374,9 +1401,42 @@ def _ensure_unmatched_heading_block(artifact: AnalysisArtifact) -> ArtifactBlock
         index=len(artifact.document.blocks),
         text="Unmatched references",
         kind=ArtifactBlockKind.HEADING,
+        origin=ArtifactBlockOrigin.SYNTHETIC_UNMATCHED,
         markdown="## Unmatched references",
         level=2,
     )
     artifact.document.blocks.append(block)
     artifact.document.text = "\n\n".join(item.text for item in artifact.document.blocks if item.text)
     return block
+
+
+def _result_context_payload(artifact: AnalysisArtifact, result: ArtifactAgentResult) -> dict[str, object]:
+    """Serialize one upstream result without leaking synthetic fallback text."""
+
+    payload = result.model_dump(mode="json")
+    serialized_findings: list[dict[str, object]] = []
+    for finding in result.findings:
+        item = finding.model_dump(mode="json")
+        metadata = dict(item.get("metadata", {}))
+        linked_anchors = [
+            anchor
+            for anchor in artifact.anchors
+            if anchor.id in finding.anchor_ids
+        ]
+        matched_to_source = bool(linked_anchors) and all(
+            anchor.match_kind == ArtifactAnchorMatchKind.SOURCE for anchor in linked_anchors
+        )
+        metadata["matched_to_source"] = matched_to_source
+        metadata["anchor_match_kind"] = (
+            linked_anchors[0].match_kind.value if linked_anchors else ArtifactAnchorMatchKind.SYNTHETIC_UNMATCHED.value
+        )
+        if matched_to_source:
+            item["metadata"] = metadata
+        else:
+            excerpt = metadata.pop("excerpt", None)
+            if isinstance(excerpt, str) and excerpt:
+                item["unmatched_excerpt"] = sanitize_excerpt(excerpt) or excerpt
+            item["metadata"] = metadata
+        serialized_findings.append(item)
+    payload["findings"] = serialized_findings
+    return payload

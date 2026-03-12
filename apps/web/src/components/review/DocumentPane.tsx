@@ -3,14 +3,17 @@ import { useEffect, useMemo, useRef, useState, type MutableRefObject, type React
 import styles from "@/components/ReviewWorkbench.module.css";
 import { ConnectorCanvas } from "@/components/review/ConnectorCanvas";
 import { categoryColors, colorForCategory } from "@/components/review/category-colors";
-import type {
-  ArtifactAnchor,
-  ArtifactBlock,
-  ArtifactComment,
-  ArtifactDocument,
-  ArtifactInlineMarkKind,
-  ArtifactThread,
-  ReviewState,
+import {
+  anchorPrimarySegment,
+  anchorSegments,
+  type ArtifactAnchorSegment,
+  type ArtifactAnchor,
+  type ArtifactBlock,
+  type ArtifactComment,
+  type ArtifactDocument,
+  type ArtifactInlineMarkKind,
+  type ArtifactThread,
+  type ReviewState,
 } from "@/lib/types";
 
 interface AnchorThread {
@@ -27,6 +30,8 @@ interface SelectionDraft {
 interface SegmentAnchor {
   anchor: ArtifactAnchor;
   colors: string[];
+  segment: ArtifactAnchorSegment;
+  isPrimarySegment: boolean;
 }
 
 interface TextSegment {
@@ -153,21 +158,31 @@ function buildTextSegments(
   anchorThreadMap: Map<string, AnchorThread>,
 ): TextSegment[] {
   const blockAnchors = anchors
-    .filter((anchor) => anchor.block_id === block.id)
+    .flatMap((anchor) =>
+      anchorSegments(anchor)
+        .filter((segment) => segment.block_id === block.id)
+        .map((segment) => ({
+          anchor,
+          segment,
+          isPrimarySegment: anchorPrimarySegment(anchor).block_id === segment.block_id
+            && anchorPrimarySegment(anchor).start_offset === segment.start_offset
+            && anchorPrimarySegment(anchor).end_offset === segment.end_offset,
+        })),
+    )
     .sort((left, right) => {
-      if (left.start_offset !== right.start_offset) {
-        return left.start_offset - right.start_offset;
+      if (left.segment.start_offset !== right.segment.start_offset) {
+        return left.segment.start_offset - right.segment.start_offset;
       }
-      if (left.end_offset !== right.end_offset) {
-        return left.end_offset - right.end_offset;
+      if (left.segment.end_offset !== right.segment.end_offset) {
+        return left.segment.end_offset - right.segment.end_offset;
       }
-      return left.id.localeCompare(right.id);
+      return left.anchor.id.localeCompare(right.anchor.id);
     });
 
   const boundaries = new Set<number>([0, block.text.length]);
   blockAnchors.forEach((anchor) => {
-    boundaries.add(anchor.start_offset);
-    boundaries.add(anchor.end_offset);
+    boundaries.add(anchor.segment.start_offset);
+    boundaries.add(anchor.segment.end_offset);
   });
   (block.marks ?? []).forEach((mark) => {
     boundaries.add(mark.start_offset);
@@ -189,13 +204,18 @@ function buildTextSegments(
       .sort((left, right) => MARK_ORDER[left.kind] - MARK_ORDER[right.kind])
       .map((mark) => mark.kind);
     const activeAnchors = blockAnchors
-      .filter((anchor) => anchor.start_offset <= startOffset && anchor.end_offset >= endOffset)
+      .filter((anchor) => anchor.segment.start_offset <= startOffset && anchor.segment.end_offset >= endOffset)
       .map((anchor) => ({
-        anchor,
-        colors: anchorThreadMap.get(anchor.id)?.colors ?? [colorForCategory("human")],
+        anchor: anchor.anchor,
+        colors: anchorThreadMap.get(anchor.anchor.id)?.colors ?? [colorForCategory("human")],
+        segment: anchor.segment,
+        isPrimarySegment: anchor.isPrimarySegment,
       }));
     const refAnchorIds = activeAnchors
       .filter((item) => {
+        if (!item.isPrimarySegment) {
+          return false;
+        }
         if (assignedRefAnchorIds.has(item.anchor.id)) {
           return false;
         }
@@ -465,20 +485,23 @@ export function DocumentPane({
   const blockThreads = useMemo(() => {
     const grouped = new Map<string, ArtifactThread[]>();
     threads.forEach((thread) => {
-      const existing = grouped.get(thread.anchor.block_id) ?? [];
+      const primarySegment = anchorPrimarySegment(thread.anchor);
+      const existing = grouped.get(primarySegment.block_id) ?? [];
       existing.push({
         ...thread,
         comments: sortComments(thread.comments),
       });
-      grouped.set(thread.anchor.block_id, existing);
+      grouped.set(primarySegment.block_id, existing);
     });
     grouped.forEach((value, key) => {
       value.sort((left, right) => {
-        if (left.anchor.start_offset !== right.anchor.start_offset) {
-          return left.anchor.start_offset - right.anchor.start_offset;
+        const leftPrimarySegment = anchorPrimarySegment(left.anchor);
+        const rightPrimarySegment = anchorPrimarySegment(right.anchor);
+        if (leftPrimarySegment.start_offset !== rightPrimarySegment.start_offset) {
+          return leftPrimarySegment.start_offset - rightPrimarySegment.start_offset;
         }
-        if (left.anchor.end_offset !== right.anchor.end_offset) {
-          return left.anchor.end_offset - right.anchor.end_offset;
+        if (leftPrimarySegment.end_offset !== rightPrimarySegment.end_offset) {
+          return leftPrimarySegment.end_offset - rightPrimarySegment.end_offset;
         }
         return left.anchor.id.localeCompare(right.anchor.id);
       });
@@ -555,7 +578,11 @@ export function DocumentPane({
           >
             <ConnectorCanvas paths={pathsByBlockId[block.id] ?? []} />
             <div
-              className={`${styles.documentBlock} ${
+            className={`${styles.documentBlock} ${
+              block.origin === "synthetic_unmatched"
+                ? styles.documentBlockSynthetic
+                : ""
+            } ${
                 block.kind === "heading"
                   ? styles.documentBlockHeading
                   : block.kind === "code"
@@ -563,6 +590,7 @@ export function DocumentPane({
                     : styles.paragraph
               }`}
               data-block-id={block.id}
+              data-block-origin={block.origin ?? "source"}
               onMouseUp={(event) => {
                 if (!selectionEnabled) {
                   return;

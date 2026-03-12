@@ -26,7 +26,7 @@ from content_evaluation.services.orchestration import RunOrchestrator
 
 
 class CrossParagraphAnalysisProvider(MockAnalysisProvider):
-    """Return one finding that cannot be anchored into a single block."""
+    """Return one finding that spans adjacent paragraphs."""
 
     async def analyze(
         self,
@@ -47,12 +47,78 @@ class CrossParagraphAnalysisProvider(MockAnalysisProvider):
                 "findings": [
                     {
                         "excerpt": "Alpha paragraph.\n\nBeta paragraph.",
-                        "rationale": "This issue spans multiple paragraphs.",
+                        "rationale": "This issue spans adjacent paragraphs.",
                         "confidence": 0.81,
-                        "suggestion": "Keep this as a bottom fallback until cross-block anchoring exists.",
+                        "suggestion": "Keep the linked review span across both paragraphs.",
                     }
                 ]
             }
+        return {"findings": []}
+
+
+class DistantCrossParagraphAnalysisProvider(MockAnalysisProvider):
+    """Return one finding that can only match across non-adjacent blocks."""
+
+    async def analyze(
+        self,
+        agent_id: str,
+        instruction: str,
+        title: str,
+        blocks: list[ArtifactBlock],
+        context: dict[str, object] | None = None,
+        route: ProviderRoute | None = None,
+    ) -> dict[str, object]:
+        del instruction
+        del title
+        del blocks
+        del context
+        del route
+        if agent_id == "value":
+            return {
+                "findings": [
+                    {
+                        "excerpt": "Alpha paragraph.\n\nGamma paragraph.",
+                        "rationale": "This issue can only be described across distant sections.",
+                        "confidence": 0.62,
+                    }
+                ]
+            }
+        return {"findings": []}
+
+
+class ContaminatedContextAnalysisProvider(MockAnalysisProvider):
+    """Assert that unmatched fallback excerpts are not replayed as article context."""
+
+    async def analyze(
+        self,
+        agent_id: str,
+        instruction: str,
+        title: str,
+        blocks: list[ArtifactBlock],
+        context: dict[str, object] | None = None,
+        route: ProviderRoute | None = None,
+    ) -> dict[str, object]:
+        del instruction
+        del title
+        del blocks
+        del route
+        if agent_id == "value":
+            return {
+                "findings": [
+                    {
+                        "excerpt": "Alpha paragraph.\n\nGamma paragraph.",
+                        "rationale": "This still should be unmatched.",
+                        "confidence": 0.62,
+                    }
+                ]
+            }
+        if agent_id == "synthesis":
+            assert context is not None
+            value_context = context["value"]
+            finding_context = value_context["findings"][0]
+            assert finding_context["metadata"]["matched_to_source"] is False
+            assert "excerpt" not in finding_context["metadata"]
+            assert finding_context["unmatched_excerpt"] == "Alpha paragraph.\n\nGamma paragraph."
         return {"findings": []}
 
 
@@ -201,8 +267,8 @@ async def test_retriable_agent_timeout_retries_without_run_resume() -> None:
 
 
 @pytest.mark.asyncio
-async def test_unmatched_excerpts_append_bottom_reference_blocks() -> None:
-    """Append unmatched references after the article instead of reusing the first block."""
+async def test_adjacent_cross_paragraph_excerpts_anchor_to_source_blocks() -> None:
+    """Resolve adjacent cross-paragraph excerpts into multi-segment source anchors."""
 
     repository = InMemoryRunRepository()
     orchestrator = RunOrchestrator(
@@ -229,6 +295,72 @@ async def test_unmatched_excerpts_append_bottom_reference_blocks() -> None:
     assert updated is not None
     assert updated.document is not None
     assert updated.threads
+    assert not any(block.text == "Unmatched references" for block in updated.document.blocks)
+    assert updated.threads[0].anchor.match_kind.value == "source"
+    assert len(updated.threads[0].anchor.segments) == 2
+    assert updated.threads[0].anchor.segments[0].block_id == updated.document.blocks[0].id
+    assert updated.threads[0].anchor.segments[1].block_id == updated.document.blocks[1].id
+
+
+@pytest.mark.asyncio
+async def test_distant_cross_paragraph_excerpts_stay_unmatched() -> None:
+    """Keep distant cross-paragraph excerpts in the bottom unmatched section."""
+
+    repository = InMemoryRunRepository()
+    orchestrator = RunOrchestrator(
+        repository,
+        DistantCrossParagraphAnalysisProvider(),
+        MockSimilaritySearchProvider(),
+        MockContentExtractionProvider(),
+        RuntimeMode.MOCK,
+        False,
+        OrchestratorBackend.LANGGRAPH,
+    )
+    input_data = RunInput(
+        source_type=SourceType.TEXT,
+        source_label="Draft",
+        title="Draft",
+        text="Alpha paragraph.\n\nBeta paragraph.\n\nGamma paragraph.",
+        selected_agents=["value"],
+    )
+    artifact = await orchestrator.create_run(input_data)
+
+    await orchestrator.process_run(artifact.artifact_id, input_data)
+
+    updated = await repository.get_artifact(artifact.artifact_id)
+    assert updated is not None
+    assert updated.document is not None
+    assert updated.threads
     assert updated.document.blocks[-2].text == "Unmatched references"
-    assert updated.document.blocks[-1].text == "Alpha paragraph.\n\nBeta paragraph."
-    assert updated.threads[0].anchor.block_id == updated.document.blocks[-1].id
+    assert updated.document.blocks[-1].origin.value == "synthetic_unmatched"
+    assert updated.threads[0].anchor.match_kind.value == "synthetic_unmatched"
+
+
+@pytest.mark.asyncio
+async def test_downstream_context_excludes_synthetic_unmatched_excerpt_metadata() -> None:
+    """Keep unmatched fallback prose out of dependency metadata for later agents."""
+
+    repository = InMemoryRunRepository()
+    orchestrator = RunOrchestrator(
+        repository,
+        ContaminatedContextAnalysisProvider(),
+        MockSimilaritySearchProvider(),
+        MockContentExtractionProvider(),
+        RuntimeMode.MOCK,
+        False,
+        OrchestratorBackend.LANGGRAPH,
+    )
+    input_data = RunInput(
+        source_type=SourceType.TEXT,
+        source_label="Draft",
+        title="Draft",
+        text="Alpha paragraph.\n\nBeta paragraph.\n\nGamma paragraph.",
+        selected_agents=["value", "synthesis"],
+    )
+    artifact = await orchestrator.create_run(input_data)
+
+    await orchestrator.process_run(artifact.artifact_id, input_data)
+
+    updated = await repository.get_artifact(artifact.artifact_id)
+    assert updated is not None
+    assert updated.status.value == "completed"

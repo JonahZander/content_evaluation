@@ -1,7 +1,7 @@
 """Anchor generation tests."""
 
-from content_evaluation.domain.models import ArtifactBlock
-from content_evaluation.services.anchors import create_anchor_from_excerpt
+from content_evaluation.domain.models import ArtifactBlock, ArtifactBlockKind, ArtifactBlockOrigin
+from content_evaluation.services.anchors import create_anchor_from_excerpt, sanitize_excerpt
 
 
 def test_create_anchor_from_excerpt_finds_offsets() -> None:
@@ -101,8 +101,8 @@ def test_create_anchor_from_excerpt_returns_none_when_ellipsis_fragments_are_out
     assert anchor is None
 
 
-def test_create_anchor_from_excerpt_returns_none_when_excerpt_spans_blocks() -> None:
-    """Return no anchor when an excerpt cannot be mapped into a single block."""
+def test_create_anchor_from_excerpt_resolves_excerpt_across_adjacent_blocks() -> None:
+    """Resolve contiguous excerpts across adjacent blocks."""
 
     blocks = [
         ArtifactBlock(index=0, text="First paragraph."),
@@ -111,11 +111,18 @@ def test_create_anchor_from_excerpt_returns_none_when_excerpt_spans_blocks() -> 
 
     anchor = create_anchor_from_excerpt(blocks, "First paragraph.\n\nSecond paragraph.")
 
-    assert anchor is None
+    assert anchor is not None
+    assert len(anchor.segments) == 2
+    assert anchor.segments[0].block_id == blocks[0].id
+    assert anchor.segments[0].start_offset == 0
+    assert anchor.segments[0].end_offset == len(blocks[0].text)
+    assert anchor.segments[1].block_id == blocks[1].id
+    assert anchor.segments[1].start_offset == 0
+    assert anchor.segments[1].end_offset == len(blocks[1].text)
 
 
-def test_create_anchor_from_excerpt_returns_none_when_ellipsis_requires_multiple_blocks() -> None:
-    """Return no anchor when ellipsis fragments only exist across multiple blocks."""
+def test_create_anchor_from_excerpt_resolves_ellipsis_across_adjacent_blocks() -> None:
+    """Resolve ordered ellipsis excerpts across adjacent blocks."""
 
     blocks = [
         ArtifactBlock(index=0, text="Alpha block ends with abc"),
@@ -124,4 +131,57 @@ def test_create_anchor_from_excerpt_returns_none_when_ellipsis_requires_multiple
 
     anchor = create_anchor_from_excerpt(blocks, "abc ... 123")
 
+    assert anchor is not None
+    assert len(anchor.segments) == 2
+    assert anchor.segments[0].block_id == blocks[0].id
+    assert blocks[0].text[anchor.segments[0].start_offset : anchor.segments[0].end_offset] == "abc"
+    assert anchor.segments[1].block_id == blocks[1].id
+    assert blocks[1].text[anchor.segments[1].start_offset : anchor.segments[1].end_offset] == "Second block starts with 123"
+
+
+def test_create_anchor_from_excerpt_returns_none_when_ellipsis_requires_non_adjacent_blocks() -> None:
+    """Reject ellipsis excerpts that only match across distant blocks."""
+
+    blocks = [
+        ArtifactBlock(index=0, text="Alpha block ends with abc"),
+        ArtifactBlock(index=1, text="Middle block with unrelated content"),
+        ArtifactBlock(index=2, text="Another middle block with unrelated content"),
+        ArtifactBlock(index=3, text="Final block starts with 123"),
+    ]
+
+    anchor = create_anchor_from_excerpt(blocks, "abc ... 123")
+
     assert anchor is None
+
+
+def test_create_anchor_from_excerpt_ignores_synthetic_unmatched_blocks() -> None:
+    """Never match excerpts against synthetic unmatched fallback blocks."""
+
+    blocks = [
+        ArtifactBlock(index=0, text="Original paragraph.", origin=ArtifactBlockOrigin.SOURCE),
+        ArtifactBlock(
+            index=1,
+            text="Unmatched references",
+            kind=ArtifactBlockKind.HEADING,
+            origin=ArtifactBlockOrigin.SYNTHETIC_UNMATCHED,
+            markdown="## Unmatched references",
+            level=2,
+        ),
+        ArtifactBlock(
+            index=2,
+            text="Original paragraph.\n\nSynthetic fallback copy.",
+            origin=ArtifactBlockOrigin.SYNTHETIC_UNMATCHED,
+        ),
+    ]
+
+    anchor = create_anchor_from_excerpt(blocks, "Original paragraph.\n\nSynthetic fallback copy.")
+
+    assert anchor is None
+
+
+def test_sanitize_excerpt_trims_unmatched_marker_text() -> None:
+    """Remove synthetic unmatched section markers from polluted excerpts."""
+
+    excerpt = "Original paragraph.\n\n## Unmatched references\n\nSynthetic fallback copy."
+
+    assert sanitize_excerpt(excerpt) == "Synthetic fallback copy."

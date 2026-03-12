@@ -45,7 +45,7 @@ Load only the section needed for the current task.
 - Inputs: URL, pasted text, `.txt`, `.md`, imported artifact JSON
 - Primary contract: `AnalysisArtifact` produced by the API and rendered by the UI
 - Runtime modes: `session` by default, optional `workspace` persistence
-- Review UI: left text pane, right comment rail, SVG connector lines, live agent progress, agent selection, artifact import/export
+- Review UI: paragraph-row text and comment layout, SVG connector lines, live agent progress, agent selection, artifact import/export
 - Review actions: reply to comments, create reviewer comments, accept/reject/uncertain agent comments
 - Exports: Markdown and JSON derived directly from the artifact
 - Runtime visibility: `/health`, `/ready`, run events, SSE stream, optional debug trace

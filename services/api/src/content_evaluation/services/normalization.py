@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+import re
 
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
@@ -18,6 +19,11 @@ from content_evaluation.domain.models import (
 )
 
 _markdown = MarkdownIt("commonmark", {"html": False})
+OVERSIZED_BLOCK_CHAR_LIMIT = 1800
+OVERSIZED_BLOCK_SENTENCE_LIMIT = 12
+TARGET_CHUNK_MIN = 700
+TARGET_CHUNK_MAX = 1100
+SENTENCE_PATTERN = re.compile(r".+?(?:[.!?](?=\s|$)|$)", re.S)
 
 
 def normalize_text(
@@ -37,6 +43,7 @@ def normalize_text(
 
     if not blocks:
         blocks = _normalize_plain_text_blocks(cleaned_text)
+    blocks = _split_oversized_blocks(blocks)
 
     resolved_title = title or input_data.title or input_data.source_label
     return ArtifactDocument(
@@ -143,6 +150,87 @@ def _normalize_markdown_blocks(cleaned_text: str) -> list[ArtifactBlock]:
         token_index += 1
 
     return blocks
+
+
+def _split_oversized_blocks(blocks: list[ArtifactBlock]) -> list[ArtifactBlock]:
+    """Split collapsed plain-text paragraphs into smaller review blocks."""
+
+    expanded: list[ArtifactBlock] = []
+    for block in blocks:
+        expanded.extend(_split_block_if_needed(block))
+
+    return [
+        ArtifactBlock(
+            index=index,
+            text=block.text,
+            kind=block.kind,
+            origin=block.origin,
+            markdown=block.markdown,
+            level=block.level,
+            language=block.language,
+            marks=list(block.marks),
+        )
+        for index, block in enumerate(expanded)
+    ]
+
+
+def _split_block_if_needed(block: ArtifactBlock) -> list[ArtifactBlock]:
+    """Split one oversized plain paragraph into conservative sentence chunks."""
+
+    if not _should_split_block(block):
+        return [block]
+
+    sentences = [match.group(0).strip() for match in SENTENCE_PATTERN.finditer(block.text) if match.group(0).strip()]
+    if len(sentences) <= 1:
+        return [block]
+
+    chunks: list[str] = []
+    current: list[str] = []
+    current_length = 0
+    for sentence in sentences:
+        addition = len(sentence) if not current else len(sentence) + 1
+        if current and current_length + addition > TARGET_CHUNK_MAX and current_length >= TARGET_CHUNK_MIN:
+            chunks.append(" ".join(current).strip())
+            current = [sentence]
+            current_length = len(sentence)
+            continue
+        current.append(sentence)
+        current_length += addition
+
+    if current:
+        chunks.append(" ".join(current).strip())
+
+    if len(chunks) <= 1:
+        return [block]
+
+    return [
+        ArtifactBlock(
+            index=block.index,
+            text=chunk,
+            kind=block.kind,
+            origin=block.origin,
+            markdown=chunk,
+            level=block.level,
+            language=block.language,
+            marks=[],
+        )
+        for chunk in chunks
+    ]
+
+
+def _should_split_block(block: ArtifactBlock) -> bool:
+    """Return whether one block is oversized plain prose."""
+
+    if block.kind != ArtifactBlockKind.PARAGRAPH:
+        return False
+    if block.origin.value != "source":
+        return False
+    if block.marks:
+        return False
+    if block.markdown is not None and block.markdown != block.text:
+        return False
+    sentence_count = len([match for match in SENTENCE_PATTERN.finditer(block.text) if match.group(0).strip()])
+    return len(block.text) > OVERSIZED_BLOCK_CHAR_LIMIT or sentence_count > OVERSIZED_BLOCK_SENTENCE_LIMIT
 
 
 def _source_slice(lines: list[str], mapping: list[int] | None) -> str:

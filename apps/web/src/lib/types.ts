@@ -11,7 +11,9 @@ export type AgentExecutionMode = "single_turn" | "multi_step";
 export type ProviderKind = "search" | "analysis" | "extract";
 export type EventType = "run" | "artifact" | "agent";
 export type ArtifactBlockKind = "paragraph" | "heading" | "code";
+export type ArtifactBlockOrigin = "source" | "synthetic_unmatched";
 export type ArtifactInlineMarkKind = "strong" | "emphasis" | "code";
+export type ArtifactAnchorMatchKind = "source" | "synthetic_unmatched";
 
 export interface ArtifactSource {
   source_type: SourceType;
@@ -26,6 +28,7 @@ export interface ArtifactBlock {
   index: number;
   text: string;
   kind?: ArtifactBlockKind;
+  origin?: ArtifactBlockOrigin;
   markdown?: string | null;
   level?: number | null;
   language?: string | null;
@@ -49,12 +52,20 @@ export interface ArtifactDocument {
   blocks: ArtifactBlock[];
 }
 
+export interface ArtifactAnchorSegment {
+  block_id: string;
+  start_offset: number;
+  end_offset: number;
+}
+
 export interface ArtifactAnchor {
   id: string;
   block_id: string;
   start_offset: number;
   end_offset: number;
   quote: string;
+  match_kind?: ArtifactAnchorMatchKind;
+  segments?: ArtifactAnchorSegment[];
 }
 
 export interface ArtifactReply {
@@ -193,4 +204,21 @@ export interface AgentCatalogEntry {
   provider_kind: ProviderKind;
   description: string;
   default_enabled: boolean;
+}
+
+export function anchorSegments(anchor: ArtifactAnchor): ArtifactAnchorSegment[] {
+  if (anchor.segments?.length) {
+    return anchor.segments;
+  }
+  return [
+    {
+      block_id: anchor.block_id,
+      start_offset: anchor.start_offset,
+      end_offset: anchor.end_offset,
+    },
+  ];
+}
+
+export function anchorPrimarySegment(anchor: ArtifactAnchor): ArtifactAnchorSegment {
+  return anchorSegments(anchor)[0];
 }

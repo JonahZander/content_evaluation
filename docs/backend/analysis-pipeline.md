@@ -23,6 +23,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
    - Extract text and metadata into a shared document schema
    - Use direct fetch + Trafilatura first for URLs, then Tavily extract fallback for blocked or unreadable pages
    - Normalize markdown-aware content into ordered document blocks with render metadata and plain-text anchor offsets
+   - Conservatively split oversized plain-text paragraph blocks so collapsed imports do not become one giant review span
    - Save the normalized document into the artifact
 5. Agent planning
    - Validate selected agent ids
@@ -38,8 +39,10 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 7. Artifact assembly
    - Convert agent outputs into anchors, comments, results, summary data, and debug traces
    - Resolve anchors against normalized block text, including whitespace-normalized and ellipsis-truncated excerpts when possible
-   - Treat ellipsis excerpts as ordered fragments inside a single block instead of collapsing them into one normalized string
-   - When an excerpt cannot be mapped into one visible block, append a bottom-of-document unmatched-reference block instead of falling back to the first paragraph
+   - Treat ellipsis excerpts as ordered fragments across one source block or a bounded window of adjacent source blocks instead of collapsing them into one normalized string
+   - Represent resolved anchors as ordered block-local segments so one finding can span multiple adjacent paragraphs
+   - Exclude synthetic unmatched fallback blocks from later anchor matching and downstream agent context
+   - When an excerpt still cannot be mapped into adjacent visible blocks, append a bottom-of-document unmatched-reference block instead of falling back to the first paragraph
    - Keep human comment/reply/review-state data in the same artifact structure
    - Keep artifact assembly outside the graph-state model
 8. Export and import
@@ -51,6 +54,8 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 
 - `AnalysisArtifact` is the canonical backend output.
 - `ArtifactDocument` preserves raw source content for rendering and normalized plain text for anchoring.
+- `ArtifactBlock.origin` distinguishes real source blocks from synthetic unmatched fallback blocks.
+- `ArtifactAnchor.segments` is the canonical anchor shape; legacy single-block fields remain import-compatible.
 - The event stream narrates artifact construction; it is not the primary data model.
 - Human comments, replies, and review-state changes live inside the artifact from the start.
 - Persistence is an adapter around artifact snapshots, not the core business model.

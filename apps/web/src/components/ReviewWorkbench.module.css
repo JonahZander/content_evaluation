@@ -401,6 +401,22 @@
   margin: 0;
 }
 
+.documentBlockSynthetic {
+  padding: 14px 16px;
+  border-radius: 22px;
+  border: 1px dashed rgba(107, 72, 24, 0.26);
+  background:
+    linear-gradient(180deg, rgba(255, 245, 225, 0.78), rgba(255, 250, 242, 0.92)),
+    repeating-linear-gradient(
+      -45deg,
+      rgba(186, 144, 69, 0.08),
+      rgba(186, 144, 69, 0.08) 10px,
+      transparent 10px,
+      transparent 20px
+    );
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34);
+}
+
 .headingLevel1,
 .headingLevel2,
 .headingLevel3 {

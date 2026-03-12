@@ -7,7 +7,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 def now_utc() -> datetime:
@@ -163,6 +163,20 @@ class ArtifactBlockKind(StrEnum):
     CODE = "code"
 
 
+class ArtifactBlockOrigin(StrEnum):
+    """Enumerate where one rendered block came from."""
+
+    SOURCE = "source"
+    SYNTHETIC_UNMATCHED = "synthetic_unmatched"
+
+
+class ArtifactAnchorMatchKind(StrEnum):
+    """Enumerate whether one anchor resolves to source or fallback content."""
+
+    SOURCE = "source"
+    SYNTHETIC_UNMATCHED = "synthetic_unmatched"
+
+
 class ArtifactInlineMarkKind(StrEnum):
     """Enumerate supported inline markdown marks."""
 
@@ -186,6 +200,7 @@ class ArtifactBlock(BaseModel):
     index: int
     text: str
     kind: ArtifactBlockKind = ArtifactBlockKind.PARAGRAPH
+    origin: ArtifactBlockOrigin = ArtifactBlockOrigin.SOURCE
     markdown: str | None = None
     level: int | None = None
     language: str | None = None
@@ -215,13 +230,41 @@ class ExtractedContent(BaseModel):
 
 
 class ArtifactAnchor(BaseModel):
-    """Store a text-range anchor within one block."""
+    """Store a text-range anchor across one or more contiguous blocks."""
 
     id: str = Field(default_factory=lambda: f"anchor-{uuid4()}")
+    block_id: str = ""
+    start_offset: int = 0
+    end_offset: int = 0
+    quote: str
+    match_kind: ArtifactAnchorMatchKind = ArtifactAnchorMatchKind.SOURCE
+    segments: list["ArtifactAnchorSegment"] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _sync_legacy_fields(self) -> ArtifactAnchor:
+        """Keep legacy single-block fields aligned with canonical segments."""
+
+        if not self.segments:
+            self.segments = [
+                ArtifactAnchorSegment(
+                    block_id=self.block_id,
+                    start_offset=self.start_offset,
+                    end_offset=self.end_offset,
+                )
+            ]
+        first_segment = self.segments[0]
+        self.block_id = first_segment.block_id
+        self.start_offset = first_segment.start_offset
+        self.end_offset = first_segment.end_offset
+        return self
+
+
+class ArtifactAnchorSegment(BaseModel):
+    """Store one block-local slice for a multi-block anchor."""
+
     block_id: str
     start_offset: int
     end_offset: int
-    quote: str
 
 
 class ArtifactReply(BaseModel):
@@ -367,7 +410,7 @@ class RunConfig(BaseModel):
 class AnalysisArtifact(BaseModel):
     """Store the complete artifact consumed by the UI and exports."""
 
-    schema_version: str = "1.1"
+    schema_version: str = "1.2"
     artifact_id: UUID = Field(default_factory=uuid4)
     status: RunStatus = RunStatus.QUEUED
     created_at: datetime = Field(default_factory=now_utc)

@@ -225,6 +225,31 @@ describe("ReviewWorkbench", () => {
     expect(sharedSegment?.style.background).toContain("linear-gradient");
     expect(sharedSegment?.getAttribute("data-anchor-ids")).toContain("anchor-overlap-1");
   });
+
+  it("renders one thread across adjacent source blocks with continuation highlights", () => {
+    const artifact = buildMultiBlockArtifact();
+
+    render(<ReviewWorkbench initialArtifact={artifact} />);
+
+    expect(screen.getByTestId("thread-anchor-multi")).toBeInTheDocument();
+    expect(screen.getAllByTestId("comment-comment-multi")).toHaveLength(1);
+
+    const firstRow = screen.getByTestId("document-block-0");
+    const secondRow = screen.getByTestId("document-block-1");
+    expect(firstRow.querySelector('[data-anchor-ids="anchor-multi"]')).not.toBeNull();
+    expect(secondRow.querySelector('[data-anchor-ids="anchor-multi"]')).not.toBeNull();
+  });
+
+  it("styles synthetic unmatched blocks distinctly", () => {
+    const artifact = buildSyntheticUnmatchedArtifact();
+
+    render(<ReviewWorkbench initialArtifact={artifact} />);
+
+    const unmatchedRow = screen.getByTestId("document-block-2");
+    const blockElement = unmatchedRow.querySelector('[data-block-origin="synthetic_unmatched"]');
+    expect(blockElement).not.toBeNull();
+    expect(blockElement?.className).toContain("documentBlockSynthetic");
+  });
 });
 
 function buildOverlapArtifact(): AnalysisArtifact {
@@ -239,15 +264,40 @@ function buildOverlapArtifact(): AnalysisArtifact {
         index: 0,
         text: blockText,
         kind: "paragraph",
+        origin: "source",
         markdown: blockText,
         marks: [],
       },
     ],
   };
   artifact.anchors = [
-    { id: "anchor-overlap-1", block_id: "block-overlap", start_offset: 0, end_offset: 10, quote: "Alpha beta" },
-    { id: "anchor-overlap-2", block_id: "block-overlap", start_offset: 0, end_offset: 16, quote: "Alpha beta gamma" },
-    { id: "anchor-overlap-3", block_id: "block-overlap", start_offset: 0, end_offset: 22, quote: "Alpha beta gamma delta" },
+    {
+      id: "anchor-overlap-1",
+      block_id: "block-overlap",
+      start_offset: 0,
+      end_offset: 10,
+      quote: "Alpha beta",
+      match_kind: "source",
+      segments: [{ block_id: "block-overlap", start_offset: 0, end_offset: 10 }],
+    },
+    {
+      id: "anchor-overlap-2",
+      block_id: "block-overlap",
+      start_offset: 0,
+      end_offset: 16,
+      quote: "Alpha beta gamma",
+      match_kind: "source",
+      segments: [{ block_id: "block-overlap", start_offset: 0, end_offset: 16 }],
+    },
+    {
+      id: "anchor-overlap-3",
+      block_id: "block-overlap",
+      start_offset: 0,
+      end_offset: 22,
+      quote: "Alpha beta gamma delta",
+      match_kind: "source",
+      segments: [{ block_id: "block-overlap", start_offset: 0, end_offset: 22 }],
+    },
   ];
   artifact.threads = [
     buildThread("anchor-overlap-1", "comment-overlap-1", "audience"),
@@ -286,10 +336,137 @@ function buildThread(
 
 function mockAnchor(anchorId: string): ArtifactThread["anchor"] {
   if (anchorId === "anchor-overlap-1") {
-    return { id: "anchor-overlap-1", block_id: "block-overlap", start_offset: 0, end_offset: 10, quote: "Alpha beta" };
+    return {
+      id: "anchor-overlap-1",
+      block_id: "block-overlap",
+      start_offset: 0,
+      end_offset: 10,
+      quote: "Alpha beta",
+      match_kind: "source",
+      segments: [{ block_id: "block-overlap", start_offset: 0, end_offset: 10 }],
+    };
   }
   if (anchorId === "anchor-overlap-2") {
-    return { id: "anchor-overlap-2", block_id: "block-overlap", start_offset: 0, end_offset: 16, quote: "Alpha beta gamma" };
+    return {
+      id: "anchor-overlap-2",
+      block_id: "block-overlap",
+      start_offset: 0,
+      end_offset: 16,
+      quote: "Alpha beta gamma",
+      match_kind: "source",
+      segments: [{ block_id: "block-overlap", start_offset: 0, end_offset: 16 }],
+    };
   }
-  return { id: "anchor-overlap-3", block_id: "block-overlap", start_offset: 0, end_offset: 22, quote: "Alpha beta gamma delta" };
+  return {
+    id: "anchor-overlap-3",
+    block_id: "block-overlap",
+    start_offset: 0,
+    end_offset: 22,
+    quote: "Alpha beta gamma delta",
+    match_kind: "source",
+    segments: [{ block_id: "block-overlap", start_offset: 0, end_offset: 22 }],
+  };
+}
+
+function buildMultiBlockArtifact(): AnalysisArtifact {
+  const artifact = structuredClone(mockArtifact);
+  artifact.document = {
+    ...artifact.document!,
+    text: "Alpha paragraph.\n\nBeta paragraph.",
+    blocks: [
+      {
+        id: "block-multi-1",
+        index: 0,
+        text: "Alpha paragraph.",
+        kind: "paragraph",
+        origin: "source",
+        markdown: "Alpha paragraph.",
+        marks: [],
+      },
+      {
+        id: "block-multi-2",
+        index: 1,
+        text: "Beta paragraph.",
+        kind: "paragraph",
+        origin: "source",
+        markdown: "Beta paragraph.",
+        marks: [],
+      },
+    ],
+  };
+  artifact.anchors = [
+    {
+      id: "anchor-multi",
+      block_id: "block-multi-1",
+      start_offset: 0,
+      end_offset: 16,
+      quote: "Alpha paragraph.\n\nBeta paragraph.",
+      match_kind: "source",
+      segments: [
+        { block_id: "block-multi-1", start_offset: 0, end_offset: 16 },
+        { block_id: "block-multi-2", start_offset: 0, end_offset: 15 },
+      ],
+    },
+  ];
+  artifact.threads = [
+    {
+      anchor: artifact.anchors[0],
+      comments: [
+        {
+          id: "comment-multi",
+          artifact_id: artifact.artifact_id,
+          anchor_id: "anchor-multi",
+          author_type: "agent",
+          author_label: "value agent",
+          category: "value",
+          body: "This thought carries across both paragraphs.",
+          suggestion: null,
+          review_state: "unreviewed",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          replies: [],
+        },
+      ],
+    },
+  ];
+  return artifact;
+}
+
+function buildSyntheticUnmatchedArtifact(): AnalysisArtifact {
+  const artifact = structuredClone(mockArtifact);
+  artifact.document = {
+    ...artifact.document!,
+    text: "Alpha paragraph.\n\nUnmatched references.\n\nQuoted fallback.",
+    blocks: [
+      {
+        id: "block-source",
+        index: 0,
+        text: "Alpha paragraph.",
+        kind: "paragraph",
+        origin: "source",
+        markdown: "Alpha paragraph.",
+        marks: [],
+      },
+      {
+        id: "block-unmatched-heading",
+        index: 1,
+        text: "Unmatched references",
+        kind: "heading",
+        origin: "synthetic_unmatched",
+        markdown: "## Unmatched references",
+        level: 2,
+        marks: [],
+      },
+      {
+        id: "block-unmatched-body",
+        index: 2,
+        text: "Quoted fallback.",
+        kind: "paragraph",
+        origin: "synthetic_unmatched",
+        markdown: "Quoted fallback.",
+        marks: [],
+      },
+    ],
+  };
+  return artifact;
 }

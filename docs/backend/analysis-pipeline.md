@@ -37,6 +37,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 7. Artifact assembly
    - Convert agent outputs into anchors, comments, results, summary data, and debug traces
    - Resolve anchors against normalized block text, including whitespace-normalized and ellipsis-truncated excerpts when possible
+   - Treat ellipsis excerpts as ordered fragments inside a single block instead of collapsing them into one normalized string
    - When an excerpt cannot be mapped into one visible block, append a bottom-of-document unmatched-reference block instead of falling back to the first paragraph
    - Keep human comment/reply/review-state data in the same artifact structure
    - Keep artifact assembly outside the graph-state model

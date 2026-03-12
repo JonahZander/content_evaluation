@@ -40,6 +40,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Hovering or selecting a summary finding should highlight linked spans in the source text.
 - Connector lines should visually link each comment card to the relevant highlight.
 - Multiple comments on the same span should stack vertically while connecting back to the same text selection.
+- Overlapping anchors must render from one shared set of text segments so source text is never duplicated in the document pane.
 - Paragraphs with comments should reserve the vertical space needed for those comments before the next paragraph begins.
 - Export and import actions should be visible from the main toolbar.
 - The toolbar should expose a stop-run action for queued/running work and a new-analysis reset action.
@@ -48,6 +49,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 ## Target Behaviors
 
 - Highlight colors are category-based and consistent across the text pane, comment labels, and connector lines.
+- When multiple agents or anchor ranges overlap on the same visible text, render one neutral highlight fill with thin agent-color rails instead of layered color overlays.
 - Supported markdown rendering is intentionally narrow in v1:
   - headings
   - `strong`

@@ -2,7 +2,9 @@ import { fireEvent, render, screen } from "@testing-library/react";
 
 import { ReviewWorkbench } from "@/components/ReviewWorkbench";
 import { mockArtifact } from "@/lib/mock-data";
+import type { AnalysisArtifact, ArtifactComment, ArtifactThread } from "@/lib/types";
 import * as api from "@/lib/api";
+import reproDuplicateSections from "./fixtures/repro-duplicate-sections.json";
 
 vi.mock("@/lib/api", () => ({
   fetchAgents: vi.fn().mockResolvedValue([
@@ -88,7 +90,7 @@ describe("ReviewWorkbench", () => {
     expect(screen.getByRole("heading", { name: "Inline Markdown Example" })).toBeInTheDocument();
     expect(screen.getByText("bold").tagName).toBe("STRONG");
     expect(screen.getByText("italic").tagName).toBe("EM");
-    expect(screen.getByText("const verdict = 'worth revising';").tagName).toBe("CODE");
+    expect(screen.getByText("const verdict = 'worth revising';").closest("code")?.tagName).toBe("CODE");
   });
 
   it("opens export URLs", () => {
@@ -115,4 +117,98 @@ describe("ReviewWorkbench", () => {
 
     expect(await screen.findByText("How Editorial Teams Can Evaluate AI-Written Posts")).toBeInTheDocument();
   });
+
+  it("renders overlap-heavy fixture blocks without duplicating text", () => {
+    const artifact = reproDuplicateSections as AnalysisArtifact;
+
+    render(<ReviewWorkbench initialArtifact={artifact} />);
+
+    const firstRow = screen.getByTestId("document-block-0");
+    const blockElement = firstRow.querySelector("[data-block-id]");
+    expect(blockElement).not.toBeNull();
+    expect(blockElement?.textContent).toBe(artifact.document?.blocks[0]?.text ?? "");
+  });
+
+  it("renders overlapping anchors once and marks shared segments for multi-agent highlights", () => {
+    const overlapArtifact = buildOverlapArtifact();
+
+    render(<ReviewWorkbench initialArtifact={overlapArtifact} />);
+
+    const firstRow = screen.getByTestId("document-block-0");
+    const blockElement = firstRow.querySelector("[data-block-id]");
+    expect(blockElement).not.toBeNull();
+    expect(blockElement?.textContent).toBe(overlapArtifact.document?.blocks[0]?.text ?? "");
+
+    const sharedSegment = firstRow.querySelector('[data-anchor-count="3"]') as HTMLElement | null;
+    expect(sharedSegment).not.toBeNull();
+    expect(sharedSegment?.style.background).toContain("linear-gradient");
+    expect(sharedSegment?.getAttribute("data-anchor-ids")).toContain("anchor-overlap-1");
+  });
 });
+
+function buildOverlapArtifact(): AnalysisArtifact {
+  const artifact = structuredClone(mockArtifact);
+  const blockText = "Alpha beta gamma delta epsilon zeta.";
+  artifact.document = {
+    ...artifact.document!,
+    text: blockText,
+    blocks: [
+      {
+        id: "block-overlap",
+        index: 0,
+        text: blockText,
+        kind: "paragraph",
+        markdown: blockText,
+        marks: [],
+      },
+    ],
+  };
+  artifact.anchors = [
+    { id: "anchor-overlap-1", block_id: "block-overlap", start_offset: 0, end_offset: 10, quote: "Alpha beta" },
+    { id: "anchor-overlap-2", block_id: "block-overlap", start_offset: 0, end_offset: 16, quote: "Alpha beta gamma" },
+    { id: "anchor-overlap-3", block_id: "block-overlap", start_offset: 0, end_offset: 22, quote: "Alpha beta gamma delta" },
+  ];
+  artifact.threads = [
+    buildThread("anchor-overlap-1", "comment-overlap-1", "audience"),
+    buildThread("anchor-overlap-2", "comment-overlap-2", "value"),
+    buildThread("anchor-overlap-3", "comment-overlap-3", "editorial"),
+  ];
+  return artifact;
+}
+
+function buildThread(
+  anchorId: string,
+  commentId: string,
+  category: ArtifactComment["category"],
+): ArtifactThread {
+  const anchor = mockAnchor(anchorId);
+  return {
+    anchor,
+    comments: [
+      {
+        id: commentId,
+        artifact_id: "run-demo",
+        anchor_id: anchorId,
+        author_type: "agent",
+        author_label: `${category} agent`,
+        category,
+        body: `${category} comment`,
+        suggestion: null,
+        review_state: "unreviewed",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        replies: [],
+      },
+    ],
+  };
+}
+
+function mockAnchor(anchorId: string): ArtifactThread["anchor"] {
+  if (anchorId === "anchor-overlap-1") {
+    return { id: "anchor-overlap-1", block_id: "block-overlap", start_offset: 0, end_offset: 10, quote: "Alpha beta" };
+  }
+  if (anchorId === "anchor-overlap-2") {
+    return { id: "anchor-overlap-2", block_id: "block-overlap", start_offset: 0, end_offset: 16, quote: "Alpha beta gamma" };
+  }
+  return { id: "anchor-overlap-3", block_id: "block-overlap", start_offset: 0, end_offset: 22, quote: "Alpha beta gamma delta" };
+}

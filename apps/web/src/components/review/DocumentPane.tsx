@@ -8,7 +8,6 @@ import type {
   ArtifactBlock,
   ArtifactComment,
   ArtifactDocument,
-  ArtifactInlineMark,
   ArtifactInlineMarkKind,
   ArtifactThread,
   ReviewState,
@@ -23,6 +22,20 @@ interface SelectionDraft {
   startOffset: number;
   endOffset: number;
   quote: string;
+}
+
+interface SegmentAnchor {
+  anchor: ArtifactAnchor;
+  colors: string[];
+}
+
+interface TextSegment {
+  startOffset: number;
+  endOffset: number;
+  text: string;
+  marks: ArtifactInlineMarkKind[];
+  anchors: SegmentAnchor[];
+  refAnchorIds: string[];
 }
 
 interface DocumentPaneProps {
@@ -52,45 +65,60 @@ interface DocumentPaneProps {
 const reviewActions: ReviewState[] = ["accepted", "rejected", "uncertain"];
 
 function renderAnchor(
-  anchor: ArtifactAnchor,
+  segment: TextSegment,
   children: ReactNode,
-  colors: string[],
   isHovered: boolean,
   anchorRefs: MutableRefObject<Record<string, HTMLSpanElement | null>>,
   onHoverAnchor: (anchorId: string | null) => void,
 ): ReactNode {
-  const gradient =
-    colors.length === 1
-      ? `color-mix(in srgb, ${colors[0]} 18%, white)`
-      : `linear-gradient(90deg, ${colors
-          .map((color, index) => `${color} ${index * (100 / colors.length)}% ${(index + 1) * (100 / colors.length)}%`)
-          .join(", ")})`;
+  const allColors = [...new Set(segment.anchors.flatMap((item) => item.colors))];
+  const primaryColor = allColors[0] ?? colorForCategory("human");
+  const sharedSegment = segment.anchors.length > 1 || allColors.length > 1;
+  const railWidth = Math.max(8, allColors.length * 4);
+  const background = sharedSegment
+    ? `linear-gradient(90deg, ${buildRailStops(allColors, railWidth)}, rgba(255, 247, 236, 0.92) ${railWidth}px 100%)`
+    : `color-mix(in srgb, ${primaryColor} 18%, white)`;
+  const hoverAnchorId = segment.anchors.find((item) => item.anchor.id === segment.refAnchorIds[0])?.anchor.id
+    ?? segment.anchors[0]?.anchor.id
+    ?? null;
+  const dataTestId = segment.refAnchorIds.length === 1 ? `anchor-${segment.refAnchorIds[0]}` : undefined;
 
   return (
     <span
-      key={anchor.id}
+      key={`${segment.startOffset}-${segment.endOffset}`}
       ref={(element) => {
-        anchorRefs.current[anchor.id] = element;
+        segment.refAnchorIds.forEach((anchorId) => {
+          anchorRefs.current[anchorId] = element;
+        });
       }}
       className={`${styles.anchorText} ${isHovered ? styles.anchorTextActive : ""}`}
-      data-testid={`anchor-${anchor.id}`}
+      data-testid={dataTestId}
+      data-anchor-count={segment.anchors.length}
+      data-anchor-ids={segment.anchors.map((item) => item.anchor.id).join(" ")}
       tabIndex={0}
-      onFocus={() => onHoverAnchor(anchor.id)}
+      onFocus={() => onHoverAnchor(hoverAnchorId)}
       onBlur={() => onHoverAnchor(null)}
-      onMouseEnter={() => onHoverAnchor(anchor.id)}
+      onMouseEnter={() => onHoverAnchor(hoverAnchorId)}
       onMouseLeave={() => onHoverAnchor(null)}
       style={{
-        background: colors.length === 1 ? gradient : "rgba(255, 247, 236, 0.9)",
+        background,
         boxShadow:
-          colors.length > 1
-            ? `inset 0 0 0 1px rgba(0,0,0,0.04), inset 6px 0 0 0 ${colors[0]}`
+          sharedSegment
+            ? `inset 0 0 0 1px rgba(0,0,0,0.04), inset ${railWidth}px 0 0 rgba(0,0,0,0)`
             : undefined,
-        borderBottom: `2px solid ${colors[0]}`,
+        borderBottom: `2px solid ${primaryColor}`,
       }}
     >
       {children}
     </span>
   );
+}
+
+function buildRailStops(colors: string[], railWidth: number): string {
+  const stripeWidth = railWidth / Math.max(colors.length, 1);
+  return colors
+    .map((color, index) => `${color} ${index * stripeWidth}px ${(index + 1) * stripeWidth}px`)
+    .join(", ");
 }
 
 function wrapInlineMarks(content: ReactNode, marks: ArtifactInlineMarkKind[], key: string): ReactNode {
@@ -113,47 +141,81 @@ function wrapInlineMarks(content: ReactNode, marks: ArtifactInlineMarkKind[], ke
   }, content);
 }
 
-function renderMarkedRange(block: ArtifactBlock, startOffset: number, endOffset: number, keyPrefix: string): ReactNode[] {
-  if (startOffset >= endOffset) {
-    return [];
-  }
-
-  const marks = (block.marks ?? []).filter(
-    (mark) => mark.start_offset < endOffset && mark.end_offset > startOffset,
-  );
-  if (marks.length === 0) {
-    return [block.text.slice(startOffset, endOffset)];
-  }
-
-  const boundaries = new Set<number>([startOffset, endOffset]);
-  marks.forEach((mark) => {
-    boundaries.add(Math.max(startOffset, mark.start_offset));
-    boundaries.add(Math.min(endOffset, mark.end_offset));
-  });
-
-  const orderedBoundaries = [...boundaries].sort((left, right) => left - right);
-  const fragments: ReactNode[] = [];
-  for (let index = 0; index < orderedBoundaries.length - 1; index += 1) {
-    const segmentStart = orderedBoundaries[index];
-    const segmentEnd = orderedBoundaries[index + 1];
-    if (segmentStart === segmentEnd) {
-      continue;
-    }
-    const text = block.text.slice(segmentStart, segmentEnd);
-    const activeMarks = marks
-      .filter((mark) => mark.start_offset <= segmentStart && mark.end_offset >= segmentEnd)
-      .sort((left, right) => MARK_ORDER[left.kind] - MARK_ORDER[right.kind])
-      .map((mark) => mark.kind);
-    fragments.push(wrapInlineMarks(text, activeMarks, `${keyPrefix}-${segmentStart}-${segmentEnd}`));
-  }
-  return fragments;
-}
-
 const MARK_ORDER: Record<ArtifactInlineMarkKind, number> = {
   emphasis: 0,
   strong: 1,
   code: 2,
 };
+
+function buildTextSegments(
+  block: ArtifactBlock,
+  anchors: ArtifactAnchor[],
+  anchorThreadMap: Map<string, AnchorThread>,
+): TextSegment[] {
+  const blockAnchors = anchors
+    .filter((anchor) => anchor.block_id === block.id)
+    .sort((left, right) => {
+      if (left.start_offset !== right.start_offset) {
+        return left.start_offset - right.start_offset;
+      }
+      if (left.end_offset !== right.end_offset) {
+        return left.end_offset - right.end_offset;
+      }
+      return left.id.localeCompare(right.id);
+    });
+
+  const boundaries = new Set<number>([0, block.text.length]);
+  blockAnchors.forEach((anchor) => {
+    boundaries.add(anchor.start_offset);
+    boundaries.add(anchor.end_offset);
+  });
+  (block.marks ?? []).forEach((mark) => {
+    boundaries.add(mark.start_offset);
+    boundaries.add(mark.end_offset);
+  });
+
+  const orderedBoundaries = [...boundaries].sort((left, right) => left - right);
+  const assignedRefAnchorIds = new Set<string>();
+  const segments: TextSegment[] = [];
+  for (let index = 0; index < orderedBoundaries.length - 1; index += 1) {
+    const startOffset = orderedBoundaries[index];
+    const endOffset = orderedBoundaries[index + 1];
+    if (startOffset >= endOffset) {
+      continue;
+    }
+
+    const activeMarks = (block.marks ?? [])
+      .filter((mark) => mark.start_offset <= startOffset && mark.end_offset >= endOffset)
+      .sort((left, right) => MARK_ORDER[left.kind] - MARK_ORDER[right.kind])
+      .map((mark) => mark.kind);
+    const activeAnchors = blockAnchors
+      .filter((anchor) => anchor.start_offset <= startOffset && anchor.end_offset >= endOffset)
+      .map((anchor) => ({
+        anchor,
+        colors: anchorThreadMap.get(anchor.id)?.colors ?? [colorForCategory("human")],
+      }));
+    const refAnchorIds = activeAnchors
+      .filter((item) => {
+        if (assignedRefAnchorIds.has(item.anchor.id)) {
+          return false;
+        }
+        assignedRefAnchorIds.add(item.anchor.id);
+        return true;
+      })
+      .map((item) => item.anchor.id);
+
+    segments.push({
+      startOffset,
+      endOffset,
+      text: block.text.slice(startOffset, endOffset),
+      marks: activeMarks,
+      anchors: activeAnchors,
+      refAnchorIds,
+    });
+  }
+
+  return segments;
+}
 
 function renderBlockText(
   block: ArtifactBlock,
@@ -163,37 +225,20 @@ function renderBlockText(
   anchorRefs: MutableRefObject<Record<string, HTMLSpanElement | null>>,
   onHoverAnchor: (anchorId: string | null) => void,
 ): ReactNode {
-  const blockAnchors = anchors
-    .filter((anchor) => anchor.block_id === block.id)
-    .sort((left, right) => left.start_offset - right.start_offset);
-
-  if (blockAnchors.length === 0) {
-    return renderMarkedRange(block, 0, block.text.length, `${block.id}-plain`);
-  }
-
-  const fragments: ReactNode[] = [];
-  let cursor = 0;
-  blockAnchors.forEach((anchor) => {
-    if (cursor < anchor.start_offset) {
-      fragments.push(...renderMarkedRange(block, cursor, anchor.start_offset, `${block.id}-before-${cursor}`));
-    }
-    const colors = anchorThreadMap.get(anchor.id)?.colors ?? [colorForCategory("human")];
-    fragments.push(
-      renderAnchor(
-        anchor,
-        renderMarkedRange(block, anchor.start_offset, anchor.end_offset, `${block.id}-anchor-${anchor.id}`),
-        colors,
-        hoveredAnchorId === anchor.id,
-        anchorRefs,
-        onHoverAnchor,
-      ),
+  const segments = buildTextSegments(block, anchors, anchorThreadMap);
+  return segments.map((segment) => {
+    const key = `${block.id}-${segment.startOffset}-${segment.endOffset}`;
+    const content = wrapInlineMarks(
+      segment.text,
+      segment.marks,
+      key,
     );
-    cursor = anchor.end_offset;
+    if (segment.anchors.length === 0) {
+      return <span key={key}>{content}</span>;
+    }
+    const isHovered = segment.anchors.some((item) => item.anchor.id === hoveredAnchorId);
+    return renderAnchor(segment, content, isHovered, anchorRefs, onHoverAnchor);
   });
-  if (cursor < block.text.length) {
-    fragments.push(...renderMarkedRange(block, cursor, block.text.length, `${block.id}-after-${cursor}`));
-  }
-  return fragments;
 }
 
 function resolveSelectionDraft(

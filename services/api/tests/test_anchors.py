@@ -55,6 +55,52 @@ def test_create_anchor_from_excerpt_handles_ellipses() -> None:
     assert "Scale the Provider Network Without Breaking Price Integrity" in block.text[anchor.start_offset : anchor.end_offset]
 
 
+def test_create_anchor_from_excerpt_ignores_leading_ellipsis_fragment() -> None:
+    """Ignore leading ellipses and start matching from the first real fragment."""
+
+    block = ArtifactBlock(index=0, text="Alpha paragraph with important clause and supporting detail.")
+
+    anchor = create_anchor_from_excerpt([block], "... important clause and supporting detail.")
+
+    assert anchor is not None
+    assert anchor.block_id == block.id
+    assert block.text[anchor.start_offset : anchor.end_offset] == "important clause and supporting detail."
+
+
+def test_create_anchor_from_excerpt_handles_middle_ellipsis_with_ordered_fragments() -> None:
+    """Match ordered ellipsis fragments without collapsing them into one string."""
+
+    block = ArtifactBlock(index=0, text="abc middle content 123 and then abc something else 456")
+
+    anchor = create_anchor_from_excerpt([block], "abc ... 123")
+
+    assert anchor is not None
+    assert anchor.block_id == block.id
+    assert block.text[anchor.start_offset : anchor.end_offset] == "abc middle content 123"
+
+
+def test_create_anchor_from_excerpt_handles_trailing_ellipsis() -> None:
+    """Match through the last real fragment when the excerpt ends with ellipsis."""
+
+    block = ArtifactBlock(index=0, text="Start here and continue onward to the final claim.")
+
+    anchor = create_anchor_from_excerpt([block], "Start here and continue ...")
+
+    assert anchor is not None
+    assert anchor.block_id == block.id
+    assert block.text[anchor.start_offset : anchor.end_offset] == "Start here and continue"
+
+
+def test_create_anchor_from_excerpt_returns_none_when_ellipsis_fragments_are_out_of_order() -> None:
+    """Reject ellipsis excerpts that can only be satisfied out of order."""
+
+    block = ArtifactBlock(index=0, text="123 arrives before abc in this sentence.")
+
+    anchor = create_anchor_from_excerpt([block], "abc ... 123")
+
+    assert anchor is None
+
+
 def test_create_anchor_from_excerpt_returns_none_when_excerpt_spans_blocks() -> None:
     """Return no anchor when an excerpt cannot be mapped into a single block."""
 
@@ -64,5 +110,18 @@ def test_create_anchor_from_excerpt_returns_none_when_excerpt_spans_blocks() -> 
     ]
 
     anchor = create_anchor_from_excerpt(blocks, "First paragraph.\n\nSecond paragraph.")
+
+    assert anchor is None
+
+
+def test_create_anchor_from_excerpt_returns_none_when_ellipsis_requires_multiple_blocks() -> None:
+    """Return no anchor when ellipsis fragments only exist across multiple blocks."""
+
+    blocks = [
+        ArtifactBlock(index=0, text="Alpha block ends with abc"),
+        ArtifactBlock(index=1, text="Second block starts with 123"),
+    ]
+
+    anchor = create_anchor_from_excerpt(blocks, "abc ... 123")
 
     assert anchor is None

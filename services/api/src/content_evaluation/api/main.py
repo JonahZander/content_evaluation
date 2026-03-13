@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated
@@ -29,6 +31,7 @@ from content_evaluation.api.schemas import (
     UpdateCommentRequest,
     UpdateReviewStateRequest,
 )
+from content_evaluation.config import get_settings
 from content_evaluation.domain.exceptions import ContentEvaluationError, NotFoundError
 from content_evaluation.domain.models import AnalysisArtifact, ArtifactDocument, RunInput, RunJob, SourceType
 from content_evaluation.logging import configure_logging, request_logging_middleware
@@ -55,16 +58,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await services.start()
     yield
     await services.stop()
+    if isinstance(services.repository, PostgresRunRepository):
+        await services.repository.close()
 
 
 app = FastAPI(title="Content Evaluation API", version="0.3.0", lifespan=lifespan)
 app.middleware("http")(request_logging_middleware)
 
-bootstrap_services = build_services()
+_bootstrap_settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=bootstrap_services.settings.cors_origins,
-    allow_credentials=bootstrap_services.settings.app_env != "production",
+    allow_origins=_bootstrap_settings.cors_origins,
+    allow_credentials=_bootstrap_settings.app_env != "production",
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type", "X-Request-Id"],
 )
@@ -145,12 +150,19 @@ async def cancel_run(run_id: UUID, services: ServicesDependency) -> AnalysisArti
 
 
 @app.get("/api/v1/runs/{run_id}/events")
-async def stream_run_events(run_id: UUID, repository: RepositoryDependency) -> EventSourceResponse:
+async def stream_run_events(
+    run_id: UUID,
+    repository: RepositoryDependency,
+    services: ServicesDependency,
+) -> EventSourceResponse:
     """Stream events for one artifact."""
+
+    timeout_seconds = services.settings.sse_stream_timeout_seconds
 
     async def event_generator() -> AsyncIterator[dict[str, str]]:
         """Yield artifact events as SSE messages."""
 
+        deadline = time.monotonic() + timeout_seconds
         last_count = 0
         idle_loops = 0
         while True:
@@ -167,6 +179,9 @@ async def stream_run_events(run_id: UUID, repository: RepositoryDependency) -> E
                 idle_loops += 1
 
             if artifact.status in {"completed", "failed", "canceled"} and idle_loops >= 2:
+                break
+            if time.monotonic() > deadline:
+                yield {"data": json.dumps({"type": "timeout", "message": "Stream timeout exceeded"})}
                 break
             await asyncio.sleep(0.15)
 

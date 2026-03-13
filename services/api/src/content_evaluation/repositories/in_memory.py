@@ -132,6 +132,11 @@ class InMemoryRunRepository:
 
         self._graph_checkpoints.pop(artifact_id, None)
 
+    async def list_artifact_ids(self) -> list[UUID]:
+        """Return all known artifact IDs."""
+
+        return list(self._artifacts.keys())
+
     def _require_job(self, artifact_id: UUID) -> RunJob:
         """Return a queued job or raise."""
 

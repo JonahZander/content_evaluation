@@ -220,6 +220,7 @@ class RunOrchestrator:
             snapshot_available=True,
         )
         await self._repository.cancel_run_job(artifact_id)
+        self._artifact_locks.pop(artifact_id, None)
         return artifact
 
     async def process_run(
@@ -232,10 +233,15 @@ class RunOrchestrator:
     ) -> None:
         """Process one queued artifact."""
 
-        if self._orchestrator_backend is OrchestratorBackend.LANGGRAPH:
-            await self._process_run_with_langgraph(artifact_id, input_data, attempt=attempt, max_attempts=max_attempts)
-            return
-        await self._process_run_legacy(artifact_id, input_data, attempt=attempt, max_attempts=max_attempts)
+        try:
+            if self._orchestrator_backend is OrchestratorBackend.LANGGRAPH:
+                await self._process_run_with_langgraph(
+                    artifact_id, input_data, attempt=attempt, max_attempts=max_attempts
+                )
+                return
+            await self._process_run_legacy(artifact_id, input_data, attempt=attempt, max_attempts=max_attempts)
+        finally:
+            self._artifact_locks.pop(artifact_id, None)
 
     async def _process_run_legacy(
         self,

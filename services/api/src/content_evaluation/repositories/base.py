@@ -52,3 +52,6 @@ class RunRepository(Protocol):
 
     async def delete_graph_checkpoint(self, artifact_id: UUID) -> None:
         """Remove the stored graph checkpoint for one artifact."""
+
+    async def list_artifact_ids(self) -> list[UUID]:
+        """Return all known artifact IDs."""

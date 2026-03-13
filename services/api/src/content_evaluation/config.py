@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     worker_max_attempts: int = Field(default=2)
     request_timeout_seconds: float = Field(default=30.0)
     provider_timeout_seconds: float = Field(default=90.0)
+    sse_stream_timeout_seconds: float = Field(default=900.0)
 
     @property
     def runtime_mode(self) -> RuntimeMode:

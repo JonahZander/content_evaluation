@@ -68,13 +68,14 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 ## Current Refactor Direction
 
 - `api/main.py`
-  - HTTP routes, SSE event stream, upload validation, artifact endpoints
+  - HTTP routes, SSE event stream (with configurable timeout), upload validation, artifact endpoints
 - `services/orchestration.py`
   - Session/workspace run lifecycle, LangGraph execution, dependency-driven scheduling, checkpoint persistence, artifact assembly
 - `providers/langchain/client.py`
   - LangChain-backed provider routing across OpenAI, Anthropic, and Gemini
 - `services/comments.py`
   - Human comment creation, reply creation/deletion, inline edit/delete checks, agent review-state updates against the artifact
+  - Comment and reply lookup uses the `list_artifact_ids()` repository protocol method to work with both in-memory and Postgres backends
 - `services/exporting.py`
   - Artifact JSON, Markdown, and compact todo export builders
 - `services/worker.py`
@@ -83,6 +84,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
   - Declarative registry plus per-agent instruction files
 - `repositories/`
   - Session-first storage with optional persisted artifact snapshots
+  - Postgres backend uses `psycopg_pool.AsyncConnectionPool` for connection reuse
 
 ## Boundaries
 

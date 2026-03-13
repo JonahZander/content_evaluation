@@ -140,7 +140,7 @@ class CommentService:
     async def _find_comment(self, comment_id: str) -> tuple[AnalysisArtifact, ArtifactComment]:
         """Return one comment plus its artifact."""
 
-        for artifact_id in getattr(self._repository, "_artifacts", {}):
+        for artifact_id in await self._repository.list_artifact_ids():
             artifact = await self._repository.get_artifact(artifact_id)
             if artifact is None:
                 continue
@@ -153,7 +153,7 @@ class CommentService:
     async def _find_reply(self, reply_id: str) -> tuple[AnalysisArtifact, ArtifactComment, ArtifactReply]:
         """Return one reply plus its parent comment and artifact."""
 
-        for artifact_id in getattr(self._repository, "_artifacts", {}):
+        for artifact_id in await self._repository.list_artifact_ids():
             artifact = await self._repository.get_artifact(artifact_id)
             if artifact is None:
                 continue

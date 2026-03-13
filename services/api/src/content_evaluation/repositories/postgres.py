@@ -8,6 +8,7 @@ from uuid import UUID
 import psycopg
 from psycopg import sql
 from psycopg.rows import dict_row
+from psycopg_pool import AsyncConnectionPool
 
 from content_evaluation.domain.models import AnalysisArtifact, GraphCheckpoint, RunJob
 from content_evaluation.repositories.in_memory import InMemoryRunRepository
@@ -21,9 +22,13 @@ class PostgresRunRepository(InMemoryRunRepository):
 
         super().__init__()
         self._database_url = database_url
+        self._pool: AsyncConnectionPool | None = None
 
     async def initialize(self) -> None:
-        """Create the PostgreSQL schema used by the API."""
+        """Create the PostgreSQL schema and open the connection pool."""
+
+        self._pool = AsyncConnectionPool(self._database_url, min_size=2, max_size=10)
+        await self._pool.open()
 
         statements = [
             """
@@ -45,11 +50,17 @@ class PostgresRunRepository(InMemoryRunRepository):
             )
             """,
         ]
-        async with await psycopg.AsyncConnection.connect(self._database_url) as connection:
+        async with self._pool.connection() as connection:
             async with connection.cursor() as cursor:
                 for statement in statements:
                     await cursor.execute(statement)
             await connection.commit()
+
+    async def close(self) -> None:
+        """Close the connection pool."""
+
+        if self._pool is not None:
+            await self._pool.close()
 
     async def create_artifact(self, artifact: AnalysisArtifact) -> AnalysisArtifact:
         """Persist a new artifact to PostgreSQL and memory."""
@@ -71,8 +82,8 @@ class PostgresRunRepository(InMemoryRunRepository):
         artifact = await super().get_artifact(artifact_id)
         if artifact is not None:
             return artifact
-        async with await psycopg.AsyncConnection.connect(self._database_url, row_factory=dict_row) as connection:
-            async with connection.cursor() as cursor:
+        async with self._pool.connection() as connection:
+            async with connection.cursor(row_factory=dict_row) as cursor:
                 await cursor.execute("select payload from artifacts where id = %s", (str(artifact_id),))
                 row = await cursor.fetchone()
         if row is None:
@@ -140,7 +151,7 @@ class PostgresRunRepository(InMemoryRunRepository):
         """Return whether PostgreSQL is reachable."""
 
         try:
-            async with await psycopg.AsyncConnection.connect(self._database_url) as connection:
+            async with self._pool.connection() as connection:
                 async with connection.cursor() as cursor:
                     await cursor.execute("select 1")
                     await cursor.fetchone()
@@ -166,8 +177,8 @@ class PostgresRunRepository(InMemoryRunRepository):
         checkpoint = self._graph_checkpoints.get(artifact_id)
         if checkpoint is not None:
             return checkpoint
-        async with await psycopg.AsyncConnection.connect(self._database_url, row_factory=dict_row) as connection:
-            async with connection.cursor() as cursor:
+        async with self._pool.connection() as connection:
+            async with connection.cursor(row_factory=dict_row) as cursor:
                 await cursor.execute(
                     "select payload from graph_checkpoints where artifact_id = %s",
                     (str(artifact_id),),
@@ -183,10 +194,22 @@ class PostgresRunRepository(InMemoryRunRepository):
         """Delete one graph checkpoint from PostgreSQL and memory."""
 
         self._graph_checkpoints.pop(artifact_id, None)
-        async with await psycopg.AsyncConnection.connect(self._database_url) as connection:
+        async with self._pool.connection() as connection:
             async with connection.cursor() as cursor:
                 await cursor.execute("delete from graph_checkpoints where artifact_id = %s", (str(artifact_id),))
             await connection.commit()
+
+    async def list_artifact_ids(self) -> list[UUID]:
+        """Return all known artifact IDs from memory and PostgreSQL."""
+
+        ids = set(self._artifacts.keys())
+        async with self._pool.connection() as connection:
+            async with connection.cursor(row_factory=dict_row) as cursor:
+                await cursor.execute("select id from artifacts")
+                rows = await cursor.fetchall()
+        for row in rows:
+            ids.add(UUID(row["id"]))
+        return list(ids)
 
     async def _upsert_json(self, table: str, key_column: str, key_value: str, payload: dict[str, object]) -> None:
         """Upsert one JSON payload into PostgreSQL."""
@@ -198,7 +221,7 @@ class PostgresRunRepository(InMemoryRunRepository):
             table=sql.Identifier(table),
             key_col=sql.Identifier(key_column),
         )
-        async with await psycopg.AsyncConnection.connect(self._database_url) as connection:
+        async with self._pool.connection() as connection:
             async with connection.cursor() as cursor:
                 await cursor.execute(statement, (key_value, json.dumps(payload)))
             await connection.commit()

@@ -102,6 +102,7 @@ class ReviewState(StrEnum):
 class AgentCategory(StrEnum):
     """Enumerate analysis categories."""
 
+    FACT_CHECK = "fact_check"
     SIMILARITY = "similarity"
     AI_LIKELIHOOD = "ai_likelihood"
     VALUE = "value"
@@ -114,6 +115,7 @@ class AgentCategory(StrEnum):
 class ProviderKind(StrEnum):
     """Enumerate provider categories."""
 
+    DEEP_RESEARCH = "deep_research"
     SEARCH = "search"
     ANALYSIS = "analysis"
     EXTRACT = "extract"

@@ -21,8 +21,11 @@ from content_evaluation.providers.langchain.client import LangChainAnalysisProvi
 from content_evaluation.providers.mock.providers import (
     MockAnalysisProvider,
     MockContentExtractionProvider,
+    MockDeepResearchProvider,
     MockSimilaritySearchProvider,
 )
+from content_evaluation.providers.deep_research.provider import LiveDeepResearchProvider
+from content_evaluation.providers.interfaces.deep_research import DeepResearchProvider
 from content_evaluation.providers.tavily.client import TavilySearchProvider
 from content_evaluation.repositories.base import RunRepository
 from content_evaluation.repositories.in_memory import InMemoryRunRepository
@@ -39,6 +42,7 @@ class ProviderHealth:
     analysis_provider: AnalysisProvider
     search_provider: SimilaritySearchProvider
     extraction_provider: ContentExtractionProvider
+    deep_research_provider: DeepResearchProvider | None
     providers_ready: bool
 
 
@@ -63,6 +67,7 @@ class AppServices:
             settings.persistent_storage_enabled,
             settings.orchestrator_backend,
             settings.agent_max_retries,
+            deep_research_provider=provider_health.deep_research_provider,
         )
         self.comments = CommentService(self.repository, settings.reviewer_name)
         self.worker = RunWorker(self.repository, self.orchestrator, settings)
@@ -110,6 +115,7 @@ class AppServices:
         """Build provider instances and readiness metadata."""
 
         if settings.runtime_mode.value == "live":
+            deep_research_provider = LiveDeepResearchProvider()
             return ProviderHealth(
                 analysis_provider=LangChainAnalysisProvider(settings),
                 search_provider=TavilySearchProvider(
@@ -125,12 +131,14 @@ class AppServices:
                         timeout_seconds=settings.request_timeout_seconds,
                     ),
                 ),
+                deep_research_provider=deep_research_provider,
                 providers_ready=True,
             )
         return ProviderHealth(
             analysis_provider=MockAnalysisProvider(),
             search_provider=MockSimilaritySearchProvider(),
             extraction_provider=MockContentExtractionProvider(),
+            deep_research_provider=MockDeepResearchProvider(),
             providers_ready=settings.app_env != "production",
         )
 

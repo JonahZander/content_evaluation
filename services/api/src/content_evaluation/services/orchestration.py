@@ -59,11 +59,16 @@ from content_evaluation.domain.models import (
     SourceType,
 )
 from content_evaluation.providers.interfaces.analysis import AnalysisProvider
+from content_evaluation.providers.interfaces.deep_research import DeepResearchProvider
 from content_evaluation.providers.interfaces.extraction import ContentExtractionProvider
 from content_evaluation.providers.interfaces.search import SimilaritySearchProvider
 from content_evaluation.repositories.base import RunRepository
 from content_evaluation.services.anchors import create_anchor_from_excerpt, sanitize_excerpt
-from content_evaluation.services.normalization import build_similarity_query, normalize_text
+from content_evaluation.services.normalization import (
+    build_fact_check_brief,
+    build_similarity_query,
+    normalize_text,
+)
 
 
 @dataclass(slots=True)
@@ -108,6 +113,7 @@ class RunOrchestrator:
         persistent_storage_enabled: bool,
         orchestrator_backend: OrchestratorBackend,
         agent_max_retries: int = 2,
+        deep_research_provider: DeepResearchProvider | None = None,
     ) -> None:
         """Initialize the orchestrator."""
 
@@ -119,6 +125,7 @@ class RunOrchestrator:
         self._persistent_storage_enabled = persistent_storage_enabled
         self._orchestrator_backend = orchestrator_backend
         self._agent_max_retries = agent_max_retries
+        self._deep_research_provider = deep_research_provider
         self._artifact_locks: dict[UUID, asyncio.Lock] = {}
 
     def list_agents(self) -> list[AgentCatalogEntry]:
@@ -799,6 +806,34 @@ class RunOrchestrator:
                 model_name=getattr(self._search_provider, "model_name", "search"),
             )
 
+        if definition.provider_kind is ProviderKind.DEEP_RESEARCH:
+            if self._deep_research_provider is None:
+                raise ValidationError(
+                    f"Agent {definition.agent_id} requires a deep research provider "
+                    "but none is configured. Ensure CONTENT_EVAL_OPENAI_API_KEY and "
+                    "CONTENT_EVAL_TAVILY_API_KEY are set for live mode."
+                )
+            instruction = load_instruction_text(definition)
+            brief = _build_deep_research_brief(instruction, artifact.document)
+            article_text = "\n\n".join(b.text for b in artifact.document.blocks if b.text)
+            raw_output = await self._deep_research_provider.fact_check(brief, article_text)
+            raw_findings = raw_output.get("findings", [])
+            if not isinstance(raw_findings, list):
+                raise ValidationError(
+                    f"Agent {definition.agent_id} returned an invalid findings payload"
+                )
+            findings = [FindingPayload.model_validate(item) for item in raw_findings]
+            meta = raw_output.get("metadata")
+            metadata = meta if isinstance(meta, dict) else {}
+            return AgentExecutionResult(
+                definition=definition,
+                raw_output=raw_output,
+                findings=findings,
+                summary=_coerce_str(raw_output.get("summary")),
+                metadata=metadata,
+                model_name=self._deep_research_provider.model_name,
+            )
+
         raw_output = await self._analysis_provider.analyze(
             definition.agent_id,
             instruction,
@@ -1064,6 +1099,13 @@ def _require_plan_item(artifact: AnalysisArtifact, agent_id: str) -> ArtifactAge
     if plan_item is None:
         raise ValidationError(f"Agent plan item {agent_id} not found")
     return plan_item
+
+
+def _build_deep_research_brief(instruction: str, document: ArtifactDocument) -> str:
+    """Combine the agent instruction with the article content for the research graph."""
+
+    brief = build_fact_check_brief(document.title, document.blocks)
+    return f"{instruction}\n\n{brief}"
 
 
 def _source_message(extracted: ExtractedContent) -> str:

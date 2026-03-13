@@ -124,6 +124,18 @@ _AGENTS: tuple[AgentDefinition, ...] = (
         result_schema=FindingPayload,
     ),
     AgentDefinition(
+        agent_id="fact_check",
+        display_name="Fact Check",
+        description="Verifies key claims against live web sources and flags overlapping existing content.",
+        category=AgentCategory.FACT_CHECK,
+        depends_on=(),
+        provider_kind=ProviderKind.DEEP_RESEARCH,
+        execution_mode=AgentExecutionMode.MULTI_STEP,
+        instruction_file="fact_check/research_brief.md",
+        result_schema=FindingPayload,
+        default_enabled=False,
+    ),
+    AgentDefinition(
         agent_id="synthesis",
         display_name="Synthesis and Scoring",
         description="Produces a final verdict after upstream agents finish.",

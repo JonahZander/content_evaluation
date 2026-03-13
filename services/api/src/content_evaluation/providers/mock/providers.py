@@ -134,3 +134,44 @@ class MockAnalysisProvider:
 
         del route
         return self.model_name
+
+
+class MockDeepResearchProvider:
+    """Return deterministic fact-check findings for tests and no-key development."""
+
+    model_name = "mock-deep-research"
+
+    async def fact_check(self, brief: str, article_text: str) -> dict[str, object]:
+        """Return synthetic fact-check findings."""
+
+        del brief
+        excerpt = article_text[:80].strip() or "Article opening claim."
+        return {
+            "findings": [
+                {
+                    "excerpt": excerpt,
+                    "rationale": (
+                        "SUPPORTED. Mock research found consistent evidence. "
+                        "Sources: https://example.com/mock-1"
+                    ),
+                    "confidence": 0.75,
+                    "suggestion": "Claim appears well-supported. Add citation: https://example.com/mock-1",
+                },
+                {
+                    "excerpt": excerpt[:40] or "Redundancy check.",
+                    "rationale": (
+                        "MIXED OVERLAP. Some similar posts exist but this article's "
+                        "framing adds distinct value."
+                    ),
+                    "confidence": 0.6,
+                    "suggestion": "Differentiate further by citing primary sources.",
+                },
+            ],
+            "summary": "Claims are broadly supported. Article has moderate originality.",
+            "metadata": {
+                "sources": [
+                    "https://example.com/mock-1",
+                    "https://example.com/mock-2",
+                ]
+            },
+        }

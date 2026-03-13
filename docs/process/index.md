@@ -12,6 +12,8 @@ Read this section for repository workflow and documentation maintenance rules.
   - Top-level implementation map and suggested review order for the codebase
 - `llm-backend-walkthrough.md`
   - How provider routing, prompts, and live model setup work in the backend
+- `known-issues.md`
+  - Open findings from the 2026-03-13 code review, intentional simplifications, and deferred rough edges
 
 ## Related Repo-Local Skills
 

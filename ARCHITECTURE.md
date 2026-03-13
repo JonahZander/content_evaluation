@@ -1,6 +1,6 @@
 # Architecture Map
 
-This project is an agent-readable monorepo with a Next.js frontend and a FastAPI backend. The system is moving to an artifact-first design: the backend produces a complete analysis artifact, the UI renders that artifact plus a live event stream, and persistence is an optional adapter rather than the center of the model.
+This project is an agent-readable monorepo with a Next.js frontend and a FastAPI backend. The system uses an artifact-first design: the backend produces a complete analysis artifact, the UI renders that artifact plus a live event stream, and persistence is an optional adapter rather than the center of the model.
 
 ## Top-Level Domains
 

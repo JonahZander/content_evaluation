@@ -22,7 +22,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Optional debug panel
   - Downloadable trace details when debug output is enabled
 
-## Target Implementation Notes
+## Implementation Notes
 
 - `ReviewWorkbench.tsx` coordinates run submission, artifact import/export, live progress, and review mutations against artifact snapshots using a centralized `useReducer` + typed action dispatch instead of individual `useState` hooks.
 - State shape, actions, and the pure reducer live in `src/components/review/workbench-state.ts` so state transitions are explicit and testable.

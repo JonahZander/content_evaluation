@@ -65,7 +65,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 - `GraphRunState` is internal runtime state, not a public API contract.
 - `ArtifactEvent` is the public place to surface run retries, worker resumptions, and provider failure metadata to the UI.
 
-## Current Refactor Direction
+## Current Implementation Notes
 
 - `api/main.py`
   - HTTP routes, SSE event stream (with configurable timeout), upload validation, artifact endpoints

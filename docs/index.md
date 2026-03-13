@@ -39,6 +39,12 @@ Load only the section needed for the current task.
   - `docs/process/codebase-walkthrough.md`
 - LLM backend setup and prompt locations:
   - `docs/process/llm-backend-walkthrough.md`
+- Artifact data model reference:
+  - `docs/backend/data-contracts.md`
+- Adding a new agent:
+  - `docs/agents/how-to-add-an-agent.md`
+- Known open issues and intentional simplifications:
+  - `docs/process/known-issues.md`
 
 ## Current Product Surface
 

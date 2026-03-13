@@ -35,6 +35,7 @@ Read only the domain relevant to the task:
 - Agent responsibilities and evaluation workflow:
   - `docs/agents/index.md`
   - `docs/agents/multi-agent-workflow.md`
+  - `docs/agents/how-to-add-an-agent.md` (when adding a new specialist agent)
 - Logging, observability, and traceability:
   - `docs/operations/index.md`
   - `docs/operations/observability.md`
@@ -43,6 +44,7 @@ Read only the domain relevant to the task:
   - `docs/process/index.md`
   - `docs/process/documentation-maintenance.md`
   - `docs/process/commit-conventions.md`
+  - `docs/process/known-issues.md` (known open issues and intentional simplifications)
 - Active and completed execution plans:
   - `docs/plans/README.md`
 

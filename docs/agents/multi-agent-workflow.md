@@ -26,7 +26,7 @@ This project uses a code-orchestrated multi-agent model:
 - Evaluation synthesis agent
   - Produces a final verdict after upstream specialist agents complete
 
-## Planned Agent Definition Shape
+## Agent Definition Shape
 
 Each agent should be declared with:
 

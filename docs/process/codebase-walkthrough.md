@@ -105,7 +105,7 @@ The orchestration layer lives in:
 
 The external provider adapters live in:
 
-- `services/api/src/content_evaluation/providers/openai/`
+- `services/api/src/content_evaluation/providers/langchain/`
 - `services/api/src/content_evaluation/providers/tavily/`
 - `services/api/src/content_evaluation/providers/extraction/`
 - `services/api/src/content_evaluation/providers/mock/`

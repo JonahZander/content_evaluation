@@ -33,3 +33,7 @@ yarn-error.log*
 
 # Local scratch data
 tmp-artifacts/
+
+# Symlinked skill directories
+.codex/
+.claude/

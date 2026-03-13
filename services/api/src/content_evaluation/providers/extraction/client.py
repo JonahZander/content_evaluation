@@ -2,11 +2,39 @@
 
 from __future__ import annotations
 
+import asyncio
+import ipaddress
+import socket
+from urllib.parse import urlparse
+
 import httpx
 import trafilatura
 
 from content_evaluation.domain.exceptions import ProviderError
 from content_evaluation.domain.models import ContentFormat, ExtractedContent
+
+_ALLOWED_SCHEMES = {"http", "https"}
+
+
+async def _validate_url(url: str) -> None:
+    """Reject URLs with non-public schemes or that resolve to private/internal IPs."""
+
+    parsed = urlparse(url)
+    if parsed.scheme not in _ALLOWED_SCHEMES:
+        raise ProviderError(f"Disallowed URL scheme: {parsed.scheme!r}")
+    hostname = parsed.hostname or ""
+    if not hostname:
+        raise ProviderError("URL has no hostname")
+    try:
+        results = await asyncio.to_thread(
+            socket.getaddrinfo, hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM,
+        )
+    except socket.gaierror as exc:
+        raise ProviderError(f"Could not resolve hostname {hostname!r}") from exc
+    for *_, sockaddr in results:
+        ip = ipaddress.ip_address(sockaddr[0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+            raise ProviderError(f"Disallowed URL: resolves to non-public IP {ip}")
 
 
 class TrafilaturaExtractionProvider:
@@ -22,6 +50,7 @@ class TrafilaturaExtractionProvider:
     async def extract(self, url: str) -> ExtractedContent:
         """Fetch a URL and extract readable article text."""
 
+        await _validate_url(url)
         async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
             response = await client.get(url)
         if response.status_code >= 400:
@@ -58,6 +87,7 @@ class TavilyExtractionProvider:
     async def extract(self, url: str) -> ExtractedContent:
         """Request markdown content for one URL from Tavily."""
 
+        await _validate_url(url)
         async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
             response = await client.post(
                 "https://api.tavily.com/extract",

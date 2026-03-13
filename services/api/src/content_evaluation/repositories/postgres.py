@@ -6,6 +6,7 @@ import json
 from uuid import UUID
 
 import psycopg
+from psycopg import sql
 from psycopg.rows import dict_row
 
 from content_evaluation.domain.models import AnalysisArtifact, GraphCheckpoint, RunJob
@@ -190,9 +191,12 @@ class PostgresRunRepository(InMemoryRunRepository):
     async def _upsert_json(self, table: str, key_column: str, key_value: str, payload: dict[str, object]) -> None:
         """Upsert one JSON payload into PostgreSQL."""
 
-        statement = (
-            f"insert into {table} ({key_column}, payload) values (%s, %s::jsonb) "
-            f"on conflict ({key_column}) do update set payload = excluded.payload"
+        statement = sql.SQL(
+            "insert into {table} ({key_col}, payload) values (%s, %s::jsonb) "
+            "on conflict ({key_col}) do update set payload = excluded.payload"
+        ).format(
+            table=sql.Identifier(table),
+            key_col=sql.Identifier(key_column),
         )
         async with await psycopg.AsyncConnection.connect(self._database_url) as connection:
             async with connection.cursor() as cursor:

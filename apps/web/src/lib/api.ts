@@ -25,9 +25,29 @@ export interface CreateCommentPayload {
 
 async function parseJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}`);
+    let detail: string | undefined;
+    try {
+      const body = await response.json();
+      detail = typeof body?.detail === "string" ? body.detail : undefined;
+    } catch {
+      // body is not JSON
+    }
+    throw new Error(detail ?? `Request failed with status ${response.status}`);
   }
   return (await response.json()) as T;
+}
+
+async function assertOk(response: Response): Promise<void> {
+  if (!response.ok) {
+    let detail: string | undefined;
+    try {
+      const body = await response.json();
+      detail = typeof body?.detail === "string" ? body.detail : undefined;
+    } catch {
+      // body is not JSON
+    }
+    throw new Error(detail ?? `Request failed with status ${response.status}`);
+  }
 }
 
 export async function fetchAgents(): Promise<AgentCatalogEntry[]> {
@@ -151,9 +171,7 @@ export async function deleteReply(replyId: string): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/api/v1/replies/${replyId}`, {
     method: "DELETE",
   });
-  if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}`);
-  }
+  await assertOk(response);
 }
 
 export async function updateReviewState(commentId: string, state: ReviewState): Promise<void> {
@@ -184,9 +202,7 @@ export async function deleteHumanComment(commentId: string): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/api/v1/comments/${commentId}`, {
     method: "DELETE",
   });
-  if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}`);
-  }
+  await assertOk(response);
 }
 
 export function getExportUrl(artifactId: string, format: "md" | "json" | "todo"): string {

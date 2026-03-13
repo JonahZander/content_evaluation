@@ -539,17 +539,21 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     if (artifact === null || selectionDraft === null || !commentDraft.trim()) {
       return;
     }
-    await createComment({
-      artifactId: artifact.artifact_id,
-      body: commentDraft,
-      blockId: selectionDraft.blockId,
-      startOffset: selectionDraft.startOffset,
-      endOffset: selectionDraft.endOffset,
-      quote: selectionDraft.quote,
-    });
-    await refreshArtifact(artifact.artifact_id);
-    setSelectionDraft(null);
-    setCommentDraft("");
+    try {
+      await createComment({
+        artifactId: artifact.artifact_id,
+        body: commentDraft,
+        blockId: selectionDraft.blockId,
+        startOffset: selectionDraft.startOffset,
+        endOffset: selectionDraft.endOffset,
+        quote: selectionDraft.quote,
+      });
+      await refreshArtifact(artifact.artifact_id);
+      setSelectionDraft(null);
+      setCommentDraft("");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Could not save comment.");
+    }
   }
 
   async function handleReply(commentId: string) {
@@ -560,50 +564,70 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     if (!body) {
       return;
     }
-    await addReply(commentId, body);
-    await refreshArtifact(artifact.artifact_id);
-    setReplyDrafts((current) => ({ ...current, [commentId]: "" }));
+    try {
+      await addReply(commentId, body);
+      await refreshArtifact(artifact.artifact_id);
+      setReplyDrafts((current) => ({ ...current, [commentId]: "" }));
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Could not save reply.");
+    }
   }
 
   async function handleDeleteReply(replyId: string) {
     if (artifact === null) {
       return;
     }
-    await deleteReply(replyId);
-    await refreshArtifact(artifact.artifact_id);
+    try {
+      await deleteReply(replyId);
+      await refreshArtifact(artifact.artifact_id);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Could not delete reply.");
+    }
   }
 
   async function handleReviewState(commentId: string, state: ReviewState) {
     if (artifact === null) {
       return;
     }
-    const currentState =
-      artifact.threads.flatMap((thread) => thread.comments).find((comment) => comment.id === commentId)?.review_state
-      ?? "unreviewed";
-    const nextState: ReviewState = currentState === state ? "unreviewed" : state;
-    await updateReviewState(commentId, nextState);
-    await refreshArtifact(artifact.artifact_id);
+    try {
+      const currentState =
+        artifact.threads.flatMap((thread) => thread.comments).find((comment) => comment.id === commentId)?.review_state
+        ?? "unreviewed";
+      const nextState: ReviewState = currentState === state ? "unreviewed" : state;
+      await updateReviewState(commentId, nextState);
+      await refreshArtifact(artifact.artifact_id);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Could not update review state.");
+    }
   }
 
   async function handleSaveEdit(commentId: string) {
     if (artifact === null || !editingBody.trim()) {
       return;
     }
-    await updateHumanComment(commentId, editingBody);
-    await refreshArtifact(artifact.artifact_id);
-    setEditingCommentId(null);
-    setEditingBody("");
+    try {
+      await updateHumanComment(commentId, editingBody);
+      await refreshArtifact(artifact.artifact_id);
+      setEditingCommentId(null);
+      setEditingBody("");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Could not save edit.");
+    }
   }
 
   async function handleDeleteHumanComment(commentId: string) {
     if (artifact === null) {
       return;
     }
-    await deleteHumanComment(commentId);
-    await refreshArtifact(artifact.artifact_id);
-    if (editingCommentId === commentId) {
-      setEditingCommentId(null);
-      setEditingBody("");
+    try {
+      await deleteHumanComment(commentId);
+      await refreshArtifact(artifact.artifact_id);
+      if (editingCommentId === commentId) {
+        setEditingCommentId(null);
+        setEditingBody("");
+      }
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Could not delete comment.");
     }
   }
 

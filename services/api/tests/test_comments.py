@@ -210,6 +210,56 @@ async def test_comment_service_delete_reply_raises_for_missing_reply() -> None:
 
 
 @pytest.mark.asyncio
+async def test_comment_service_raises_for_missing_comment_on_review_state() -> None:
+    """Raise NotFoundError when setting review state on an unknown comment."""
+
+    repository = InMemoryRunRepository()
+    artifact = _build_artifact()
+    await repository.create_artifact(artifact)
+    service = CommentService(repository, "Reviewer")
+
+    with pytest.raises(NotFoundError, match="not found"):
+        await service.set_review_state("missing-comment-id", ReviewState.ACCEPTED)
+
+
+@pytest.mark.asyncio
+async def test_comment_service_raises_for_missing_comment_on_update() -> None:
+    """Raise NotFoundError when updating a nonexistent comment."""
+
+    repository = InMemoryRunRepository()
+    artifact = _build_artifact()
+    await repository.create_artifact(artifact)
+    service = CommentService(repository, "Reviewer")
+
+    with pytest.raises(NotFoundError, match="not found"):
+        await service.update_comment("missing-comment-id", "new body")
+
+
+@pytest.mark.asyncio
+async def test_comment_service_rejects_deleting_agent_comment() -> None:
+    """Prevent deletion of agent-authored comments."""
+
+    repository = InMemoryRunRepository()
+    artifact = _build_artifact()
+    await repository.create_artifact(artifact)
+    anchor = artifact.anchors[0]
+    agent_comment = ArtifactComment(
+        artifact_id=artifact.artifact_id,
+        anchor_id=anchor.id,
+        author_type=AuthorType.AGENT,
+        author_label="editorial agent",
+        category=AgentCategory.EDITORIAL,
+        body="Trim this paragraph.",
+    )
+    artifact.threads = [ArtifactThread(anchor=anchor, comments=[agent_comment])]
+    await repository.update_artifact(artifact)
+    service = CommentService(repository, "Reviewer")
+
+    with pytest.raises(ValidationError, match="Only human comments can be deleted"):
+        await service.delete_comment(agent_comment.id)
+
+
+@pytest.mark.asyncio
 async def test_comment_service_rejects_deleting_agent_reply() -> None:
     """Prevent deletion of agent-authored replies."""
 

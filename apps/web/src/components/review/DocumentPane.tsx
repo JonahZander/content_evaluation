@@ -14,17 +14,11 @@ import {
   type ArtifactInlineMarkKind,
   type ArtifactThread,
   type ReviewState,
+  type SelectionDraft,
 } from "@/lib/types";
 
 interface AnchorThread {
   colors: string[];
-}
-
-interface SelectionDraft {
-  blockId: string;
-  startOffset: number;
-  endOffset: number;
-  quote: string;
 }
 
 interface SegmentAnchor {

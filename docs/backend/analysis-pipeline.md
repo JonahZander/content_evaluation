@@ -69,22 +69,33 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 
 - `api/main.py`
   - HTTP routes, SSE event stream (with configurable timeout), upload validation, artifact endpoints
+- `api/dependencies.py`
+  - Long-lived service container; `AppServices.stop()` closes provider HTTP clients on shutdown
 - `services/orchestration.py`
   - Session/workspace run lifecycle, LangGraph execution, dependency-driven scheduling, checkpoint persistence, artifact assembly
 - `providers/langchain/client.py`
   - LangChain-backed provider routing across OpenAI, Anthropic, and Gemini
+  - Chat models are cached per (family, model_name) pair for the lifetime of the provider
+- `providers/tavily/client.py`
+  - Tavily search with a shared `httpx.AsyncClient` created at startup
+- `providers/extraction/client.py`
+  - Trafilatura and Tavily extraction providers each hold a long-lived `httpx.AsyncClient`
+  - `FallbackExtractionProvider.close()` delegates to both inner providers
 - `services/comments.py`
   - Human comment creation, reply creation/deletion, inline edit/delete checks, agent review-state updates against the artifact
   - Comment and reply lookup uses the `list_artifact_ids()` repository protocol method to work with both in-memory and Postgres backends
 - `services/exporting.py`
   - Artifact JSON, Markdown, and compact todo export builders
 - `services/worker.py`
-  - Repository-backed polling worker
+  - Repository-backed polling worker with bounded concurrency (`worker_max_concurrent_runs` setting, `asyncio.Semaphore`)
+  - `stop()` drains in-flight tasks before shutting down
 - `agents/`
   - Declarative registry plus per-agent instruction files
 - `repositories/`
-  - Session-first storage with optional persisted artifact snapshots
+  - Session-first in-memory storage; standalone PostgreSQL repository (no `InMemoryRunRepository` inheritance)
   - Postgres backend uses `psycopg_pool.AsyncConnectionPool` for connection reuse
+  - Write path: Postgres first, cache on success; read path: cache first with `deepcopy` isolation
+  - All writes wrapped in `connection.transaction()` blocks
 
 ## Boundaries
 

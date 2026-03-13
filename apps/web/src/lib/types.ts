@@ -206,6 +206,13 @@ export interface AgentCatalogEntry {
   default_enabled: boolean;
 }
 
+export interface SelectionDraft {
+  blockId: string;
+  startOffset: number;
+  endOffset: number;
+  quote: string;
+}
+
 export function anchorSegments(anchor: ArtifactAnchor): ArtifactAnchorSegment[] {
   if (anchor.segments?.length) {
     return anchor.segments;

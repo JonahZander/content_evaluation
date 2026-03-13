@@ -43,16 +43,20 @@ class TrafilaturaExtractionProvider:
     provider_name = "direct"
 
     def __init__(self, *, timeout_seconds: float = 20.0) -> None:
-        """Initialize the extraction client."""
+        """Initialize the extraction client with a long-lived HTTP session."""
 
-        self._timeout_seconds = timeout_seconds
+        self._client = httpx.AsyncClient(timeout=timeout_seconds)
+
+    async def close(self) -> None:
+        """Close the underlying HTTP client."""
+
+        await self._client.aclose()
 
     async def extract(self, url: str) -> ExtractedContent:
         """Fetch a URL and extract readable article text."""
 
         await _validate_url(url)
-        async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
-            response = await client.get(url)
+        response = await self._client.get(url)
         if response.status_code >= 400:
             raise ProviderError(f"Direct content extraction failed with status {response.status_code}")
 
@@ -79,26 +83,30 @@ class TavilyExtractionProvider:
     provider_name = "tavily-extract"
 
     def __init__(self, api_key: str, *, timeout_seconds: float = 20.0) -> None:
-        """Initialize the Tavily extraction client."""
+        """Initialize the Tavily extraction client with a long-lived HTTP session."""
 
         self._api_key = api_key
-        self._timeout_seconds = timeout_seconds
+        self._client = httpx.AsyncClient(timeout=timeout_seconds)
+
+    async def close(self) -> None:
+        """Close the underlying HTTP client."""
+
+        await self._client.aclose()
 
     async def extract(self, url: str) -> ExtractedContent:
         """Request markdown content for one URL from Tavily."""
 
         await _validate_url(url)
-        async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
-            response = await client.post(
-                "https://api.tavily.com/extract",
-                json={
-                    "api_key": self._api_key,
-                    "urls": [url],
-                    "extract_depth": "advanced",
-                    "format": "markdown",
-                    "include_images": False,
-                },
-            )
+        response = await self._client.post(
+            "https://api.tavily.com/extract",
+            json={
+                "api_key": self._api_key,
+                "urls": [url],
+                "extract_depth": "advanced",
+                "format": "markdown",
+                "include_images": False,
+            },
+        )
         if response.status_code >= 400:
             raise ProviderError(f"Tavily extraction failed with status {response.status_code}")
 
@@ -142,6 +150,12 @@ class FallbackExtractionProvider:
 
         self._primary = primary
         self._fallback = fallback
+
+    async def close(self) -> None:
+        """Close both underlying providers."""
+
+        await self._primary.close()
+        await self._fallback.close()
 
     async def extract(self, url: str) -> ExtractedContent:
         """Extract content via direct fetch, then Tavily if needed."""

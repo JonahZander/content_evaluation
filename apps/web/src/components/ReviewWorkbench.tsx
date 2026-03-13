@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 
 import styles from "@/components/ReviewWorkbench.module.css";
 import { CommentRail } from "@/components/review/CommentRail";
@@ -11,12 +11,17 @@ import { RunMetrics } from "@/components/review/RunMetrics";
 import { SelectionBanner } from "@/components/review/SelectionBanner";
 import { categoryColors } from "@/components/review/category-colors";
 import {
+  initialWorkbenchState,
+  workbenchReducer,
+  type WorkbenchAction,
+} from "@/components/review/workbench-state";
+import {
   addReply,
   cancelRun,
   createComment,
-  deleteReply,
   createRun,
   deleteHumanComment,
+  deleteReply,
   fetchAgents,
   fetchArtifact,
   getExportUrl,
@@ -35,13 +40,6 @@ import type {
 } from "@/lib/types";
 import { anchorPrimarySegment } from "@/lib/types";
 
-interface SelectionDraft {
-  blockId: string;
-  startOffset: number;
-  endOffset: number;
-  quote: string;
-}
-
 interface ReviewWorkbenchProps {
   initialArtifact: AnalysisArtifact | null;
 }
@@ -57,36 +55,33 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8
 const SESSION_STORAGE_KEY = "content-evaluation:artifact";
 const TERMINAL_RUN_STATUSES = new Set<RunStatus>(["completed", "failed", "canceled"]);
 
-const DEFAULT_FORM_STATE: ReviewFormState = {
-  sourceType: "text",
-  title: "",
-  sourceLabel: "Manual input",
-  text: "",
-  url: "",
-  persistenceMode: "session",
-  includeDebugTrace: true,
-  selectedAgents: [],
-};
-
 export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
-  const [artifact, setArtifact] = useState<AnalysisArtifact | null>(initialArtifact);
-  const [previewDocument, setPreviewDocument] = useState<ArtifactDocument | null>(null);
-  const [agents, setAgents] = useState<AgentCatalogEntry[]>([]);
-  const [statusMessage, setStatusMessage] = useState("Choose content, import it if needed, and start a session.");
-  const [hoveredAnchorId, setHoveredAnchorId] = useState<string | null>(null);
-  const [selectionDraft, setSelectionDraft] = useState<SelectionDraft | null>(null);
-  const [commentDraft, setCommentDraft] = useState("");
-  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
-  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
-  const [editingBody, setEditingBody] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isPreviewing, setIsPreviewing] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [fileInputKey, setFileInputKey] = useState(0);
-  const [importInputKey, setImportInputKey] = useState(0);
-  const [activeArtifactId, setActiveArtifactId] = useState<string | null>(initialArtifact?.artifact_id ?? null);
-  const [hasDownloadedJson, setHasDownloadedJson] = useState(false);
-  const [formState, setFormState] = useState<ReviewFormState>(DEFAULT_FORM_STATE);
+  const [state, dispatch] = useReducer(workbenchReducer, {
+    ...initialWorkbenchState,
+    artifact: initialArtifact,
+    activeArtifactId: initialArtifact?.artifact_id ?? null,
+  });
+
+  const {
+    artifact,
+    previewDocument,
+    agents,
+    statusMessage,
+    hoveredAnchorId,
+    selectionDraft,
+    commentDraft,
+    replyDrafts,
+    editingCommentId,
+    editingBody,
+    isSubmitting,
+    isPreviewing,
+    selectedFile,
+    fileInputKey,
+    importInputKey,
+    activeArtifactId,
+    hasDownloadedJson,
+    formState,
+  } = state;
 
   const workspaceRef = useRef<HTMLDivElement | null>(null);
   const anchorRefs = useRef<Record<string, HTMLSpanElement | null>>({});
@@ -97,19 +92,22 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   useEffect(() => {
     fetchAgents()
       .then((catalog) => {
-        setAgents(catalog);
-        setFormState((current) => {
-          if (current.selectedAgents.length > 0) {
-            return current;
-          }
-          return {
-            ...current,
-            selectedAgents: catalog.filter((agent) => agent.default_enabled).map((agent) => agent.agent_id),
-          };
+        dispatch({ type: "SET_AGENTS", agents: catalog });
+        dispatch({
+          type: "UPDATE_FORM_STATE",
+          updater: (current) => {
+            if (current.selectedAgents.length > 0) {
+              return current;
+            }
+            return {
+              ...current,
+              selectedAgents: catalog.filter((agent) => agent.default_enabled).map((agent) => agent.agent_id),
+            };
+          },
         });
       })
       .catch(() => {
-        setStatusMessage("Could not load the agent catalog.");
+        dispatch({ type: "SET_STATUS_MESSAGE", message: "Could not load the agent catalog." });
       });
   }, []);
 
@@ -124,36 +122,48 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     try {
       const parsed = JSON.parse(stored) as StoredWorkbenchState | AnalysisArtifact;
       if (isStoredWorkbenchState(parsed)) {
-        setArtifact(parsed.artifact);
-        setPreviewDocument(parsed.previewDocument);
-        setFormState(parsed.formState);
-        setHasDownloadedJson(parsed.hasDownloadedJson);
+        let activeId: string | null = null;
+        let message = state.statusMessage;
         if (parsed.artifact !== null) {
-          setActiveArtifactId(
+          activeId =
             parsed.artifact.status === "running" || parsed.artifact.status === "queued"
               ? parsed.artifact.artifact_id
-              : null,
-          );
-          setStatusMessage(`Restored ${parsed.artifact.status} artifact from this browser session.`);
+              : null;
+          message = `Restored ${parsed.artifact.status} artifact from this browser session.`;
         } else if (parsed.previewDocument !== null) {
-          setStatusMessage(`Restored imported draft preview for ${parsed.previewDocument.title}.`);
+          message = `Restored imported draft preview for ${parsed.previewDocument.title}.`;
         }
+        dispatch({
+          type: "RESTORE_STORED_STATE",
+          artifact: parsed.artifact,
+          previewDocument: parsed.previewDocument,
+          formState: parsed.formState,
+          hasDownloadedJson: parsed.hasDownloadedJson,
+          activeArtifactId: activeId,
+          statusMessage: message,
+        });
         return;
       }
       if (isAnalysisArtifact(parsed)) {
-        setArtifact(parsed);
-        setActiveArtifactId(parsed.status === "running" || parsed.status === "queued" ? parsed.artifact_id : null);
-        setStatusMessage(`Restored ${parsed.status} artifact from this browser session.`);
-        setFormState((current) => ({
-          ...current,
-          title: parsed.document?.title ?? parsed.source.title ?? current.title,
-          text: parsed.document?.raw_content ?? parsed.document?.text ?? current.text,
-          url: parsed.source.url ?? current.url,
-          sourceLabel: parsed.source.source_label,
-          selectedAgents: parsed.run_config.selected_agents,
-          persistenceMode: parsed.run_config.persistence_mode,
-          includeDebugTrace: parsed.run_config.include_debug_trace,
-        }));
+        dispatch({ type: "SET_ARTIFACT", artifact: parsed });
+        dispatch({
+          type: "SET_ACTIVE_ARTIFACT_ID",
+          id: parsed.status === "running" || parsed.status === "queued" ? parsed.artifact_id : null,
+        });
+        dispatch({ type: "SET_STATUS_MESSAGE", message: `Restored ${parsed.status} artifact from this browser session.` });
+        dispatch({
+          type: "UPDATE_FORM_STATE",
+          updater: (current) => ({
+            ...current,
+            title: parsed.document?.title ?? parsed.source.title ?? current.title,
+            text: parsed.document?.raw_content ?? parsed.document?.text ?? current.text,
+            url: parsed.source.url ?? current.url,
+            sourceLabel: parsed.source.source_label,
+            selectedAgents: parsed.run_config.selected_agents,
+            persistenceMode: parsed.run_config.persistence_mode,
+            includeDebugTrace: parsed.run_config.include_debug_trace,
+          }),
+        });
       }
     } catch {
       window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
@@ -184,33 +194,36 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(storedState));
   }, [artifact, previewDocument, formState, hasDownloadedJson]);
 
-  async function refreshArtifact(artifactId: string) {
+  const refreshArtifact = useCallback(async (artifactId: string) => {
     const updated = await fetchArtifact(artifactId);
-    setArtifact(updated);
+    dispatch({ type: "SET_ARTIFACT", artifact: updated });
     if (updated.document !== null) {
-      setPreviewDocument(null);
+      dispatch({ type: "SET_PREVIEW_DOCUMENT", document: null });
     }
-    setStatusMessage(`Run ${updated.status}`);
+    dispatch({ type: "SET_STATUS_MESSAGE", message: `Run ${updated.status}` });
     return updated;
-  }
+  }, []);
 
-  async function refreshArtifactCoalesced(artifactId: string) {
-    if (refreshInFlightRef.current !== null) {
-      queuedRefreshArtifactIdRef.current = artifactId;
-      return refreshInFlightRef.current;
-    }
-
-    const request = refreshArtifact(artifactId).finally(() => {
-      refreshInFlightRef.current = null;
-      const queuedArtifactId = queuedRefreshArtifactIdRef.current;
-      queuedRefreshArtifactIdRef.current = null;
-      if (queuedArtifactId !== null) {
-        void refreshArtifactCoalesced(queuedArtifactId);
+  const refreshArtifactCoalesced = useCallback(
+    async (artifactId: string): Promise<AnalysisArtifact> => {
+      if (refreshInFlightRef.current !== null) {
+        queuedRefreshArtifactIdRef.current = artifactId;
+        return refreshInFlightRef.current;
       }
-    });
-    refreshInFlightRef.current = request;
-    return request;
-  }
+
+      const request = refreshArtifact(artifactId).finally(() => {
+        refreshInFlightRef.current = null;
+        const queuedArtifactId = queuedRefreshArtifactIdRef.current;
+        queuedRefreshArtifactIdRef.current = null;
+        if (queuedArtifactId !== null) {
+          void refreshArtifactCoalesced(queuedArtifactId);
+        }
+      });
+      refreshInFlightRef.current = request;
+      return request;
+    },
+    [refreshArtifact],
+  );
 
   useEffect(() => {
     if (!activeArtifactId) {
@@ -223,17 +236,17 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       if (parsed.snapshot_available) {
         const updated = await refreshArtifactCoalesced(activeArtifactId);
         if (TERMINAL_RUN_STATUSES.has(updated.status)) {
-          setActiveArtifactId(null);
+          dispatch({ type: "SET_ACTIVE_ARTIFACT_ID", id: null });
           eventSource.close();
         }
       }
     };
     eventSource.onerror = () => {
-      setStatusMessage("Live artifact updates disconnected. Refreshing on the next action.");
+      dispatch({ type: "SET_STATUS_MESSAGE", message: "Live artifact updates disconnected. Refreshing on the next action." });
       eventSource.close();
     };
     return () => eventSource.close();
-  }, [activeArtifactId]);
+  }, [activeArtifactId, refreshArtifactCoalesced]);
 
   const normalizedThreads = useMemo(() => {
     if (artifact === null || artifact.document === null) {
@@ -313,33 +326,11 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   );
   const isProgressActive = artifact !== null && (artifact.status === "queued" || artifact.status === "running");
 
-  function clearAnalysisState(resetForm: boolean) {
-    setArtifact(null);
-    setPreviewDocument(null);
-    setActiveArtifactId(null);
-    setSelectionDraft(null);
-    setCommentDraft("");
-    setReplyDrafts({});
-    setEditingCommentId(null);
-    setEditingBody("");
-    setSelectedFile(null);
-    setFileInputKey((current) => current + 1);
-    setHasDownloadedJson(false);
-    if (resetForm) {
-      setFormState((current) => ({
-        ...DEFAULT_FORM_STATE,
-        selectedAgents: current.selectedAgents,
-        persistenceMode: current.persistenceMode,
-        includeDebugTrace: current.includeDebugTrace,
-      }));
-    }
-  }
-
   async function maybeReplaceCurrentAnalysis(resetForm: boolean) {
     const hasCurrentAnalysis = artifact !== null || previewDocument !== null;
     if (!hasCurrentAnalysis) {
       if (resetForm) {
-        clearAnalysisState(true);
+        dispatch({ type: "CLEAR_ANALYSIS_STATE", resetForm: true, currentAgents: agents });
       }
       return true;
     }
@@ -357,12 +348,12 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       try {
         await cancelRun(artifact.artifact_id);
       } catch {
-        setStatusMessage("Could not stop the current run before starting over.");
+        dispatch({ type: "SET_STATUS_MESSAGE", message: "Could not stop the current run before starting over." });
         return false;
       }
     }
 
-    clearAnalysisState(resetForm);
+    dispatch({ type: "CLEAR_ANALYSIS_STATE", resetForm, currentAgents: agents });
     return true;
   }
 
@@ -375,27 +366,27 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       }
     }
 
-    setStatusMessage("Submitting analysis session...");
-    setIsSubmitting(true);
+    dispatch({ type: "SET_STATUS_MESSAGE", message: "Submitting analysis session..." });
+    dispatch({ type: "SET_IS_SUBMITTING", value: true });
     try {
       if (formState.sourceType === "file") {
         if (selectedFile === null) {
-          setStatusMessage("Choose a .txt or .md file first.");
+          dispatch({ type: "SET_STATUS_MESSAGE", message: "Choose a .txt or .md file first." });
           return;
         }
         if (!/\.(txt|md)$/i.test(selectedFile.name)) {
-          setStatusMessage("Only .txt and .md uploads are supported.");
+          dispatch({ type: "SET_STATUS_MESSAGE", message: "Only .txt and .md uploads are supported." });
           return;
         }
       }
 
       if (formState.sourceType === "text" && !formState.text.trim()) {
-        setStatusMessage("Paste draft text before starting analysis.");
+        dispatch({ type: "SET_STATUS_MESSAGE", message: "Paste draft text before starting analysis." });
         return;
       }
 
       if (formState.sourceType === "url" && previewDocument === null) {
-        setStatusMessage("Import the draft from the URL before starting analysis.");
+        dispatch({ type: "SET_STATUS_MESSAGE", message: "Import the draft from the URL before starting analysis." });
         return;
       }
 
@@ -432,23 +423,23 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
               };
 
       const createdArtifact = await createRun(payload);
-      setArtifact(createdArtifact);
-      setActiveArtifactId(createdArtifact.artifact_id);
-      setSelectionDraft(null);
-      setCommentDraft("");
-      setEditingCommentId(null);
-      setHasDownloadedJson(false);
-      setStatusMessage(`Artifact ${createdArtifact.artifact_id} queued`);
+      dispatch({ type: "SET_ARTIFACT", artifact: createdArtifact });
+      dispatch({ type: "SET_ACTIVE_ARTIFACT_ID", id: createdArtifact.artifact_id });
+      dispatch({ type: "SET_SELECTION_DRAFT", draft: null });
+      dispatch({ type: "SET_COMMENT_DRAFT", draft: "" });
+      dispatch({ type: "SET_EDITING_COMMENT", commentId: null, body: "" });
+      dispatch({ type: "SET_HAS_DOWNLOADED_JSON", value: false });
+      dispatch({ type: "SET_STATUS_MESSAGE", message: `Artifact ${createdArtifact.artifact_id} queued` });
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "Could not submit run");
+      dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not submit run" });
     } finally {
-      setIsSubmitting(false);
+      dispatch({ type: "SET_IS_SUBMITTING", value: false });
     }
   }
 
   async function handlePreviewUrl() {
     if (!formState.url.trim()) {
-      setStatusMessage("Enter a URL first.");
+      dispatch({ type: "SET_STATUS_MESSAGE", message: "Enter a URL first." });
       return;
     }
 
@@ -460,8 +451,8 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       }
     }
 
-    setIsPreviewing(true);
-    setStatusMessage("Importing draft from URL...");
+    dispatch({ type: "SET_IS_PREVIEWING", value: true });
+    dispatch({ type: "SET_STATUS_MESSAGE", message: "Importing draft from URL..." });
     try {
       const document = await previewSource({
         sourceType: "url",
@@ -469,18 +460,21 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         title: formState.title,
         url: formState.url,
       });
-      setPreviewDocument(document);
-      setHasDownloadedJson(false);
-      setStatusMessage(`Imported draft preview from ${formState.url}`);
-      setFormState((current) => ({
-        ...current,
-        title: current.title || document.title,
-        sourceLabel: current.url || current.sourceLabel,
-      }));
+      dispatch({ type: "SET_PREVIEW_DOCUMENT", document });
+      dispatch({ type: "SET_HAS_DOWNLOADED_JSON", value: false });
+      dispatch({ type: "SET_STATUS_MESSAGE", message: `Imported draft preview from ${formState.url}` });
+      dispatch({
+        type: "UPDATE_FORM_STATE",
+        updater: (current) => ({
+          ...current,
+          title: current.title || document.title,
+          sourceLabel: current.url || current.sourceLabel,
+        }),
+      });
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "Could not import draft from URL");
+      dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not import draft from URL" });
     } finally {
-      setIsPreviewing(false);
+      dispatch({ type: "SET_IS_PREVIEWING", value: false });
     }
   }
 
@@ -493,7 +487,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     if (replacingCurrentAnalysis) {
       const replaced = await maybeReplaceCurrentAnalysis(false);
       if (!replaced) {
-        setImportInputKey((current) => current + 1);
+        dispatch({ type: "BUMP_IMPORT_INPUT_KEY" });
         return;
       }
     }
@@ -501,15 +495,15 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     try {
       const parsed = JSON.parse(await file.text()) as AnalysisArtifact;
       const imported = await importArtifact(parsed);
-      setArtifact(imported);
-      setPreviewDocument(null);
-      setActiveArtifactId(null);
-      setHasDownloadedJson(true);
-      setStatusMessage(`Imported artifact ${imported.artifact_id}`);
+      dispatch({ type: "SET_ARTIFACT", artifact: imported });
+      dispatch({ type: "SET_PREVIEW_DOCUMENT", document: null });
+      dispatch({ type: "SET_ACTIVE_ARTIFACT_ID", id: null });
+      dispatch({ type: "SET_HAS_DOWNLOADED_JSON", value: true });
+      dispatch({ type: "SET_STATUS_MESSAGE", message: `Imported artifact ${imported.artifact_id}` });
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "Could not import artifact");
+      dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not import artifact" });
     } finally {
-      setImportInputKey((current) => current + 1);
+      dispatch({ type: "BUMP_IMPORT_INPUT_KEY" });
     }
   }
 
@@ -519,11 +513,11 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     }
     try {
       const canceledArtifact = await cancelRun(artifact.artifact_id);
-      setArtifact(canceledArtifact);
-      setActiveArtifactId(null);
-      setStatusMessage("Run canceled");
+      dispatch({ type: "SET_ARTIFACT", artifact: canceledArtifact });
+      dispatch({ type: "SET_ACTIVE_ARTIFACT_ID", id: null });
+      dispatch({ type: "SET_STATUS_MESSAGE", message: "Run canceled" });
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "Could not stop the run");
+      dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not stop the run" });
     }
   }
 
@@ -532,7 +526,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     if (!replaced) {
       return;
     }
-    setStatusMessage("Started a new analysis draft.");
+    dispatch({ type: "SET_STATUS_MESSAGE", message: "Started a new analysis draft." });
   }
 
   async function handleCreateComment() {
@@ -549,10 +543,10 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         quote: selectionDraft.quote,
       });
       await refreshArtifact(artifact.artifact_id);
-      setSelectionDraft(null);
-      setCommentDraft("");
+      dispatch({ type: "SET_SELECTION_DRAFT", draft: null });
+      dispatch({ type: "SET_COMMENT_DRAFT", draft: "" });
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "Could not save comment.");
+      dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not save comment." });
     }
   }
 
@@ -567,9 +561,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     try {
       await addReply(commentId, body);
       await refreshArtifact(artifact.artifact_id);
-      setReplyDrafts((current) => ({ ...current, [commentId]: "" }));
+      dispatch({ type: "SET_REPLY_DRAFT", commentId, body: "" });
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "Could not save reply.");
+      dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not save reply." });
     }
   }
 
@@ -581,11 +575,11 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       await deleteReply(replyId);
       await refreshArtifact(artifact.artifact_id);
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "Could not delete reply.");
+      dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not delete reply." });
     }
   }
 
-  async function handleReviewState(commentId: string, state: ReviewState) {
+  async function handleReviewState(commentId: string, reviewState: ReviewState) {
     if (artifact === null) {
       return;
     }
@@ -593,11 +587,11 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       const currentState =
         artifact.threads.flatMap((thread) => thread.comments).find((comment) => comment.id === commentId)?.review_state
         ?? "unreviewed";
-      const nextState: ReviewState = currentState === state ? "unreviewed" : state;
+      const nextState: ReviewState = currentState === reviewState ? "unreviewed" : reviewState;
       await updateReviewState(commentId, nextState);
       await refreshArtifact(artifact.artifact_id);
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "Could not update review state.");
+      dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not update review state." });
     }
   }
 
@@ -608,10 +602,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     try {
       await updateHumanComment(commentId, editingBody);
       await refreshArtifact(artifact.artifact_id);
-      setEditingCommentId(null);
-      setEditingBody("");
+      dispatch({ type: "SET_EDITING_COMMENT", commentId: null, body: "" });
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "Could not save edit.");
+      dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not save edit." });
     }
   }
 
@@ -623,11 +616,10 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       await deleteHumanComment(commentId);
       await refreshArtifact(artifact.artifact_id);
       if (editingCommentId === commentId) {
-        setEditingCommentId(null);
-        setEditingBody("");
+        dispatch({ type: "SET_EDITING_COMMENT", commentId: null, body: "" });
       }
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "Could not delete comment.");
+      dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not delete comment." });
     }
   }
 
@@ -636,7 +628,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       return;
     }
     if (format === "json") {
-      setHasDownloadedJson(true);
+      dispatch({ type: "SET_HAS_DOWNLOADED_JSON", value: true });
     }
     window.open(getExportUrl(artifact.artifact_id, format), "_blank", "noopener,noreferrer");
   }
@@ -663,25 +655,31 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
           showNewAnalysis={showNewAnalysis}
           importInputKey={importInputKey}
           onFormChange={(updater) =>
-            setFormState((current) => {
-              const next = updater(current);
-              if (next.selectedAgents !== current.selectedAgents) {
-                return {
-                  ...next,
-                  selectedAgents: resolveSelectedAgents(next.selectedAgents, agents),
-                };
-              }
-              return next;
+            dispatch({
+              type: "UPDATE_FORM_STATE",
+              updater: (current) => {
+                const next = updater(current);
+                if (next.selectedAgents !== current.selectedAgents) {
+                  return {
+                    ...next,
+                    selectedAgents: resolveSelectedAgents(next.selectedAgents, agents),
+                  };
+                }
+                return next;
+              },
             })
           }
           onFileChange={(file) => {
-            setSelectedFile(file);
-            setFileInputKey((current) => current + 1);
-            setFormState((current) => ({
-              ...current,
-              sourceLabel: file?.name ?? "upload",
-              title: file?.name ?? current.title,
-            }));
+            dispatch({ type: "SET_SELECTED_FILE", file });
+            dispatch({ type: "BUMP_FILE_INPUT_KEY" });
+            dispatch({
+              type: "UPDATE_FORM_STATE",
+              updater: (current) => ({
+                ...current,
+                sourceLabel: file?.name ?? "upload",
+                title: file?.name ?? current.title,
+              }),
+            });
           }}
           onImportFileChange={handleImportFile}
           onPreviewUrl={handlePreviewUrl}
@@ -696,9 +694,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         <SelectionBanner
           selectionDraft={selectionDraft}
           commentDraft={commentDraft}
-          onCommentDraftChange={setCommentDraft}
+          onCommentDraftChange={(value) => dispatch({ type: "SET_COMMENT_DRAFT", draft: value })}
           onSave={handleCreateComment}
-          onCancel={() => setSelectionDraft(null)}
+          onCancel={() => dispatch({ type: "SET_SELECTION_DRAFT", draft: null })}
         />
 
         <section className={styles.progressPanel}>
@@ -749,26 +747,24 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
             hoveredAnchorId={hoveredAnchorId}
             anchorRefs={anchorRefs}
             commentRefs={commentRefs}
-            onHoverAnchor={setHoveredAnchorId}
-            onSelectionDraft={(draft) => setSelectionDraft(artifact !== null ? draft : null)}
+            onHoverAnchor={(anchorId) => dispatch({ type: "SET_HOVERED_ANCHOR_ID", anchorId })}
+            onSelectionDraft={(draft) => dispatch({ type: "SET_SELECTION_DRAFT", draft: artifact !== null ? draft : null })}
             replyDrafts={replyDrafts}
             editingCommentId={editingCommentId}
             editingBody={editingBody}
             onReplyDraftChange={(commentId, value) => {
-              setReplyDrafts((current) => ({ ...current, [commentId]: value }));
+              dispatch({ type: "SET_REPLY_DRAFT", commentId, body: value });
             }}
             onAddReply={handleReply}
             onDeleteReply={handleDeleteReply}
             onReviewState={handleReviewState}
             onStartEditing={(commentId, body) => {
-              setEditingCommentId(commentId);
-              setEditingBody(body);
+              dispatch({ type: "SET_EDITING_COMMENT", commentId, body });
             }}
-            onEditingBodyChange={setEditingBody}
+            onEditingBodyChange={(value) => dispatch({ type: "SET_EDITING_BODY", body: value })}
             onSaveEdit={handleSaveEdit}
             onCancelEdit={() => {
-              setEditingCommentId(null);
-              setEditingBody("");
+              dispatch({ type: "SET_EDITING_COMMENT", commentId: null, body: "" });
             }}
             onDeleteComment={handleDeleteHumanComment}
           />

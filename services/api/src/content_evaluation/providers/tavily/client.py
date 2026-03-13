@@ -12,10 +12,15 @@ class TavilySearchProvider:
     """Call Tavily for related-content search."""
 
     def __init__(self, api_key: str, *, timeout_seconds: float = 20.0) -> None:
-        """Initialize the Tavily client."""
+        """Initialize the Tavily client with a long-lived HTTP session."""
 
         self._api_key = api_key
-        self._timeout_seconds = timeout_seconds
+        self._client = httpx.AsyncClient(timeout=timeout_seconds)
+
+    async def close(self) -> None:
+        """Close the underlying HTTP client."""
+
+        await self._client.aclose()
 
     @retry(
         stop=stop_after_attempt(3),
@@ -26,16 +31,15 @@ class TavilySearchProvider:
     async def search(self, query: str) -> list[dict[str, object]]:
         """Search the Tavily API for related pages."""
 
-        async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
-            response = await client.post(
-                "https://api.tavily.com/search",
-                json={
-                    "api_key": self._api_key,
-                    "query": query,
-                    "max_results": 5,
-                    "search_depth": "advanced",
-                },
-            )
+        response = await self._client.post(
+            "https://api.tavily.com/search",
+            json={
+                "api_key": self._api_key,
+                "query": query,
+                "max_results": 5,
+                "search_depth": "advanced",
+            },
+        )
         if response.status_code >= 400:
             raise ProviderError(f"Tavily request failed with status {response.status_code}")
         payload = response.json()

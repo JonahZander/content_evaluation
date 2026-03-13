@@ -152,6 +152,26 @@ def test_preview_source_returns_normalized_document(monkeypatch: pytest.MonkeyPa
     assert payload["blocks"]
 
 
+def test_api_returns_404_for_unknown_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Return 404 for a run ID that does not exist."""
+
+    monkeypatch.setattr("content_evaluation.api.main.build_services", lambda: AppServices(_mock_settings()))
+    with TestClient(app) as client:
+        response = client.get("/api/v1/runs/00000000-0000-0000-0000-000000000000")
+
+    assert response.status_code == 404
+
+
+def test_api_returns_422_for_non_json_non_file_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Return 422 when neither JSON nor file upload is provided."""
+
+    monkeypatch.setattr("content_evaluation.api.main.build_services", lambda: AppServices(_mock_settings()))
+    with TestClient(app) as client:
+        response = client.post("/api/v1/runs", content=b"not json", headers={"content-type": "text/plain"})
+
+    assert response.status_code == 422
+
+
 def test_cancel_run_stops_inflight_execution(monkeypatch: pytest.MonkeyPatch) -> None:
     """Cancel a running job through the API."""
 

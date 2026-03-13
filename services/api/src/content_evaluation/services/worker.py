@@ -1,4 +1,4 @@
-"""Durable run worker."""
+"""Durable run worker with bounded concurrency."""
 
 from __future__ import annotations
 
@@ -14,11 +14,9 @@ from content_evaluation.services.orchestration import RunOrchestrator
 
 
 class RunWorker:
-    """Poll queued jobs and execute analysis runs."""
+    """Poll queued jobs and execute analysis runs with bounded concurrency."""
 
     def __init__(self, repository: RunRepository, orchestrator: RunOrchestrator, settings: Settings) -> None:
-        """Initialize the durable worker."""
-
         self._repository = repository
         self._orchestrator = orchestrator
         self._settings = settings
@@ -34,55 +32,66 @@ class RunWorker:
         self._task = asyncio.create_task(self._run(), name="content-evaluation-worker")
 
     async def stop(self) -> None:
-        """Stop the worker loop."""
+        """Stop the worker loop and drain in-flight tasks."""
 
         self._stop_event.set()
         if self._task is not None:
             self._task.cancel()
             with suppress(asyncio.CancelledError):
                 await self._task
+        if self._active_runs:
+            await asyncio.gather(*self._active_runs.values(), return_exceptions=True)
 
     async def _run(self) -> None:
-        """Poll and execute queued jobs."""
+        """Poll and execute queued jobs with bounded concurrency."""
+
+        sem = asyncio.Semaphore(self._settings.worker_max_concurrent_runs)
+
+        async def _execute_job(job: object) -> None:
+            from content_evaluation.domain.models import RunJob
+
+            assert isinstance(job, RunJob)
+            async with sem:
+                try:
+                    await self._orchestrator.process_run(
+                        job.artifact_id,
+                        job.input_data,
+                        attempt=job.attempts,
+                        max_attempts=self._settings.worker_max_attempts,
+                    )
+                except asyncio.CancelledError:
+                    await self._repository.cancel_run_job(job.artifact_id)
+                    await self._repository.delete_graph_checkpoint(job.artifact_id)
+                    self._logger.info("worker canceled artifact_id=%s", job.artifact_id)
+                except Exception as error:
+                    if isinstance(error, ProviderError):
+                        await self._repository.fail_run_job(job.artifact_id)
+                        self._logger.exception("worker failed artifact_id=%s attempts=%s", job.artifact_id, job.attempts)
+                    elif job.attempts < self._settings.worker_max_attempts:
+                        await self._repository.requeue_run_job(job.artifact_id)
+                        self._logger.exception("worker requeued artifact_id=%s attempt=%s", job.artifact_id, job.attempts)
+                    else:
+                        await self._repository.fail_run_job(job.artifact_id)
+                        self._logger.exception("worker failed artifact_id=%s attempts=%s", job.artifact_id, job.attempts)
+                else:
+                    await self._repository.complete_run_job(job.artifact_id)
+                    self._logger.info("worker completed artifact_id=%s", job.artifact_id)
+                finally:
+                    self._active_runs.pop(job.artifact_id, None)
 
         while not self._stop_event.is_set():
+            if sem._value == 0:
+                await asyncio.sleep(self._settings.worker_poll_interval_seconds)
+                continue
+
             job = await self._repository.claim_next_run_job()
             if job is None:
                 await asyncio.sleep(self._settings.worker_poll_interval_seconds)
                 continue
 
             self._logger.info("worker claimed artifact_id=%s attempt=%s", job.artifact_id, job.attempts)
-            run_task = asyncio.create_task(
-                self._orchestrator.process_run(
-                    job.artifact_id,
-                    job.input_data,
-                    attempt=job.attempts,
-                    max_attempts=self._settings.worker_max_attempts,
-                ),
-                name=f"content-evaluation-run-{job.artifact_id}",
-            )
-            self._active_runs[job.artifact_id] = run_task
-            try:
-                await run_task
-            except asyncio.CancelledError:
-                await self._repository.cancel_run_job(job.artifact_id)
-                await self._repository.delete_graph_checkpoint(job.artifact_id)
-                self._logger.info("worker canceled artifact_id=%s", job.artifact_id)
-            except Exception as error:
-                if isinstance(error, ProviderError):
-                    await self._repository.fail_run_job(job.artifact_id)
-                    self._logger.exception("worker failed artifact_id=%s attempts=%s", job.artifact_id, job.attempts)
-                elif job.attempts < self._settings.worker_max_attempts:
-                    await self._repository.requeue_run_job(job.artifact_id)
-                    self._logger.exception("worker requeued artifact_id=%s attempt=%s", job.artifact_id, job.attempts)
-                else:
-                    await self._repository.fail_run_job(job.artifact_id)
-                    self._logger.exception("worker failed artifact_id=%s attempts=%s", job.artifact_id, job.attempts)
-            else:
-                await self._repository.complete_run_job(job.artifact_id)
-                self._logger.info("worker completed artifact_id=%s", job.artifact_id)
-            finally:
-                self._active_runs.pop(job.artifact_id, None)
+            task = asyncio.create_task(_execute_job(job), name=f"run-{job.artifact_id}")
+            self._active_runs[job.artifact_id] = task
 
     async def cancel_run(self, artifact_id: UUID) -> bool:
         """Cancel one actively running artifact task if present."""

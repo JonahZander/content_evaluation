@@ -1,11 +1,5 @@
 import styles from "@/components/ReviewWorkbench.module.css";
-
-interface SelectionDraft {
-  blockId: string;
-  startOffset: number;
-  endOffset: number;
-  quote: string;
-}
+import type { SelectionDraft } from "@/lib/types";
 
 interface SelectionBannerProps {
   selectionDraft: SelectionDraft | null;

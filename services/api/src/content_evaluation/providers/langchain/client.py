@@ -44,6 +44,7 @@ class LangChainAnalysisProvider:
         """Store runtime settings for route resolution."""
 
         self._settings = settings
+        self._model_cache: dict[tuple[AnalysisProviderFamily, str], Any] = {}
 
     def resolve_model_name(self, route: ProviderRoute | None = None) -> str:
         """Return the resolved model name for one analysis request."""
@@ -94,10 +95,18 @@ class LangChainAnalysisProvider:
             )
         return parsed
 
+    def _get_chat_model(self, route: ProviderRoute) -> Any:
+        """Return a cached chat model for the given route, building one on first access."""
+
+        key = (route.family, route.model_name)
+        if key not in self._model_cache:
+            self._model_cache[key] = self._build_chat_model(route)
+        return self._model_cache[key]
+
     def _build_runnable(self, route: ProviderRoute) -> Any:
         """Return one structured-output runnable for the requested route."""
 
-        model = self._build_chat_model(route)
+        model = self._get_chat_model(route)
         return model.with_structured_output(_StructuredAgentResponse)
 
     def _normalize_response(self, response: object) -> dict[str, object]:

@@ -52,11 +52,13 @@ class AppServices:
         self.logger = get_logger("content_evaluation.app")
         self.repository = self._build_repository(settings)
         provider_health = self._build_providers(settings)
+        self._search_provider = provider_health.search_provider
+        self._extraction_provider = provider_health.extraction_provider
         self.orchestrator = RunOrchestrator(
             self.repository,
             provider_health.analysis_provider,
-            provider_health.search_provider,
-            provider_health.extraction_provider,
+            self._search_provider,
+            self._extraction_provider,
             settings.runtime_mode,
             settings.persistent_storage_enabled,
             settings.orchestrator_backend,
@@ -72,9 +74,13 @@ class AppServices:
         await self.worker.start()
 
     async def stop(self) -> None:
-        """Stop long-lived workers."""
+        """Stop long-lived workers and close provider HTTP clients."""
 
         await self.worker.stop()
+        if hasattr(self._search_provider, "close"):
+            await self._search_provider.close()
+        if hasattr(self._extraction_provider, "close"):
+            await self._extraction_provider.close()
 
     async def readiness_report(self) -> ReadinessReport:
         """Build one readiness report for the API."""

@@ -38,9 +38,11 @@ Backend features should converge toward:
   - `app/`
     - Next.js entrypoint and global styling
   - `src/components/ReviewWorkbench.tsx`
-    - Top-level client coordinator for intake, live progress, artifact rendering, and review actions
+    - Top-level client coordinator for intake, live progress, artifact rendering, and review actions; uses `useReducer` for centralized state management
   - `src/components/review/`
     - Presentational review components: hero, toolbar, progress area, document pane, comment rail, metrics, selection composer, connector overlay
+  - `src/components/review/workbench-state.ts`
+    - Typed reducer, action union, and initial state for ReviewWorkbench
   - `src/lib/api.ts`
     - Browser API client for run creation, artifact fetch/import/export, replies, review state, and human comments
 - `services/api`
@@ -51,11 +53,11 @@ Backend features should converge toward:
   - `agents/`
     - Declarative agent registry and instruction files
   - `providers/`
-    - LangChain-backed analysis routing for OpenAI, Anthropic, and Gemini plus Tavily search, Trafilatura extraction, and mock fallback adapters
+    - LangChain-backed analysis routing for OpenAI, Anthropic, and Gemini with model caching; Tavily search, Trafilatura extraction, and mock fallback adapters with long-lived HTTP clients
   - `repositories/`
-    - Session-first in-memory artifact storage, optional PostgreSQL-backed artifact persistence, and graph checkpoints
+    - Session-first in-memory artifact storage and standalone PostgreSQL repository with Postgres-first writes, deepcopy cache isolation, and proper transactions
   - `services/`
-    - Normalization, LangGraph orchestration, artifact assembly, review mutations, export building, worker loop
+    - Normalization, LangGraph orchestration, artifact assembly, review mutations, export building, bounded-concurrency worker loop
 
 ## Primary Architecture Decisions
 

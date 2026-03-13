@@ -24,7 +24,10 @@ Provide a high-legibility review surface where users can inspect source text, wa
 
 ## Target Implementation Notes
 
-- `ReviewWorkbench.tsx` should coordinate run submission, artifact import/export, live progress, and review mutations against artifact snapshots.
+- `ReviewWorkbench.tsx` coordinates run submission, artifact import/export, live progress, and review mutations against artifact snapshots using a centralized `useReducer` + typed action dispatch instead of individual `useState` hooks.
+- State shape, actions, and the pure reducer live in `src/components/review/workbench-state.ts` so state transitions are explicit and testable.
+- Key callbacks (`refreshArtifact`, `refreshArtifactCoalesced`) are stabilized with `useCallback` so the SSE effect always references the current version.
+- The `SelectionDraft` interface is defined once in `src/lib/types.ts` and imported by `ReviewWorkbench`, `SelectionBanner`, and `DocumentPane`.
 - Presentational review pieces live under `src/components/review/`.
 - Connector lines are rendered inside each paragraph row so the anchor-to-comment mapping remains local and legible.
 - The workbench uses paragraph-scoped rows so each source block and its comments stay spatially linked.

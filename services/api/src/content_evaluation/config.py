@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     max_upload_bytes: int = Field(default=524_288)
     worker_poll_interval_seconds: float = Field(default=0.15)
     worker_max_attempts: int = Field(default=2)
+    worker_max_concurrent_runs: int = Field(default=3)
     request_timeout_seconds: float = Field(default=30.0)
     provider_timeout_seconds: float = Field(default=90.0)
     sse_stream_timeout_seconds: float = Field(default=900.0)

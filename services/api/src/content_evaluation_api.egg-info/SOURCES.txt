@@ -43,7 +43,10 @@ tests/test_comments.py
 tests/test_config.py
 tests/test_exports.py
 tests/test_extraction_provider.py
+tests/test_extraction_providers.py
 tests/test_langchain_provider.py
 tests/test_langgraph_runtime.py
+tests/test_logging.py
 tests/test_normalization.py
+tests/test_postgres_repository.py
 tests/test_tavily_provider.py

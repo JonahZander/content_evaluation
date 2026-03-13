@@ -292,6 +292,7 @@ class ArtifactComment(BaseModel):
     category: AgentCategory
     body: str
     suggestion: str | None = None
+    sources: list[str] = Field(default_factory=list)
     review_state: ReviewState = ReviewState.UNREVIEWED
     created_at: datetime = Field(default_factory=now_utc)
     updated_at: datetime = Field(default_factory=now_utc)
@@ -316,6 +317,7 @@ class AgentFinding(BaseModel):
     confidence: float
     model_name: str
     suggestion: str | None = None
+    sources: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

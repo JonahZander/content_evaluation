@@ -589,6 +589,39 @@
   background: rgba(12, 12, 12, 0.04);
 }
 
+.sources {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(12, 12, 12, 0.04);
+}
+
+.sourcesLabel {
+  display: block;
+  margin-bottom: 6px;
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+
+.sourcesList {
+  margin: 0;
+  padding-left: 1.2em;
+  list-style: disc;
+}
+
+.sourceLink {
+  color: var(--teal);
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.sourceLink:hover {
+  text-decoration: underline;
+}
+
 .replyList {
   margin-top: 12px;
   padding-top: 12px;

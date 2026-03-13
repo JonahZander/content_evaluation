@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from content_evaluation.domain.models import (
     AgentCatalogEntry,
@@ -23,6 +23,7 @@ class FindingPayload(BaseModel):
     rationale: str
     confidence: float
     suggestion: str | None = None
+    sources: list[str] = Field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)

@@ -825,6 +825,14 @@ class RunOrchestrator:
             findings = [FindingPayload.model_validate(item) for item in raw_findings]
             meta = raw_output.get("metadata")
             metadata = meta if isinstance(meta, dict) else {}
+            report_sources: list[str] = []
+            if isinstance(meta, dict):
+                src = meta.get("sources")
+                report_sources = [str(s) for s in src] if isinstance(src, list) else []
+            findings = [FindingPayload.model_validate(item) for item in raw_findings]
+            for f in findings:
+                if not f.sources and report_sources:
+                    f.sources = report_sources
             return AgentExecutionResult(
                 definition=definition,
                 raw_output=raw_output,
@@ -916,6 +924,7 @@ class RunOrchestrator:
                 confidence=finding.confidence,
                 model_name=result.model_name,
                 suggestion=finding.suggestion,
+                sources=finding.sources,
                 metadata={
                     "excerpt": cleaned_excerpt,
                     "anchor_match_kind": anchor.match_kind.value,
@@ -1218,6 +1227,7 @@ def _append_agent_comment(
         category=finding.category,
         body=finding.rationale,
         suggestion=finding.suggestion,
+        sources=finding.sources,
         review_state=ReviewState.UNREVIEWED,
     )
     anchor = next(item for item in artifact.anchors if item.id == comment.anchor_id)

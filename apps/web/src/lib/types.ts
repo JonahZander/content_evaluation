@@ -87,6 +87,7 @@ export interface ArtifactComment {
   category: AgentCategory;
   body: string;
   suggestion?: string | null;
+  sources?: string[];
   review_state: ReviewState;
   created_at: string;
   updated_at: string;
@@ -107,6 +108,7 @@ export interface AgentFinding {
   confidence: number;
   model_name: string;
   suggestion?: string | null;
+  sources?: string[];
   metadata: Record<string, unknown>;
 }
 

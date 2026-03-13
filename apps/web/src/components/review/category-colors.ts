@@ -1,4 +1,5 @@
 export const categoryColors: Record<string, string> = {
+  fact_check: "var(--sky)",
   similarity: "var(--amber)",
   ai_likelihood: "var(--vermilion)",
   value: "var(--teal)",

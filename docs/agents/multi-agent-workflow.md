@@ -12,6 +12,15 @@ This project uses a code-orchestrated multi-agent model:
 
 ## Current Agent Roles
 
+- Fact-check agent
+  - Extracts the 3–5 most important verifiable claims from the article
+  - Uses the vendored deep researcher graph (supervisor + parallel Tavily researchers) to verify each claim against live web sources
+  - Returns one finding per claim: verdict (SUPPORTED/REFUTED/MIXED/UNVERIFIABLE), key evidence, and source URLs in the rationale
+  - Also produces a redundancy/differentiation finding: flags overlap with existing public posts and notes where the article adds unique value
+  - Multi-step execution; opt-in (default_enabled=False) due to cost
+  - No dependencies on other specialist agents; runs in parallel with the independent group when selected
+  - Requires CONTENT_EVAL_OPENAI_API_KEY and CONTENT_EVAL_TAVILY_API_KEY in live mode
+  - The similarity agent remains the fast/cheap option; fact_check is the deep/comprehensive option
 - Similarity research agent
   - Searches online for related posts and overlap in claims or framing
   - Can be multi-step because research may require intermediate search reasoning
@@ -89,6 +98,10 @@ Each agent should be declared with:
 
 ## Current Provider Routing
 
+- Deep research (fact_check agent)
+  - Vendored deep researcher graph (supervisor + parallel researchers + Tavily) in live mode
+  - MockDeepResearchProvider in development/test fallback
+  - Source: vendors/adapted from langchain-ai/open_deep_research (MCP stripped, CONTENT_EVAL key support added)
 - Similarity search
   - Tavily in live mode
   - Mock search provider in development/test fallback

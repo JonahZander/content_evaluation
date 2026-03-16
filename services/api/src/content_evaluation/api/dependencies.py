@@ -115,7 +115,7 @@ class AppServices:
         """Build provider instances and readiness metadata."""
 
         if settings.runtime_mode.value == "live":
-            deep_research_provider = LiveDeepResearchProvider()
+            deep_research_provider = LiveDeepResearchProvider(settings)
             return ProviderHealth(
                 analysis_provider=LangChainAnalysisProvider(settings),
                 search_provider=TavilySearchProvider(

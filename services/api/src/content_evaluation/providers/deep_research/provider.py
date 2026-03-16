@@ -3,11 +3,20 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 
 from langgraph.checkpoint.memory import MemorySaver
 
+from content_evaluation.config import Settings
+from content_evaluation.domain.models import AnalysisProviderFamily
 from content_evaluation.providers.deep_research.deep_researcher import deep_researcher_builder
+
+_PROVIDER_MODEL_PREFIX: dict[AnalysisProviderFamily, str] = {
+    AnalysisProviderFamily.OPENAI: "openai",
+    AnalysisProviderFamily.ANTHROPIC: "anthropic",
+    AnalysisProviderFamily.GEMINI: "google_genai",
+}
 
 
 class LiveDeepResearchProvider:
@@ -17,12 +26,43 @@ class LiveDeepResearchProvider:
 
     def __init__(
         self,
-        research_model: str = "openai:gpt-4.1-mini",
+        settings: Settings,
         max_researcher_iterations: int = 2,
         max_react_tool_calls: int = 5,
         max_concurrent_research_units: int = 2,
     ) -> None:
-        """Initialize with cost-limit config."""
+        """Initialize from project Settings so model and API keys match the rest of the app.
+
+        The vendored graph reads API keys via os.getenv() at call time. pydantic-settings
+        loads values from .env into Python objects but does not export them to the OS
+        environment. We explicitly export them here so the graph can find them.
+        """
+
+        # Derive model string from the same provider family the rest of the app uses.
+        prefix = _PROVIDER_MODEL_PREFIX[settings.analysis_provider_family]
+        if settings.analysis_provider_family is AnalysisProviderFamily.OPENAI:
+            model_name = settings.openai_model_name
+            if settings.openai_api_key:
+                os.environ.setdefault("OPENAI_API_KEY", settings.openai_api_key)
+        elif settings.analysis_provider_family is AnalysisProviderFamily.ANTHROPIC:
+            model_name = settings.anthropic_model_name
+            if settings.anthropic_api_key:
+                os.environ.setdefault("ANTHROPIC_API_KEY", settings.anthropic_api_key)
+        else:
+            model_name = settings.gemini_model_name
+            if settings.gemini_api_key:
+                os.environ.setdefault("GOOGLE_API_KEY", settings.gemini_api_key)
+
+        if settings.tavily_api_key:
+            os.environ.setdefault("TAVILY_API_KEY", settings.tavily_api_key)
+
+        # Light model: used for cheap webpage-summarisation (HTML processing).
+        summarization_model = f"{prefix}:{model_name}"
+        # Heavy model: used for supervisor reasoning, researcher agents, compression,
+        # and final JSON synthesis. Falls back to the same model when not separately
+        # configured via CONTENT_EVAL_DEEP_RESEARCH_MODEL_NAME.
+        heavy_name = settings.deep_research_model_name or model_name
+        heavy_model = f"{prefix}:{heavy_name}"
 
         self._research_config: dict[str, object] = {
             "allow_clarification": False,
@@ -30,10 +70,10 @@ class LiveDeepResearchProvider:
             "max_researcher_iterations": max_researcher_iterations,
             "max_react_tool_calls": max_react_tool_calls,
             "max_concurrent_research_units": max_concurrent_research_units,
-            "research_model": research_model,
-            "compression_model": research_model,
-            "final_report_model": research_model,
-            "summarization_model": research_model,
+            "research_model": heavy_model,
+            "compression_model": heavy_model,
+            "final_report_model": heavy_model,
+            "summarization_model": summarization_model,
         }
 
     async def fact_check(self, brief: str, article_text: str) -> dict[str, object]:

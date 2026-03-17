@@ -6,6 +6,7 @@ import json
 import os
 import uuid
 
+from langchain_core.callbacks import UsageMetadataCallbackHandler
 from langgraph.checkpoint.memory import MemorySaver
 
 from content_evaluation.config import Settings
@@ -86,11 +87,13 @@ class LiveDeepResearchProvider:
 
         full_brief = f"{brief}\n\nORIGINAL ARTICLE:\n{article_text[:4000]}"
         graph = deep_researcher_builder.compile(checkpointer=MemorySaver())
+        usage_handler = UsageMetadataCallbackHandler()
         config: dict[str, object] = {
             "configurable": {
                 "thread_id": str(uuid.uuid4()),
                 **self._research_config,
-            }
+            },
+            "callbacks": [usage_handler],
         }
         result = await graph.ainvoke(
             {
@@ -117,6 +120,23 @@ class LiveDeepResearchProvider:
                 "metadata": {"sources": [], "raw_report": raw[:3000]},
             }
 
-        if "metadata" not in parsed:
+        if "metadata" not in parsed or not isinstance(parsed["metadata"], dict):
             parsed["metadata"] = {}
+        per_model = usage_handler.usage_metadata  # {model_name: {token_counts}}
+        if per_model:
+            input_t = sum(
+                int(counts.get("input_tokens", 0))
+                for counts in per_model.values()
+                if isinstance(counts, dict)
+            )
+            output_t = sum(
+                int(counts.get("output_tokens", 0))
+                for counts in per_model.values()
+                if isinstance(counts, dict)
+            )
+            parsed["metadata"]["usage"] = {
+                "input_tokens": input_t,
+                "output_tokens": output_t,
+                "total_tokens": input_t + output_t,
+            }
         return parsed

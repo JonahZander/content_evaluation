@@ -173,6 +173,11 @@ class MockDeepResearchProvider:
                 "sources": [
                     "https://example.com/mock-1",
                     "https://example.com/mock-2",
-                ]
+                ],
+                "usage": {
+                    "input_tokens": 500,
+                    "output_tokens": 200,
+                    "total_tokens": 700,
+                },
             },
         }

@@ -91,3 +91,49 @@ def test_fact_check_instruction_file_loads():
     defn = get_agent_definition("fact_check")
     text = load_instruction_text(defn)
     assert len(text) > 50
+
+
+@pytest.mark.asyncio
+async def test_mock_deep_research_provider_returns_usage() -> None:
+    """MockDeepResearchProvider must include metadata.usage for UI display."""
+    provider = MockDeepResearchProvider()
+    result = await provider.fact_check("brief", "article text")
+    meta = result.get("metadata", {})
+    assert isinstance(meta, dict), "metadata must be a dict"
+    usage = meta.get("usage")
+    assert isinstance(usage, dict), "metadata.usage must be a dict"
+    assert "input_tokens" in usage
+    assert "output_tokens" in usage
+    assert "total_tokens" in usage
+
+
+@pytest.mark.asyncio
+async def test_live_deep_research_provider_attaches_usage_handler(monkeypatch: pytest.MonkeyPatch) -> None:
+    """LiveDeepResearchProvider must pass a UsageMetadataCallbackHandler in config['callbacks']."""
+    from langchain_core.callbacks import UsageMetadataCallbackHandler
+
+    import content_evaluation.providers.deep_research.provider as dr_module
+    from content_evaluation.config import Settings
+    from content_evaluation.providers.deep_research.provider import LiveDeepResearchProvider
+
+    captured: list[dict] = []
+
+    class FakeGraph:
+        async def ainvoke(self, input_: object, config: dict) -> dict:
+            captured.append(config)
+            return {"final_report": '{"findings": [], "summary": "ok", "metadata": {}}'}
+
+    class FakeBuilder:
+        def compile(self, **_: object) -> FakeGraph:
+            return FakeGraph()
+
+    monkeypatch.setattr(dr_module, "deep_researcher_builder", FakeBuilder())
+
+    prov = LiveDeepResearchProvider(Settings(openai_api_key="key", tavily_api_key="key"))
+    await prov.fact_check("brief", "text")
+
+    assert len(captured) == 1, "ainvoke was not called"
+    callbacks = captured[0].get("callbacks", [])
+    assert any(
+        isinstance(cb, UsageMetadataCallbackHandler) for cb in callbacks
+    ), "UsageMetadataCallbackHandler not found in config['callbacks']"

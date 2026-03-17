@@ -1,3 +1,5 @@
+name: content_evaluation_dev
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -14,12 +16,12 @@ services:
     build:
       context: .
       dockerfile: services/api/Dockerfile
+    env_file:
+      - services/api/.env
     environment:
       CONTENT_EVAL_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/content_evaluation
       CONTENT_EVAL_API_BASE_URL: http://api:8000
       CONTENT_EVAL_WEB_BASE_URL: http://web:3000
-      CONTENT_EVAL_OPENAI_API_KEY: ${CONTENT_EVAL_OPENAI_API_KEY:-}
-      CONTENT_EVAL_TAVILY_API_KEY: ${CONTENT_EVAL_TAVILY_API_KEY:-}
     depends_on:
       - postgres
     ports:

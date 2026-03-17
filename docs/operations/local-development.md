@@ -61,6 +61,9 @@
   - web
   - api
   - postgres
+- The Compose project is explicitly named `content_evaluation_dev` so the stack is easy to distinguish from other local Docker projects.
+- The `api` service loads its service-local environment from `services/api/.env`.
+- Compose still overrides `CONTENT_EVAL_DATABASE_URL` for the `api` container so Postgres resolves to the Docker service host (`postgres`) instead of local `localhost`.
 - The compose stack publishes:
   - web on `http://localhost:3000`
   - api on `http://localhost:8000`

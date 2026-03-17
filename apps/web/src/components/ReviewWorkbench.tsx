@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 
 import styles from "@/components/ReviewWorkbench.module.css";
+import { AgentUsageSummary } from "@/components/review/AgentUsageSummary";
 import { CommentRail } from "@/components/review/CommentRail";
 import { DocumentPane } from "@/components/review/DocumentPane";
 import { ReviewHero } from "@/components/review/ReviewHero";
@@ -765,6 +766,11 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         <CommentRail events={artifact?.events ?? []} />
 
         <RunMetrics summary={artifact?.summary ?? null} />
+
+        <AgentUsageSummary
+          agentResults={artifact?.agent_results ?? []}
+          agentPlan={artifact?.agent_plan ?? []}
+        />
 
         <section className={styles.workspace} ref={workspaceRef}>
           <DocumentPane

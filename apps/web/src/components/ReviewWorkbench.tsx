@@ -17,6 +17,7 @@ import {
 } from "@/components/review/workbench-state";
 import {
   addReply,
+  API_BASE_URL,
   cancelRun,
   createComment,
   createRun,
@@ -51,7 +52,6 @@ interface StoredWorkbenchState {
   hasDownloadedJson: boolean;
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const SESSION_STORAGE_KEY = "content-evaluation:artifact";
 const TERMINAL_RUN_STATUSES = new Set<RunStatus>(["completed", "failed", "canceled"]);
 

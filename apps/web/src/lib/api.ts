@@ -1,6 +1,6 @@
 import { AgentCatalogEntry, AnalysisArtifact, ArtifactDocument, PersistenceMode, ReviewState } from "@/lib/types";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 export interface CreateRunPayload {
   sourceType: "url" | "text" | "file";

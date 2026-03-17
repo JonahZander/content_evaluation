@@ -6,6 +6,7 @@ from typing import Any, cast
 
 import httpx
 from langchain_anthropic import ChatAnthropic
+from langchain_core.callbacks import UsageMetadataCallbackHandler
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
@@ -80,8 +81,9 @@ class LangChainAnalysisProvider:
         )
         request = self._build_prompt(agent_id, instruction, title, blocks, context or {})
 
+        handler = UsageMetadataCallbackHandler()
         try:
-            response = await (prompt | runnable).ainvoke({"request": request})
+            response = await (prompt | runnable).ainvoke({"request": request}, config={"callbacks": [handler]})
         except Exception as error:  # pragma: no cover - framework exception types vary
             raise self._classify_provider_error(error) from error
 
@@ -93,6 +95,9 @@ class LangChainAnalysisProvider:
                 kind="invalid_response",
                 provider_name=resolved_route.family.value,
             )
+        usage = self._extract_usage_from_handler(handler)
+        if usage is not None:
+            parsed["usage"] = usage
         return parsed
 
     def _get_chat_model(self, route: ProviderRoute) -> Any:
@@ -217,6 +222,31 @@ class LangChainAnalysisProvider:
         if family is AnalysisProviderFamily.GEMINI:
             return self._settings.gemini_model_name
         raise ProviderError(f"Unsupported analysis provider family: {family}")
+
+    @staticmethod
+    def _extract_usage_from_handler(
+        handler: UsageMetadataCallbackHandler,
+    ) -> dict[str, int] | None:
+        """Aggregate token counts from all model entries captured by the callback handler."""
+
+        per_model = handler.usage_metadata  # {model_name: {token_counts}}
+        if not per_model:
+            return None
+        input_t = sum(
+            int(counts.get("input_tokens", 0))
+            for counts in per_model.values()
+            if isinstance(counts, dict)
+        )
+        output_t = sum(
+            int(counts.get("output_tokens", 0))
+            for counts in per_model.values()
+            if isinstance(counts, dict)
+        )
+        return {
+            "input_tokens": input_t,
+            "output_tokens": output_t,
+            "total_tokens": input_t + output_t,
+        }
 
     @staticmethod
     def _build_prompt(

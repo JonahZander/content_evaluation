@@ -88,6 +88,13 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   const commentRefs = useRef<Record<string, HTMLElement | null>>({});
   const refreshInFlightRef = useRef<Promise<AnalysisArtifact> | null>(null);
   const queuedRefreshArtifactIdRef = useRef<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
 
   useEffect(() => {
     fetchAgents()
@@ -245,7 +252,15 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       dispatch({ type: "SET_STATUS_MESSAGE", message: "Live artifact updates disconnected. Refreshing on the next action." });
       eventSource.close();
     };
-    return () => eventSource.close();
+
+    const signal = abortControllerRef.current?.signal;
+    const onAbort = () => eventSource.close();
+    signal?.addEventListener("abort", onAbort);
+
+    return () => {
+      signal?.removeEventListener("abort", onAbort);
+      eventSource.close();
+    };
   }, [activeArtifactId, refreshArtifactCoalesced]);
 
   const normalizedThreads = useMemo(() => {
@@ -366,6 +381,10 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       }
     }
 
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = new AbortController();
+    const { signal } = abortControllerRef.current;
+
     dispatch({ type: "SET_STATUS_MESSAGE", message: "Submitting analysis session..." });
     dispatch({ type: "SET_IS_SUBMITTING", value: true });
     try {
@@ -422,7 +441,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
                 includeDebugTrace: formState.includeDebugTrace,
               };
 
-      const createdArtifact = await createRun(payload);
+      const createdArtifact = await createRun(payload, signal);
       dispatch({ type: "SET_ARTIFACT", artifact: createdArtifact });
       dispatch({ type: "SET_ACTIVE_ARTIFACT_ID", id: createdArtifact.artifact_id });
       dispatch({ type: "SET_SELECTION_DRAFT", draft: null });
@@ -431,6 +450,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       dispatch({ type: "SET_HAS_DOWNLOADED_JSON", value: false });
       dispatch({ type: "SET_STATUS_MESSAGE", message: `Artifact ${createdArtifact.artifact_id} queued` });
     } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        return;
+      }
       dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not submit run" });
     } finally {
       dispatch({ type: "SET_IS_SUBMITTING", value: false });
@@ -451,6 +473,10 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       }
     }
 
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = new AbortController();
+    const { signal } = abortControllerRef.current;
+
     dispatch({ type: "SET_IS_PREVIEWING", value: true });
     dispatch({ type: "SET_STATUS_MESSAGE", message: "Importing draft from URL..." });
     try {
@@ -459,7 +485,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         sourceLabel: formState.url,
         title: formState.title,
         url: formState.url,
-      });
+      }, signal);
       dispatch({ type: "SET_PREVIEW_DOCUMENT", document });
       dispatch({ type: "SET_HAS_DOWNLOADED_JSON", value: false });
       dispatch({ type: "SET_STATUS_MESSAGE", message: `Imported draft preview from ${formState.url}` });
@@ -472,6 +498,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         }),
       });
     } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        return;
+      }
       dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not import draft from URL" });
     } finally {
       dispatch({ type: "SET_IS_PREVIEWING", value: false });

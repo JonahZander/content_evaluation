@@ -54,7 +54,7 @@ export async function fetchAgents(): Promise<AgentCatalogEntry[]> {
   return parseJson(await fetch(`${API_BASE_URL}/api/v1/agents`));
 }
 
-export async function createRun(payload: CreateRunPayload): Promise<AnalysisArtifact> {
+export async function createRun(payload: CreateRunPayload, signal?: AbortSignal): Promise<AnalysisArtifact> {
   return parseJson(
     await fetch(`${API_BASE_URL}/api/v1/runs`, {
       method: "POST",
@@ -71,11 +71,12 @@ export async function createRun(payload: CreateRunPayload): Promise<AnalysisArti
         persistence_mode: payload.persistenceMode,
         include_debug_trace: payload.includeDebugTrace,
       }),
+      signal,
     }),
   );
 }
 
-export async function previewSource(payload: Omit<CreateRunPayload, "selectedAgents" | "persistenceMode" | "includeDebugTrace">): Promise<ArtifactDocument> {
+export async function previewSource(payload: Omit<CreateRunPayload, "selectedAgents" | "persistenceMode" | "includeDebugTrace">, signal?: AbortSignal): Promise<ArtifactDocument> {
   return parseJson(
     await fetch(`${API_BASE_URL}/api/v1/sources/preview`, {
       method: "POST",
@@ -89,6 +90,7 @@ export async function previewSource(payload: Omit<CreateRunPayload, "selectedAge
         text: payload.text,
         url: payload.url,
       }),
+      signal,
     }),
   );
 }
@@ -96,6 +98,7 @@ export async function previewSource(payload: Omit<CreateRunPayload, "selectedAge
 export async function createRunFromFile(
   file: File,
   options: Pick<CreateRunPayload, "selectedAgents" | "persistenceMode" | "includeDebugTrace">,
+  signal?: AbortSignal,
 ): Promise<AnalysisArtifact> {
   const formData = new FormData();
   formData.append("file", file);
@@ -107,6 +110,7 @@ export async function createRunFromFile(
         "X-Artifact-Persistence-Mode": options.persistenceMode,
         "X-Artifact-Debug-Trace": String(options.includeDebugTrace),
       },
+      signal,
     }),
   );
 }

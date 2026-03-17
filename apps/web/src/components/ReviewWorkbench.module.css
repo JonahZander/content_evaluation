@@ -761,6 +761,46 @@
   }
 }
 
+.usageSummary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.usageTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.usageTable th {
+  text-align: left;
+  font-weight: 600;
+  padding: 0.25rem 0.5rem;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.usageTable td {
+  padding: 0.25rem 0.5rem;
+  vertical-align: middle;
+}
+
+.usageTable tr:last-child td {
+  border-top: 1px solid var(--line);
+  font-weight: 600;
+}
+
+.usageTableNumeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.usageUnknown {
+  color: var(--muted);
+  font-style: italic;
+}
+
 @media (max-width: 1080px) {
   .titleRow,
   .workspace,

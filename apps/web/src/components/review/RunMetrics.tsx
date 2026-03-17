@@ -6,15 +6,22 @@ interface RunMetricsProps {
 }
 
 export function RunMetrics({ summary }: RunMetricsProps) {
+  const formatScore = (score: number | null | undefined): string => {
+    if (score === null || score === undefined) {
+      return "—";
+    }
+    return `${Math.round(score * 100)}%`;
+  };
+
   return (
     <section className={styles.metrics}>
       <article className={styles.metricCard}>
         <div className={styles.metricLabel}>Novelty</div>
-        <div className={styles.metricValue}>{Math.round((summary?.novelty_score ?? 0) * 100)}%</div>
+        <div className={styles.metricValue}>{formatScore(summary?.novelty_score)}</div>
       </article>
       <article className={styles.metricCard}>
         <div className={styles.metricLabel}>AI likelihood</div>
-        <div className={styles.metricValue}>{Math.round((summary?.ai_likelihood ?? 0) * 100)}%</div>
+        <div className={styles.metricValue}>{formatScore(summary?.ai_likelihood)}</div>
       </article>
       <article className={styles.metricCard}>
         <div className={styles.metricLabel}>Value</div>

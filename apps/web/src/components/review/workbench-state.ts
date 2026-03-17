@@ -45,7 +45,7 @@ export const DEFAULT_FORM_STATE: ReviewFormState = {
   sourceLabel: "Manual input",
   text: "",
   url: "",
-  persistenceMode: "session",
+  persistenceMode: "workspace",
   includeDebugTrace: true,
   selectedAgents: [],
 };
@@ -54,7 +54,7 @@ export const initialWorkbenchState: WorkbenchState = {
   artifact: null,
   previewDocument: null,
   activeArtifactId: null,
-  statusMessage: "Choose content, import it if needed, and start a session.",
+  statusMessage: "Choose content, import it if needed, and start an analysis.",
   agents: [],
 
   isSubmitting: false,

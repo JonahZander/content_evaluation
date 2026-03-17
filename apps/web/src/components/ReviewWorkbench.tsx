@@ -47,7 +47,11 @@ interface ReviewWorkbenchProps {
 }
 
 interface StoredWorkbenchState {
-  artifact: AnalysisArtifact | null;
+  version: 2;
+  artifactId: string | null;
+  artifactPersistenceMode: ReviewFormState["persistenceMode"] | null;
+  artifactStatus: RunStatus | null;
+  artifactTitle: string | null;
   previewDocument: ArtifactDocument | null;
   formState: ReviewFormState;
   hasDownloadedJson: boolean;
@@ -127,55 +131,68 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     if (!stored) {
       return;
     }
-    try {
-      const parsed = JSON.parse(stored) as StoredWorkbenchState | AnalysisArtifact;
-      if (isStoredWorkbenchState(parsed)) {
-        let activeId: string | null = null;
-        let message = state.statusMessage;
-        if (parsed.artifact !== null) {
-          activeId =
-            parsed.artifact.status === "running" || parsed.artifact.status === "queued"
-              ? parsed.artifact.artifact_id
-              : null;
-          message = `Restored ${parsed.artifact.status} artifact from this browser session.`;
-        } else if (parsed.previewDocument !== null) {
-          message = `Restored imported draft preview for ${parsed.previewDocument.title}.`;
+    const parsedState = parseStoredWorkbenchState(stored);
+    if (parsedState === null) {
+      window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+      return;
+    }
+    const parsed = parsedState;
+    let cancelled = false;
+
+    async function restoreStoredState() {
+      if (parsed.artifactId !== null) {
+        try {
+          const restoredArtifact = await fetchArtifact(parsed.artifactId);
+          if (cancelled) {
+            return;
+          }
+          dispatch({
+            type: "RESTORE_STORED_STATE",
+            artifact: restoredArtifact,
+            previewDocument: null,
+            formState: hydrateFormStateFromArtifact(parsed.formState, restoredArtifact),
+            hasDownloadedJson: parsed.hasDownloadedJson,
+            activeArtifactId: activeArtifactIdFor(restoredArtifact),
+            statusMessage: `Restored ${restoredArtifact.status} ${parsed.artifactPersistenceMode ?? restoredArtifact.run_config.persistence_mode} run from the backend.`,
+          });
+          return;
+        } catch {
+          if (cancelled) {
+            return;
+          }
+          dispatch({
+            type: "RESTORE_STORED_STATE",
+            artifact: null,
+            previewDocument: parsed.previewDocument,
+            formState: parsed.formState,
+            hasDownloadedJson: parsed.hasDownloadedJson,
+            activeArtifactId: null,
+            statusMessage:
+              parsed.artifactPersistenceMode === "workspace"
+                ? "Previous workspace run is no longer available from the backend. Restored the draft only."
+                : "Previous session run is no longer available from the backend. Restored the draft only.",
+          });
+          return;
         }
+      }
+
+      if (parsed.previewDocument !== null) {
         dispatch({
           type: "RESTORE_STORED_STATE",
-          artifact: parsed.artifact,
+          artifact: null,
           previewDocument: parsed.previewDocument,
           formState: parsed.formState,
           hasDownloadedJson: parsed.hasDownloadedJson,
-          activeArtifactId: activeId,
-          statusMessage: message,
-        });
-        return;
-      }
-      if (isAnalysisArtifact(parsed)) {
-        dispatch({ type: "SET_ARTIFACT", artifact: parsed });
-        dispatch({
-          type: "SET_ACTIVE_ARTIFACT_ID",
-          id: parsed.status === "running" || parsed.status === "queued" ? parsed.artifact_id : null,
-        });
-        dispatch({ type: "SET_STATUS_MESSAGE", message: `Restored ${parsed.status} artifact from this browser session.` });
-        dispatch({
-          type: "UPDATE_FORM_STATE",
-          updater: (current) => ({
-            ...current,
-            title: parsed.document?.title ?? parsed.source.title ?? current.title,
-            text: parsed.document?.raw_content ?? parsed.document?.text ?? current.text,
-            url: parsed.source.url ?? current.url,
-            sourceLabel: parsed.source.source_label,
-            selectedAgents: parsed.run_config.selected_agents,
-            persistenceMode: parsed.run_config.persistence_mode,
-            includeDebugTrace: parsed.run_config.include_debug_trace,
-          }),
+          activeArtifactId: null,
+          statusMessage: `Restored imported draft preview for ${parsed.previewDocument.title}.`,
         });
       }
-    } catch {
-      window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
     }
+
+    void restoreStoredState();
+    return () => {
+      cancelled = true;
+    };
   }, [initialArtifact]);
 
   useEffect(() => {
@@ -183,18 +200,19 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       return;
     }
     const storedState: StoredWorkbenchState = {
-      artifact,
-      previewDocument,
+      version: 2,
+      artifactId: artifact?.artifact_id ?? null,
+      artifactPersistenceMode: artifact?.run_config.persistence_mode ?? null,
+      artifactStatus: artifact?.status ?? null,
+      artifactTitle: artifact?.document?.title ?? artifact?.source.title ?? null,
+      previewDocument: artifact === null ? previewDocument : null,
       formState,
       hasDownloadedJson,
     };
     if (
-      artifact === null &&
-      previewDocument === null &&
-      !formState.title &&
-      !formState.text &&
-      !formState.url &&
-      formState.sourceType === "text"
+      storedState.artifactId === null &&
+      storedState.previewDocument === null &&
+      !hasFormDraft(formState)
     ) {
       window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
       return;
@@ -326,6 +344,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
 
   const displayDocument = artifact?.document ?? previewDocument;
   const canStopRun = artifact !== null && (artifact.status === "queued" || artifact.status === "running");
+  const canExport = artifact !== null;
   const showNewAnalysis = artifact !== null;
   const canPreviewUrl = formState.sourceType === "url" && formState.url.trim().length > 0;
   const canAnalyze =
@@ -682,6 +701,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
           canAnalyze={canAnalyze}
           canPreviewUrl={canPreviewUrl}
           canStopRun={canStopRun}
+          canExport={canExport}
           showNewAnalysis={showNewAnalysis}
           importInputKey={importInputKey}
           onFormChange={(updater) =>
@@ -827,9 +847,89 @@ function resolveSelectedAgents(selectedAgents: string[], agents: AgentCatalogEnt
 }
 
 function isStoredWorkbenchState(value: unknown): value is StoredWorkbenchState {
-  return typeof value === "object" && value !== null && "formState" in value;
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const candidate = value as Partial<StoredWorkbenchState>;
+  return (
+    candidate.version === 2
+    && typeof candidate.formState === "object"
+    && candidate.formState !== null
+    && typeof candidate.hasDownloadedJson === "boolean"
+    && ("artifactId" in candidate)
+    && ("previewDocument" in candidate)
+  );
 }
 
 function isAnalysisArtifact(value: unknown): value is AnalysisArtifact {
   return typeof value === "object" && value !== null && "artifact_id" in value && "status" in value;
+}
+
+function parseStoredWorkbenchState(raw: string): StoredWorkbenchState | null {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (isStoredWorkbenchState(parsed) && isReviewFormState(parsed.formState)) {
+      return parsed;
+    }
+    if (isAnalysisArtifact(parsed)) {
+      return {
+        version: 2,
+        artifactId: parsed.artifact_id,
+        artifactPersistenceMode: parsed.run_config.persistence_mode,
+        artifactStatus: parsed.status,
+        artifactTitle: parsed.document?.title ?? parsed.source.title ?? null,
+        previewDocument: null,
+        formState: hydrateFormStateFromArtifact(initialWorkbenchState.formState, parsed),
+        hasDownloadedJson: false,
+      };
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function isReviewFormState(value: unknown): value is ReviewFormState {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const candidate = value as Partial<ReviewFormState>;
+  return (
+    (candidate.sourceType === "text" || candidate.sourceType === "url" || candidate.sourceType === "file")
+    && typeof candidate.title === "string"
+    && typeof candidate.sourceLabel === "string"
+    && typeof candidate.text === "string"
+    && typeof candidate.url === "string"
+    && (candidate.persistenceMode === "session" || candidate.persistenceMode === "workspace")
+    && typeof candidate.includeDebugTrace === "boolean"
+    && Array.isArray(candidate.selectedAgents)
+    && candidate.selectedAgents.every((item) => typeof item === "string")
+  );
+}
+
+function hydrateFormStateFromArtifact(current: ReviewFormState, artifact: AnalysisArtifact): ReviewFormState {
+  return {
+    ...current,
+    title: artifact.document?.title ?? artifact.source.title ?? current.title,
+    text: artifact.document?.raw_content ?? artifact.document?.text ?? current.text,
+    url: artifact.source.url ?? current.url,
+    sourceLabel: artifact.source.source_label,
+    selectedAgents: artifact.run_config.selected_agents,
+    persistenceMode: artifact.run_config.persistence_mode,
+    includeDebugTrace: artifact.run_config.include_debug_trace,
+  };
+}
+
+function activeArtifactIdFor(artifact: AnalysisArtifact): string | null {
+  return artifact.status === "running" || artifact.status === "queued" ? artifact.artifact_id : null;
+}
+
+function hasFormDraft(formState: ReviewFormState): boolean {
+  return Boolean(
+    formState.title
+      || formState.text
+      || formState.url
+      || (formState.sourceType !== "text")
+      || formState.sourceLabel !== initialWorkbenchState.formState.sourceLabel,
+  );
 }

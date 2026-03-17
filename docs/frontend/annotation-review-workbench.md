@@ -40,6 +40,8 @@ Provide a high-legibility review surface where users can inspect source text, wa
 
 - Selecting a text span opens a reviewer comment composer for a new standalone human comment.
 - URL sources should be imported and previewed before analysis starts so the reviewer can inspect the normalized draft first.
+- Workspace persistence should be the preselected mode for new analyses so reloads can recover the canonical artifact from the backend.
+- Session persistence should remain available as a lightweight local option, but the browser should only store restore metadata rather than a full artifact snapshot.
 - Comments identify the agent or reviewer that produced them.
 - Agent comments are replyable by the human reviewer.
 - Agent comments expose immediate `Accept`, `Reject`, and `Uncertain` actions, and clicking the active state again should clear it back to `unreviewed`.
@@ -48,6 +50,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Partial findings should appear as each agent finishes instead of waiting for the full run.
 - Hovering or selecting a summary finding should highlight linked spans in the source text.
 - Connector lines should visually link each comment card to the relevant highlight.
+- Connector lines should recalculate after thread/document/layout changes and should avoid resize-jank during rapid window resizing.
 - Multiple comments on the same span should stack vertically while connecting back to the same text selection.
 - Overlapping anchors must render from one shared set of text segments so source text is never duplicated in the document pane.
 - Multi-block anchors must render continuation highlights in later adjacent rows without duplicating the same thread card.

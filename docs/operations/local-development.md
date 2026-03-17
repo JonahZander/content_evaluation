@@ -4,17 +4,20 @@
 
 - Fast local iteration for the web app and API without forcing Docker for every code change
 - Full-stack Docker support for repeatable deployment and local integration testing
-- First-class session-mode analysis that works without Postgres
+- Durable workspace-mode analysis backed by Postgres, with session mode still available for lightweight local use
 
 ## Local Workflow
 
 - Use `nvm use` at the repository root to activate the pinned Node version from `.nvmrc`
 - Run the web app with `npm run dev:web`
 - Run the API with `npm run dev:api`
-- Use the default `session` flow for ephemeral artifact creation and browser-session review
-- Point the API at Postgres via `CONTENT_EVAL_DATABASE_URL` only when `workspace` persistence is needed
+- Use Postgres-backed `workspace` persistence as the default internal review flow
+- Keep `session` mode available for lightweight local-only runs that do not need reload/restart durability
+- Set `CONTENT_EVAL_DATABASE_URL` whenever you want durable workspace restore across browser reloads or backend restarts
 - Omit provider keys in development to use mock providers
-- Set both `CONTENT_EVAL_OPENAI_API_KEY` and `CONTENT_EVAL_TAVILY_API_KEY` to enable live analysis
+- Set `CONTENT_EVAL_TAVILY_API_KEY` plus the API key for the configured analysis provider family to enable live analysis
+- Tavily currently powers live search and extraction flows
+- OpenAI, Anthropic, and Gemini are currently analysis providers, not search providers
 - Use the artifact import/export controls in the UI when you want to save or reload work without a database
 
 ## Common Commands
@@ -67,8 +70,9 @@
 
 - Use `.env` files for both local and Docker-driven workflows
 - Keep provider API keys and database URLs out of committed files
-- The default UI/API path is `session + artifact`; persistence is optional
+- The default UI path is `workspace + artifact`; `session` mode remains optional
 - `CONTENT_EVAL_APP_ENV=production` requires:
   - explicit `CONTENT_EVAL_CORS_ORIGINS`
   - `CONTENT_EVAL_DATABASE_URL` for workspace persistence
-  - OpenAI and Tavily keys
+  - `CONTENT_EVAL_TAVILY_API_KEY`
+  - the API key for the configured analysis provider family

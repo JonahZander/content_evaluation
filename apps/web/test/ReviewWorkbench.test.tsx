@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { ReviewWorkbench } from "@/components/ReviewWorkbench";
 import { mockArtifact } from "@/lib/mock-data";
@@ -7,6 +7,7 @@ import * as api from "@/lib/api";
 import reproDuplicateSections from "./fixtures/repro-duplicate-sections.json";
 
 vi.mock("@/lib/api", () => ({
+  API_BASE_URL: "http://localhost:8000",
   fetchAgents: vi.fn().mockResolvedValue([
     {
       agent_id: "similarity",
@@ -67,13 +68,13 @@ afterEach(() => {
 });
 
 describe("ReviewWorkbench", () => {
-  it("renders text, threads, and connector paths", () => {
+  it("renders text, threads, and connector paths", async () => {
     render(<ReviewWorkbench initialArtifact={mockArtifact} />);
 
     expect(screen.getByText("How Editorial Teams Can Evaluate AI-Written Posts")).toBeInTheDocument();
     expect(screen.getByTestId("thread-anchor-2")).toBeInTheDocument();
     expect(screen.getAllByTestId("connector-canvas").length).toBeGreaterThan(0);
-    expect(screen.getByTestId("connector-comment-2")).toBeInTheDocument();
+    expect(await screen.findByTestId("connector-comment-2")).toBeInTheDocument();
   });
 
   it("shows review buttons and reply controls", () => {
@@ -139,6 +140,101 @@ describe("ReviewWorkbench", () => {
     render(<ReviewWorkbench initialArtifact={mockArtifact} />);
 
     expect(screen.getByTestId("new-analysis-button")).toBeInTheDocument();
+  });
+
+  it("defaults the persistence selector to workspace mode", () => {
+    render(<ReviewWorkbench initialArtifact={null} />);
+
+    expect(screen.getByTestId("persistence-mode-select")).toHaveValue("workspace");
+  });
+
+  it("restores a persisted workspace run by refetching the artifact", async () => {
+    window.sessionStorage.setItem(
+      "content-evaluation:artifact",
+      JSON.stringify({
+        version: 2,
+        artifactId: mockArtifact.artifact_id,
+        artifactPersistenceMode: "workspace",
+        artifactStatus: "completed",
+        artifactTitle: mockArtifact.document?.title ?? null,
+        previewDocument: null,
+        formState: {
+          sourceType: "text",
+          title: "Draft title",
+          sourceLabel: "Draft source",
+          text: "draft text",
+          url: "",
+          persistenceMode: "workspace",
+          includeDebugTrace: true,
+          selectedAgents: ["similarity"],
+        },
+        hasDownloadedJson: false,
+      }),
+    );
+
+    render(<ReviewWorkbench initialArtifact={null} />);
+
+    await waitFor(() => expect(api.fetchArtifact).toHaveBeenCalledWith(mockArtifact.artifact_id));
+    await waitFor(() =>
+      expect(screen.getByTestId("run-status")).toHaveTextContent("Restored completed workspace run from the backend."),
+    );
+    expect(screen.getByText(mockArtifact.document!.title)).toBeInTheDocument();
+  });
+
+  it("falls back to the saved draft state when a session run cannot be refetched", async () => {
+    vi.mocked(api.fetchArtifact).mockRejectedValueOnce(new Error("Run not found"));
+    window.sessionStorage.setItem(
+      "content-evaluation:artifact",
+      JSON.stringify({
+        version: 2,
+        artifactId: "run-missing",
+        artifactPersistenceMode: "session",
+        artifactStatus: "completed",
+        artifactTitle: "Saved session run",
+        previewDocument: null,
+        formState: {
+          sourceType: "text",
+          title: "Recovered draft",
+          sourceLabel: "Manual input",
+          text: "Recovered body",
+          url: "",
+          persistenceMode: "session",
+          includeDebugTrace: true,
+          selectedAgents: ["similarity"],
+        },
+        hasDownloadedJson: false,
+      }),
+    );
+
+    render(<ReviewWorkbench initialArtifact={null} />);
+
+    await waitFor(() => expect(api.fetchArtifact).toHaveBeenCalledWith("run-missing"));
+    await waitFor(() =>
+      expect(screen.getByTestId("run-status")).toHaveTextContent(
+        "Previous session run is no longer available from the backend. Restored the draft only.",
+      ),
+    );
+    expect(screen.getByTestId("draft-title-input")).toHaveValue("Recovered draft");
+    expect(screen.getByTestId("draft-text-input")).toHaveValue("Recovered body");
+    expect(screen.queryByTestId("new-analysis-button")).not.toBeInTheDocument();
+  });
+
+  it("ignores malformed stored state", async () => {
+    window.sessionStorage.setItem("content-evaluation:artifact", JSON.stringify({ version: 2, artifactId: 123 }));
+
+    render(<ReviewWorkbench initialArtifact={null} />);
+
+    await waitFor(() => expect(api.fetchAgents).toHaveBeenCalled());
+    expect(api.fetchArtifact).not.toHaveBeenCalled();
+    expect(screen.getByTestId("draft-title-input")).toHaveValue("");
+  });
+
+  it("disables export buttons when no artifact exists", () => {
+    render(<ReviewWorkbench initialArtifact={null} />);
+
+    expect(screen.getByRole("button", { name: "Export Todo" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Export Markdown" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Export JSON" })).toBeDisabled();
   });
 
   it("toggles the active review state back to unreviewed", () => {

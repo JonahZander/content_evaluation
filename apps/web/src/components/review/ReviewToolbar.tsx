@@ -23,6 +23,7 @@ interface ReviewToolbarProps {
   canAnalyze: boolean;
   canPreviewUrl: boolean;
   canStopRun: boolean;
+  canExport: boolean;
   showNewAnalysis: boolean;
   importInputKey: number;
   onFormChange: (updater: (current: ReviewFormState) => ReviewFormState) => void;
@@ -46,6 +47,7 @@ export function ReviewToolbar({
   canAnalyze,
   canPreviewUrl,
   canStopRun,
+  canExport,
   showNewAnalysis,
   importInputKey,
   onFormChange,
@@ -93,8 +95,8 @@ export function ReviewToolbar({
             }))
           }
         >
-          <option value="session">Session mode</option>
-          <option value="workspace">Workspace mode</option>
+          <option value="workspace">Workspace mode (recommended)</option>
+          <option value="session">Session mode (local only)</option>
         </select>
         <label className={styles.toggleLabel}>
           <input
@@ -231,6 +233,7 @@ export function ReviewToolbar({
           data-testid="export-todo-button"
           type="button"
           onClick={() => onExport("todo")}
+          disabled={!canExport}
         >
           Export Todo
         </button>
@@ -239,6 +242,7 @@ export function ReviewToolbar({
           data-testid="export-markdown-button"
           type="button"
           onClick={() => onExport("md")}
+          disabled={!canExport}
         >
           Export Markdown
         </button>
@@ -247,6 +251,7 @@ export function ReviewToolbar({
           data-testid="export-json-button"
           type="button"
           onClick={() => onExport("json")}
+          disabled={!canExport}
         >
           Export JSON
         </button>

@@ -504,6 +504,7 @@ export function DocumentPane({
   onCancelEdit,
   onDeleteComment,
 }: DocumentPaneProps) {
+  const paneRef = useRef<HTMLDivElement | null>(null);
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [pathsByBlockId, setPathsByBlockId] = useState<Record<string, Array<{ id: string; path: string; color: string }>>>({});
 
@@ -582,13 +583,90 @@ export function DocumentPane({
       setPathsByBlockId(nextPathsByBlockId);
     };
 
-    updatePaths();
-    window.addEventListener("resize", updatePaths);
-    return () => window.removeEventListener("resize", updatePaths);
+    let animationFrameId: number | null = null;
+    let resizeTimeoutId: number | null = null;
+    let resizeObserver: ResizeObserver | null = null;
+
+    const observeCurrentNodes = () => {
+      if (resizeObserver === null) {
+        return;
+      }
+      resizeObserver.disconnect();
+      if (paneRef.current) {
+        resizeObserver.observe(paneRef.current);
+      }
+      Object.values(rowRefs.current).forEach((element) => {
+        if (element) {
+          resizeObserver?.observe(element);
+        }
+      });
+      Object.values(anchorRefs.current).forEach((element) => {
+        if (element) {
+          resizeObserver?.observe(element);
+        }
+      });
+      Object.values(commentRefs.current).forEach((element) => {
+        if (element) {
+          resizeObserver?.observe(element);
+        }
+      });
+    };
+
+    const schedulePathUpdate = () => {
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+      }
+      animationFrameId = window.requestAnimationFrame(() => {
+        animationFrameId = null;
+        observeCurrentNodes();
+        updatePaths();
+      });
+    };
+
+    const handleResize = () => {
+      if (resizeTimeoutId !== null) {
+        window.clearTimeout(resizeTimeoutId);
+      }
+      resizeTimeoutId = window.setTimeout(() => {
+        resizeTimeoutId = null;
+        schedulePathUpdate();
+      }, 80);
+    };
+
+    const mutationObserver = new MutationObserver(() => {
+      schedulePathUpdate();
+    });
+
+    if (typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(() => {
+        schedulePathUpdate();
+      });
+      observeCurrentNodes();
+    }
+    if (paneRef.current) {
+      mutationObserver.observe(paneRef.current, {
+        childList: true,
+        subtree: true,
+      });
+    }
+
+    schedulePathUpdate();
+    window.addEventListener("resize", handleResize);
+    return () => {
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+      }
+      if (resizeTimeoutId !== null) {
+        window.clearTimeout(resizeTimeoutId);
+      }
+      mutationObserver.disconnect();
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", handleResize);
+    };
   }, [anchorRefs, commentRefs, blockThreads, document]);
 
   return (
-    <div className={styles.documentPane}>
+    <div className={styles.documentPane} ref={paneRef}>
       <div className={styles.sectionTitle}>Text under review</div>
       <h2 className={styles.documentTitle}>{document?.title ?? "No document loaded"}</h2>
       {document?.blocks.length ? (

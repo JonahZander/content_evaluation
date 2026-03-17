@@ -38,17 +38,11 @@ excluded here — that warrants its own planning document when the time comes.
 
 ## Review Workbench UX
 
-- **Fix stale connector paths** *(M22 from code review)*
-  - SVG connector lines go stale when anchor/comment refs mount or unmount
-- **Debounce resize handler** *(M21)*
-  - Connector path recalculation fires on every pixel of resize
+- ~~**Fix stale connector paths** *(M22 from code review)*~~ ✅ *done — connector recomputation now reacts to document/layout changes instead of only stable ref objects*
+- ~~**Debounce resize handler** *(M21)*~~ ✅ *done — connector recomputation is frame-scheduled and resize-throttled*
 - ~~**AbortController for stale responses** *(M24)*~~ ✅ *done*
-- **sessionStorage size cap** *(M20)*
-  - Full artifact is serialized to sessionStorage on every state change — can hit ~5MB quota on large documents
-  - Replace with run-ID-only storage and on-demand fetch
-- **Todo export**
-  - Export accepted agent suggestions as a compact Markdown checklist, ordered by source position
-  - Already specced in `docs/frontend/annotation-review-workbench.md` and `docs/backend/analysis-pipeline.md`
+- ~~**sessionStorage size cap** *(M20)*~~ ✅ *done — browser storage now keeps restore metadata and refetches canonical artifacts by run ID*
+- ~~**Todo export**~~ ✅ *done — compact Markdown todo export is available from the toolbar and `/api/v1/runs/{run_id}/export.todo.md`*
 - **Keyboard navigation**
   - Move between findings with arrow keys or `j`/`k`
   - Accept/reject the focused finding with a hotkey
@@ -65,8 +59,7 @@ excluded here — that warrants its own planning document when the time comes.
   - Should be sanitized or isolated via structured message roles
 - **Async instruction loading** *(M1)*
   - `load_instruction_text()` uses synchronous `read_text()` on the async event loop
-- **Retryable error propagation** *(M12)*
-  - `ProviderError.retriable` flag is set but ignored at the worker level
+- ~~**Retryable error propagation** *(M12)*~~ ✅ *done — worker retry policy now honors `ProviderError.retriable`*
 - **FastAPI body declaration** *(M13)*
   - `create_run` manually parses JSON instead of using a FastAPI body model
 - **Stop inflating downstream prompts** *(M10)*

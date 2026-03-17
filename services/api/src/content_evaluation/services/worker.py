@@ -47,38 +47,6 @@ class RunWorker:
 
         sem = asyncio.Semaphore(self._settings.worker_max_concurrent_runs)
 
-        async def _execute_job(job: object) -> None:
-            from content_evaluation.domain.models import RunJob
-
-            assert isinstance(job, RunJob)
-            async with sem:
-                try:
-                    await self._orchestrator.process_run(
-                        job.artifact_id,
-                        job.input_data,
-                        attempt=job.attempts,
-                        max_attempts=self._settings.worker_max_attempts,
-                    )
-                except asyncio.CancelledError:
-                    await self._repository.cancel_run_job(job.artifact_id)
-                    await self._repository.delete_graph_checkpoint(job.artifact_id)
-                    self._logger.info("worker canceled artifact_id=%s", job.artifact_id)
-                except Exception as error:
-                    if isinstance(error, ProviderError):
-                        await self._repository.fail_run_job(job.artifact_id)
-                        self._logger.exception("worker failed artifact_id=%s attempts=%s", job.artifact_id, job.attempts)
-                    elif job.attempts < self._settings.worker_max_attempts:
-                        await self._repository.requeue_run_job(job.artifact_id)
-                        self._logger.exception("worker requeued artifact_id=%s attempt=%s", job.artifact_id, job.attempts)
-                    else:
-                        await self._repository.fail_run_job(job.artifact_id)
-                        self._logger.exception("worker failed artifact_id=%s attempts=%s", job.artifact_id, job.attempts)
-                else:
-                    await self._repository.complete_run_job(job.artifact_id)
-                    self._logger.info("worker completed artifact_id=%s", job.artifact_id)
-                finally:
-                    self._active_runs.pop(job.artifact_id, None)
-
         while not self._stop_event.is_set():
             if sem._value == 0:
                 await asyncio.sleep(self._settings.worker_poll_interval_seconds)
@@ -90,8 +58,57 @@ class RunWorker:
                 continue
 
             self._logger.info("worker claimed artifact_id=%s attempt=%s", job.artifact_id, job.attempts)
-            task = asyncio.create_task(_execute_job(job), name=f"run-{job.artifact_id}")
+            task = asyncio.create_task(self._process_job(job, sem), name=f"run-{job.artifact_id}")
             self._active_runs[job.artifact_id] = task
+
+    async def _process_job(self, job: object, sem: asyncio.Semaphore | None = None) -> None:
+        """Run one claimed job and apply the retry policy for failures."""
+
+        from content_evaluation.domain.models import RunJob
+
+        assert isinstance(job, RunJob)
+        semaphore = sem or asyncio.Semaphore(self._settings.worker_max_concurrent_runs)
+        async with semaphore:
+            try:
+                await self._orchestrator.process_run(
+                    job.artifact_id,
+                    job.input_data,
+                    attempt=job.attempts,
+                    max_attempts=self._settings.worker_max_attempts,
+                )
+            except asyncio.CancelledError:
+                await self._repository.cancel_run_job(job.artifact_id)
+                await self._repository.delete_graph_checkpoint(job.artifact_id)
+                self._logger.info("worker canceled artifact_id=%s", job.artifact_id)
+            except ProviderError as error:
+                if error.retriable and job.attempts < self._settings.worker_max_attempts:
+                    await self._repository.requeue_run_job(job.artifact_id)
+                    self._logger.exception(
+                        "worker requeued artifact_id=%s attempt=%s retriable=%s",
+                        job.artifact_id,
+                        job.attempts,
+                        error.retriable,
+                    )
+                else:
+                    await self._repository.fail_run_job(job.artifact_id)
+                    self._logger.exception(
+                        "worker failed artifact_id=%s attempts=%s retriable=%s",
+                        job.artifact_id,
+                        job.attempts,
+                        error.retriable,
+                    )
+            except Exception:
+                if job.attempts < self._settings.worker_max_attempts:
+                    await self._repository.requeue_run_job(job.artifact_id)
+                    self._logger.exception("worker requeued artifact_id=%s attempt=%s", job.artifact_id, job.attempts)
+                else:
+                    await self._repository.fail_run_job(job.artifact_id)
+                    self._logger.exception("worker failed artifact_id=%s attempts=%s", job.artifact_id, job.attempts)
+            else:
+                await self._repository.complete_run_job(job.artifact_id)
+                self._logger.info("worker completed artifact_id=%s", job.artifact_id)
+            finally:
+                self._active_runs.pop(job.artifact_id, None)
 
     async def cancel_run(self, artifact_id: UUID) -> bool:
         """Cancel one actively running artifact task if present."""

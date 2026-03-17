@@ -45,6 +45,8 @@ Load only the section needed for the current task.
   - `docs/agents/how-to-add-an-agent.md`
 - Known open issues and intentional simplifications:
   - `docs/process/known-issues.md`
+- Goals, feature ideas, and improvement areas:
+  - `docs/roadmap.md`
 
 ## Current Product Surface
 
@@ -53,6 +55,7 @@ Load only the section needed for the current task.
 - Runtime modes: `session` by default, optional `workspace` persistence
 - Review UI: paragraph-row text and comment layout, SVG connector lines, live agent progress, agent selection, artifact import/export
 - Review actions: reply to comments, create reviewer comments, accept/reject/uncertain agent comments
+- Agents: analysis agents (AI-likelihood, value, audience, editorial, synthesis), similarity search, fact-check (deep research, opt-in)
 - Exports: Markdown and JSON derived directly from the artifact
 - Runtime visibility: `/health`, `/ready`, run events, SSE stream, optional debug trace
 - Browser E2E coverage: Playwright installed through the official setup flow in `apps/web`

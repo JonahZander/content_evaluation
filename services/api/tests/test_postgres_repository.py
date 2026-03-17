@@ -191,6 +191,16 @@ async def test_get_artifact_returns_none_for_missing() -> None:
 
 
 @pytest.mark.asyncio
+async def test_list_artifact_ids_accepts_native_uuid_rows() -> None:
+    artifact_id = uuid4()
+    cursor = FakeCursor(rows=[{"id": artifact_id}])
+    pool = FakePool(FakeConnection(cursor))
+    repo = _repo_with_pool(pool)
+
+    assert await repo.list_artifact_ids() == [artifact_id]
+
+
+@pytest.mark.asyncio
 async def test_update_artifact_persists_to_postgres_then_cache() -> None:
     repo = _repo_with_pool()
     artifact = _build_artifact()

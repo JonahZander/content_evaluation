@@ -125,7 +125,7 @@ class PostgresRunRepository:
             async with connection.cursor(row_factory=dict_row) as cursor:
                 await cursor.execute("select id from artifacts")
                 rows = await cursor.fetchall()
-        ids = {UUID(row["id"]) for row in rows}
+        ids = {_coerce_uuid(row["id"]) for row in rows}
         ids.update(self._artifacts.keys())
         return list(ids)
 
@@ -298,3 +298,11 @@ class PostgresRunRepository:
             async with connection.transaction():
                 async with connection.cursor() as cursor:
                     await cursor.execute(statement, (key_value, json.dumps(payload)))
+
+
+def _coerce_uuid(value: UUID | str) -> UUID:
+    """Normalize UUID values returned by psycopg row decoding."""
+
+    if isinstance(value, UUID):
+        return value
+    return UUID(value)

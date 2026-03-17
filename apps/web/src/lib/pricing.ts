@@ -1,6 +1,9 @@
 /**
  * Hardcoded per-model pricing for cost estimation.
  * Prices are USD per 1 million tokens (input / output).
+ * OpenAI entries are sourced from the official models and pricing docs:
+ * https://developers.openai.com/api/docs/models
+ * https://openai.com/api/pricing/
  * Update this table when provider pricing changes.
  */
 
@@ -12,6 +15,11 @@ interface PricingEntry {
 
 const PRICING: PricingEntry[] = [
   // OpenAI — more specific patterns first
+  { pattern: /gpt-5\.4/i,                inputPerM: 2.50,  outputPerM: 15.00 },
+  { pattern: /gpt-5-mini/i,             inputPerM: 0.25,  outputPerM: 2.00  },
+  { pattern: /gpt-5-nano/i,             inputPerM: 0.05,  outputPerM: 0.40  },
+  { pattern: /gpt-4\.1-mini/i,          inputPerM: 0.40,  outputPerM: 1.60  },
+  { pattern: /gpt-4\.1(?!-mini)/i,      inputPerM: 2.00,  outputPerM: 8.00  },
   { pattern: /gpt-4o-mini/i,              inputPerM: 0.15,  outputPerM: 0.60  },
   { pattern: /gpt-4o/i,                   inputPerM: 2.50,  outputPerM: 10.00 },
   { pattern: /gpt-4-turbo/i,             inputPerM: 10.00, outputPerM: 30.00 },

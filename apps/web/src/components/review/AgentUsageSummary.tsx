@@ -91,10 +91,12 @@ export function AgentUsageSummary({ agentResults, agentPlan }: AgentUsageSummary
             <tr key={row.agentId}>
               <td>{row.displayName}</td>
               <td>
-                {row.modelName !== null ? (
-                  row.modelName
+                {row.modelName ? (
+                  <span title={row.modelName}>
+                    {row.modelName.length > 28 ? `${row.modelName.slice(0, 26)}…` : row.modelName}
+                  </span>
                 ) : (
-                  <span className={styles.usageUnknown}>unknown</span>
+                  <span className={styles.usageUnknown}>—</span>
                 )}
               </td>
               <td className={styles.usageTableNumeric}>{formatTokens(row.inputTokens)}</td>

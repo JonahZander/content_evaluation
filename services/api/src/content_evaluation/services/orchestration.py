@@ -81,6 +81,7 @@ class AgentExecutionResult:
     summary: str | None
     metadata: dict[str, object]
     model_name: str
+    usage: dict[str, int] | None = None
 
 
 class LangGraphState(TypedDict):

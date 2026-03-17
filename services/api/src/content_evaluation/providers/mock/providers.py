@@ -127,6 +127,7 @@ class MockAnalysisProvider:
                 }
             )
             result["summary"] = f"Synthesized from: {context_summary}" if context_summary else "Synthesis complete"
+        result["usage"] = {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
         return result
 
     def resolve_model_name(self, route: ProviderRoute | None = None) -> str:

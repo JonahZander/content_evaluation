@@ -364,3 +364,48 @@ async def test_downstream_context_excludes_synthetic_unmatched_excerpt_metadata(
     updated = await repository.get_artifact(artifact.artifact_id)
     assert updated is not None
     assert updated.status.value == "completed"
+
+
+@pytest.mark.asyncio
+async def test_agent_result_metadata_includes_usage() -> None:
+    """ArtifactAgentResult.metadata must carry usage after orchestration threads it through."""
+    repository = InMemoryRunRepository()
+    orchestrator = RunOrchestrator(
+        repository,
+        MockAnalysisProvider(),
+        MockSimilaritySearchProvider(),
+        MockContentExtractionProvider(),
+        RuntimeMode.MOCK,
+        False,
+        OrchestratorBackend.LANGGRAPH,
+    )
+    artifact = await orchestrator.create_run(
+        RunInput(
+            source_type=SourceType.TEXT,
+            source_label="Draft",
+            title="Draft",
+            text="Alpha paragraph.\n\nBeta paragraph.",
+        )
+    )
+    await orchestrator.process_run(
+        artifact.artifact_id,
+        RunInput(
+            source_type=SourceType.TEXT,
+            source_label="Draft",
+            title="Draft",
+            text="Alpha paragraph.\n\nBeta paragraph.",
+        ),
+    )
+    updated = await repository.get_artifact(artifact.artifact_id)
+    assert updated is not None
+    analysis_results = [
+        r for r in updated.agent_results
+        if r.agent_id not in ("similarity", "fact_check")
+    ]
+    assert analysis_results, "No analysis agent results found"
+    for result in analysis_results:
+        usage = result.metadata.get("usage")
+        assert usage is not None, f"Agent {result.agent_id} has no usage in metadata"
+        assert usage["input_tokens"] == 10
+        assert usage["output_tokens"] == 5
+        assert usage["total_tokens"] == 15

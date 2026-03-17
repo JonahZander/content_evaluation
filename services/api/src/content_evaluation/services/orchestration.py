@@ -826,6 +826,10 @@ class RunOrchestrator:
             findings = [FindingPayload.model_validate(item) for item in raw_findings]
             meta = raw_output.get("metadata")
             metadata = meta if isinstance(meta, dict) else {}
+            dr_usage: dict[str, int] | None = None
+            raw_usage = metadata.pop("usage", None)
+            if isinstance(raw_usage, dict):
+                dr_usage = {k: int(v) for k, v in raw_usage.items() if isinstance(v, (int, float))}
             report_sources: list[str] = []
             if isinstance(meta, dict):
                 src = meta.get("sources")
@@ -841,6 +845,7 @@ class RunOrchestrator:
                 summary=_coerce_str(raw_output.get("summary")),
                 metadata=metadata,
                 model_name=self._deep_research_provider.model_name,
+                usage=dr_usage,
             )
 
         raw_output = await self._analysis_provider.analyze(
@@ -855,6 +860,10 @@ class RunOrchestrator:
         if not isinstance(raw_findings, list):
             raise ValidationError(f"Agent {definition.agent_id} returned an invalid findings payload")
         findings = [FindingPayload.model_validate(item) for item in raw_findings]
+        lc_usage: dict[str, int] | None = None
+        raw_usage = raw_output.pop("usage", None)
+        if isinstance(raw_usage, dict):
+            lc_usage = {k: int(v) for k, v in raw_usage.items() if isinstance(v, (int, float))}
         return AgentExecutionResult(
             definition=definition,
             raw_output=raw_output,
@@ -864,6 +873,7 @@ class RunOrchestrator:
             model_name=self._analysis_provider.resolve_model_name(
                 _route_for_definition(definition, self._runtime_mode, self._analysis_provider)
             ),
+            usage=lc_usage,
         )
 
     async def _execute_agent_with_retries(
@@ -939,6 +949,9 @@ class RunOrchestrator:
         artifact.agent_results = [
             item for item in artifact.agent_results if item.agent_id != result.definition.agent_id
         ]
+        agent_metadata = dict(result.metadata)
+        if result.usage is not None:
+            agent_metadata["usage"] = result.usage
         artifact.agent_results.append(
             ArtifactAgentResult(
                 agent_id=result.definition.agent_id,
@@ -947,7 +960,7 @@ class RunOrchestrator:
                 findings=resolved_findings,
                 summary=result.summary,
                 raw_output=result.raw_output,
-                metadata=result.metadata,
+                metadata=agent_metadata,
             )
         )
         if artifact.debug is not None:

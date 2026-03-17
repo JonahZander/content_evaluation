@@ -14,6 +14,9 @@ Provide a high-legibility review surface where users can inspect source text, wa
   - Full-width activity list directly below the progress panel so users can inspect retries, resumptions, and failures without leaving the main flow
 - Analysis summary
   - Overall score, originality, value, audience fit, AI-likelihood
+- Review summary panel
+  - Lives above the source text pane
+  - Shows content summary, research summary, inferred audience, and overlap links from fact-check-backed artifact data
 - Source text pane
   - Selectable text with highlighted spans in paragraph rows
   - Supports lightweight markdown presentation for headings, inline emphasis, and fenced code blocks
@@ -49,6 +52,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Human replies should expose a compact delete affordance in the thread UI.
 - Partial findings should appear as each agent finishes instead of waiting for the full run.
 - Hovering or selecting a summary finding should highlight linked spans in the source text.
+- Fact-check claim highlights should render distinct evidence chips near the relevant paragraph instead of creating more comment-rail cards.
 - Connector lines should visually link each comment card to the relevant highlight.
 - Connector lines should recalculate after thread/document/layout changes and should avoid resize-jank during rapid window resizing.
 - Multiple comments on the same span should stack vertically while connecting back to the same text selection.
@@ -60,11 +64,13 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - The toolbar should expose a stop-run action for queued/running work and a new-analysis reset action.
 - The toolbar should keep the pasted-text composer in its own full-width source row beneath source selection controls.
 - Invalid review actions should be disabled when no real artifact is loaded.
+- Similarity research is no longer a selectable top-level agent in new runs; overlap research is surfaced through fact-check.
 
 ## Target Behaviors
 
 - Highlight colors are category-based and consistent across the text pane, comment labels, and connector lines.
 - When multiple agents or anchor ranges overlap on the same visible text, render one neutral highlight fill with thin agent-color rails instead of layered color overlays.
+- Fact-check evidence should stay lightweight: one compact chip row or small stacked evidence block beside the paragraph, capped to a few links.
 - Supported markdown rendering is intentionally narrow in v1:
   - headings
   - `strong`
@@ -73,6 +79,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - URL mode should not display the pasted-text textarea because analysis runs from the imported URL preview content.
 - Unsupported markdown should stay readable as text rather than render rich embeds or media.
 - Agent comments are immutable in content; reviewer input happens through replies and review-state actions.
+- Audience analysis is summary-first in the current UI and should not create new inline annotation-heavy threads for newly generated artifacts.
 - Reviewer comments use the `human` category and are attached to an existing or newly created anchor.
 - Reviewer replies can be deleted inline, but agent-authored content remains immutable.
 - Run status is visible in the toolbar and progress panel.

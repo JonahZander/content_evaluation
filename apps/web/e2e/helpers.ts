@@ -2,7 +2,7 @@ import { expect, type Locator, type Page } from "@playwright/test";
 
 export async function waitForWorkbenchReady(page: Page): Promise<void> {
   await page.goto("/");
-  await expect(page.getByTestId("agent-toggle-similarity")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("agent-toggle-fact_check")).toBeVisible({ timeout: 15_000 });
 }
 
 export async function submitDraft(page: Page, title: string, text: string): Promise<void> {

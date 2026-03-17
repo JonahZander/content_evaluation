@@ -31,23 +31,30 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
    - Topologically sort the dependency graph
    - Record agent plan items with execution status
 6. Agent execution
-   - Run independent agents in parallel through LangGraph nodes
-   - Run dependent agents after prerequisites complete
-   - Retry transient provider timeouts and network failures inside the individual agent execution loop before failing the run
+  - Run independent agents in parallel through LangGraph nodes
+  - Run dependent agents after prerequisites complete
+  - Default graph now uses fact-check as the research backbone:
+    - `value` depends on `fact_check`
+    - `editorial` depends on `fact_check` and `ai_likelihood`
+    - `synthesis` depends on `fact_check`, `ai_likelihood`, `value`, and `editorial`
+  - Retry transient provider timeouts and network failures inside the individual agent execution loop before failing the run
    - Emit progress events and partial artifact updates as each agent completes
    - Capture token usage (`input_tokens`, `output_tokens`) in `AgentExecutionResult.usage` after each LLM call; populated by the LangChain, deep research, and mock providers
    - Use LangChain chat-model adapters for analysis nodes
    - Require finding-producing agents to quote source text word-for-word, use ellipses only for real omissions, and split evidence that would span more than 3 paragraphs into multiple findings
 7. Artifact assembly
-   - Convert agent outputs into anchors, comments, results, summary data, debug traces, and usage metadata
-   - Thread `AgentExecutionResult.usage` into `ArtifactAgentResult.metadata` so token counts are available to the frontend without re-querying backend state
+  - Convert agent outputs into anchors, comments, results, summary data, debug traces, and usage metadata
+  - Build both score-oriented `summary` data and narrative `review_summary` data
+  - Thread `AgentExecutionResult.usage` into `ArtifactAgentResult.metadata` so token counts are available to the frontend without re-querying backend state
    - Resolve anchors against normalized block text, including whitespace-normalized and ellipsis-truncated excerpts when possible
    - Treat ellipsis excerpts as ordered fragments across one source block or a bounded window of adjacent source blocks instead of collapsing them into one normalized string
    - Represent resolved anchors as ordered block-local segments so one finding can span multiple adjacent paragraphs
    - Exclude synthetic unmatched fallback blocks from later anchor matching and downstream agent context
    - When an excerpt still cannot be mapped into adjacent visible blocks, append a bottom-of-document unmatched-reference block instead of falling back to the first paragraph
-   - Keep human comment/reply/review-state data in the same artifact structure
-   - Keep artifact assembly outside the graph-state model
+  - Keep human comment/reply/review-state data in the same artifact structure
+  - Keep fact-check claim evidence on structured finding metadata so the frontend can render nearby evidence links without parsing prose
+  - Audience and fact-check outputs are summary-first in new runs and do not create top-level comment threads by default
+  - Keep artifact assembly outside the graph-state model
 8. Export and import
    - Export the artifact as JSON
    - Export Markdown derived from the artifact

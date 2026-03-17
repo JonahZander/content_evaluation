@@ -14,11 +14,12 @@ Current supported inputs:
 Current analysis and review capabilities:
 
 - Select which agents should run for a given analysis
-- Search for similar existing posts and possible topical overlap
+- Fact-check key claims and surface overlapping public posts as linked research
 - Estimate whether content is likely AI-generated
 - Identify the post's main value and likely audience
 - Run editorial and synthesis/scoring steps with dependency-aware orchestration
 - Attach agent comments to anchored text spans
+- Render a review summary panel plus claim-by-claim evidence links above and beside the source text
 - Let a human reviewer reply to agent comments
 - Let a human reviewer mark agent comments as `accepted`, `rejected`, or `uncertain`
 - Let a human reviewer add standalone comments on new text selections

@@ -15,23 +15,26 @@ This project uses a code-orchestrated multi-agent model:
 - Fact-check agent
   - Extracts the 3–5 most important verifiable claims from the article
   - Uses the vendored deep researcher graph (supervisor + parallel Tavily researchers) to verify each claim against live web sources
-  - Returns one finding per claim: verdict (SUPPORTED/REFUTED/MIXED/UNVERIFIABLE), key evidence, and source URLs in the rationale
-  - Also produces a redundancy/differentiation finding: flags overlap with existing public posts and notes where the article adds unique value
-  - Multi-step execution; opt-in (default_enabled=False) due to cost
+  - Returns structured claim findings: claim text, verdict, evidence summary, source links, anchor excerpt, confidence
+  - Also produces structured overlap research items that replace the prior standalone similarity surface in new runs
+  - Multi-step execution; enabled by default because it now powers the summary panel, overlap research, and claim evidence UI
   - No dependencies on other specialist agents; runs in parallel with the independent group when selected
   - Requires CONTENT_EVAL_OPENAI_API_KEY and CONTENT_EVAL_TAVILY_API_KEY in live mode
-  - The similarity agent remains the fast/cheap option; fact_check is the deep/comprehensive option
+  - Acts as the research backbone for downstream value, editorial, and synthesis reasoning
 - Similarity research agent
-  - Searches online for related posts and overlap in claims or framing
-  - Can be multi-step because research may require intermediate search reasoning
+  - Legacy compatibility path only
+  - Hidden from the selectable agent catalog for new runs
 - AI-likelihood agent
   - Estimates whether the text appears AI-generated
 - Value extraction agent
   - Identifies the main value proposition and key takeaways
+  - Consumes fact-check output explicitly
 - Audience analysis agent
   - Infers the target audience and fit
+  - Output is summary-first in the current UI rather than annotation-heavy
 - Editorial recommendation agent
   - Produces span-level comments and rewrite suggestions
+  - Consumes fact-check and AI-likelihood output explicitly
 - Evaluation synthesis agent
   - Produces a final verdict after upstream specialist agents complete
 
@@ -56,6 +59,11 @@ Each agent should be declared with:
 - Independent agents may run in parallel.
 - Dependent agents wait for prerequisites.
 - Synthesis/scoring runs after upstream specialist agents finish.
+- New-run dependency graph is:
+  - `fact_check` and `ai_likelihood` can start independently
+  - `value` waits for `fact_check`
+  - `editorial` waits for `fact_check` and `ai_likelihood`
+  - `synthesis` waits for `fact_check`, `ai_likelihood`, `value`, and `editorial`
 - Each status transition emits a durable event for the live timeline.
 - Each completed node writes a resumable graph checkpoint.
 
@@ -95,6 +103,7 @@ Each agent should be declared with:
 - Artifact assembly should happen in code, not inside prompts.
 - Agent outputs should be inspectable in the UI and exportable for debugging.
 - Agent comments should remain immutable; reviewer feedback happens via replies and review-state actions inside the same artifact.
+- Not every agent should produce comment-rail surface area. Audience and fact-check are summary/evidence-first by default.
 
 ## Current Provider Routing
 

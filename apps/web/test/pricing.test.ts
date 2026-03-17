@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { estimateCost } from "@/lib/pricing";
+import { estimateCost, resolveOpenAIPricing } from "@/lib/pricing";
 
 describe("pricing", () => {
   it("matches GPT-5.4 pricing from the official docs", () => {
@@ -17,6 +17,12 @@ describe("pricing", () => {
 
   it("matches GPT-4.1 mini pricing", () => {
     expect(estimateCost("gpt-4.1-mini", 1_000_000, 1_000_000)).toBe(2.0);
+  });
+
+  it("resolves alias model names conservatively", () => {
+    expect(resolveOpenAIPricing("chatgpt-5-latest")).toEqual(
+      expect.objectContaining({ inputPerM: 1.25, outputPerM: 10 }),
+    );
   });
 
   it("returns null for unknown models", () => {

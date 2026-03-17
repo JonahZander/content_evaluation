@@ -3,12 +3,12 @@ export type ContentFormat = "plain_text" | "markdown";
 export type RunStatus = "draft" | "queued" | "running" | "completed" | "failed" | "canceled";
 export type ReviewState = "unreviewed" | "accepted" | "rejected" | "uncertain";
 export type AuthorType = "agent" | "human";
-export type AgentCategory = "similarity" | "ai_likelihood" | "value" | "audience" | "editorial" | "synthesis" | "human";
+export type AgentCategory = "fact_check" | "similarity" | "ai_likelihood" | "value" | "audience" | "editorial" | "synthesis" | "human";
 export type RuntimeMode = "mock" | "live";
 export type PersistenceMode = "session" | "workspace";
 export type AgentPlanStatus = "pending" | "queued" | "running" | "completed" | "failed" | "skipped";
 export type AgentExecutionMode = "single_turn" | "multi_step";
-export type ProviderKind = "search" | "analysis" | "extract";
+export type ProviderKind = "deep_research" | "search" | "analysis" | "extract";
 export type EventType = "run" | "artifact" | "agent";
 export type ArtifactBlockKind = "paragraph" | "heading" | "code";
 export type ArtifactBlockOrigin = "source" | "synthetic_unmatched";
@@ -146,6 +146,19 @@ export interface ArtifactSummary {
   ai_likelihood: number;
 }
 
+export interface ArtifactOverlapItem {
+  title: string;
+  url: string;
+  note: string;
+}
+
+export interface ArtifactReviewSummary {
+  content_summary: string;
+  research_summary: string;
+  inferred_audience: string;
+  overlap_items: ArtifactOverlapItem[];
+}
+
 export interface ArtifactEvent {
   id: string;
   artifact_id: string;
@@ -192,6 +205,7 @@ export interface AnalysisArtifact {
   anchors: ArtifactAnchor[];
   threads: ArtifactThread[];
   summary: ArtifactSummary | null;
+  review_summary?: ArtifactReviewSummary | null;
   events: ArtifactEvent[];
   debug?: ArtifactDebug | null;
   error_message?: string | null;

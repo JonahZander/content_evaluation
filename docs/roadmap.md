@@ -10,26 +10,26 @@ excluded here — that warrants its own planning document when the time comes.
 
 ## Immediate Priorities
 
-- **Review summary panel above the text under review**
+- ~~**Review summary panel above the text under review**~~ ✅
   - Add a new section above the source text pane with:
     - a short content summary
     - a research summary
     - linked similar or overlapping articles
     - the inferred audience
   - De-emphasize audience-agent inline text annotations in the body when they are lower-value than a compact summary view
-- **Claim evidence UX**
+- ~~**Claim evidence UX**~~ ✅
   - Highlight claims throughout the document and show a nearby supporting source link for each claim
   - Supporting sources may be papers, articles, or other web evidence surfaced by the fact-check flow
   - Prefer evidence presentation that keeps the source text readable instead of overloading the existing comment rail
-- **Agent demo review**
+- ~~**Agent demo review**~~ ✅
   - Review which agents should remain standalone, which should be merged, and which should become summary-only outputs
   - The audience agent currently does not provide enough standalone value to justify its own surface area
   - The current editorial / AI-likelihood / fact-check responsibility split should be reconsidered before adding more agent complexity
-- **Value/fact-check/similarity restructuring**
+- ~~**Value/fact-check/similarity restructuring**~~ ✅
   - Make value analysis depend on fact-check output
   - Fully replace the standalone similarity agent with fact-check-driven overlap and source research
   - Revisit whether editorial suggestions should explicitly consume fact-check and AI-likelihood outputs rather than duplicating them independently
-- **Token cost accuracy**
+- ~~**Token cost accuracy**~~ ✅
   - Replace hardcoded or incomplete cost estimation with pricing sourced from the official OpenAI pricing documentation
   - Keep the implementation robust to future pricing changes and unknown model names
 
@@ -37,7 +37,7 @@ excluded here — that warrants its own planning document when the time comes.
 
 - ~~**Token usage and cost display**~~ ✅ *done — `docs/plans/completed/2026-03-16-token-usage-cost-display.md`*
 - ~~**RunMetrics "not yet computed" state**~~ ✅ *done — shows "—" when score is absent*
-- **Official pricing-backed cost estimates**
+- ~~**Official pricing-backed cost estimates**~~ ✅
   - Move cost estimation away from repo-local assumptions and source it from the official OpenAI pricing docs
   - Keep unknown-model behavior conservative (`—` rather than incorrect pricing)
 

@@ -7,6 +7,7 @@ import { AgentUsageSummary } from "@/components/review/AgentUsageSummary";
 import { CommentRail } from "@/components/review/CommentRail";
 import { DocumentPane } from "@/components/review/DocumentPane";
 import { ReviewHero } from "@/components/review/ReviewHero";
+import { ReviewSummaryPanel } from "@/components/review/ReviewSummaryPanel";
 import { ReviewToolbar, type ReviewFormState } from "@/components/review/ReviewToolbar";
 import { RunMetrics } from "@/components/review/RunMetrics";
 import { SelectionBanner } from "@/components/review/SelectionBanner";
@@ -324,8 +325,57 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         colors: thread.comments.map((comment) => categoryColors[comment.category] ?? "var(--ink)"),
       });
     });
+    (artifact?.agent_results ?? []).forEach((result) => {
+      result.findings.forEach((finding) => {
+        finding.anchor_ids.forEach((anchorId) => {
+          const existing = map.get(anchorId);
+          const color = categoryColors[finding.category] ?? "var(--ink)";
+          if (existing) {
+            if (!existing.colors.includes(color)) {
+              existing.colors.push(color);
+            }
+            return;
+          }
+          map.set(anchorId, { colors: [color] });
+        });
+      });
+    });
     return map;
-  }, [normalizedThreads]);
+  }, [artifact?.agent_results, normalizedThreads]);
+
+  const claimEvidenceByBlock = useMemo(() => {
+    const map = new Map<string, Array<{
+      anchorId: string;
+      claimText: string;
+      verdict: string;
+      evidenceSummary: string;
+      sourceLinks: string[];
+    }>>();
+    const anchorsById = new Map((artifact?.anchors ?? []).map((anchor) => [anchor.id, anchor]));
+    const factCheckResult = artifact?.agent_results.find((result) => result.agent_id === "fact_check");
+    factCheckResult?.findings.forEach((finding) => {
+      finding.anchor_ids.forEach((anchorId) => {
+        const anchor = anchorsById.get(anchorId);
+        const primarySegment = anchor ? anchorPrimarySegment(anchor) : null;
+        if (!primarySegment) {
+          return;
+        }
+        const items = map.get(primarySegment.block_id) ?? [];
+        const sourceLinks = Array.isArray(finding.metadata.source_links)
+          ? finding.metadata.source_links.map((item) => String(item))
+          : (finding.sources ?? []);
+        items.push({
+          anchorId,
+          claimText: String(finding.metadata.claim_text ?? finding.metadata.anchor_excerpt ?? finding.rationale),
+          verdict: String(finding.metadata.verdict ?? "UNVERIFIABLE"),
+          evidenceSummary: String(finding.metadata.evidence_summary ?? finding.rationale),
+          sourceLinks,
+        });
+        map.set(primarySegment.block_id, items);
+      });
+    });
+    return map;
+  }, [artifact?.agent_results, artifact?.anchors]);
 
   const progress = useMemo(() => {
     if (artifact === null) {
@@ -793,11 +843,13 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         />
 
         <section className={styles.workspace} ref={workspaceRef}>
+          <ReviewSummaryPanel reviewSummary={artifact?.review_summary ?? null} />
           <DocumentPane
             document={displayDocument}
             anchors={artifact?.anchors ?? []}
             threads={normalizedThreads}
             anchorThreadMap={anchorThreadMap}
+            claimEvidenceByBlock={claimEvidenceByBlock}
             selectionEnabled={artifact !== null}
             hoveredAnchorId={hoveredAnchorId}
             anchorRefs={anchorRefs}

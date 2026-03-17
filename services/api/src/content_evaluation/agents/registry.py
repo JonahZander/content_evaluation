@@ -24,6 +24,7 @@ class FindingPayload(BaseModel):
     confidence: float
     suggestion: str | None = None
     sources: list[str] = Field(default_factory=list)
+    metadata: dict[str, object] = Field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +41,7 @@ class AgentDefinition:
     instruction_file: str
     result_schema: type[BaseModel]
     default_enabled: bool = True
+    selectable: bool = True
     preferred_route: ProviderRoute | None = None
 
     def instruction_path(self) -> Path:
@@ -72,13 +74,15 @@ _AGENTS: tuple[AgentDefinition, ...] = (
     AgentDefinition(
         agent_id="similarity",
         display_name="Similarity Research",
-        description="Looks for similar public posts and framing overlap.",
+        description="Legacy overlap research agent kept only for backward compatibility.",
         category=AgentCategory.SIMILARITY,
         depends_on=(),
         provider_kind=ProviderKind.SEARCH,
         execution_mode=AgentExecutionMode.MULTI_STEP,
         instruction_file="similarity.md",
         result_schema=FindingPayload,
+        default_enabled=False,
+        selectable=False,
     ),
     AgentDefinition(
         agent_id="ai_likelihood",
@@ -96,7 +100,7 @@ _AGENTS: tuple[AgentDefinition, ...] = (
         display_name="Value Analysis",
         description="Finds the strongest value proposition in the text.",
         category=AgentCategory.VALUE,
-        depends_on=(),
+        depends_on=("fact_check",),
         provider_kind=ProviderKind.ANALYSIS,
         execution_mode=AgentExecutionMode.SINGLE_TURN,
         instruction_file="value.md",
@@ -118,7 +122,7 @@ _AGENTS: tuple[AgentDefinition, ...] = (
         display_name="Editorial Recommendations",
         description="Creates span-level editorial suggestions.",
         category=AgentCategory.EDITORIAL,
-        depends_on=(),
+        depends_on=("fact_check", "ai_likelihood"),
         provider_kind=ProviderKind.ANALYSIS,
         execution_mode=AgentExecutionMode.SINGLE_TURN,
         instruction_file="editorial.md",
@@ -134,14 +138,14 @@ _AGENTS: tuple[AgentDefinition, ...] = (
         execution_mode=AgentExecutionMode.MULTI_STEP,
         instruction_file="fact_check/research_brief.md",
         result_schema=FindingPayload,
-        default_enabled=False,
+        default_enabled=True,
     ),
     AgentDefinition(
         agent_id="synthesis",
         display_name="Synthesis and Scoring",
         description="Produces a final verdict after upstream agents finish.",
         category=AgentCategory.SYNTHESIS,
-        depends_on=("similarity", "ai_likelihood", "value", "audience", "editorial"),
+        depends_on=("fact_check", "ai_likelihood", "value", "editorial"),
         provider_kind=ProviderKind.ANALYSIS,
         execution_mode=AgentExecutionMode.SINGLE_TURN,
         instruction_file="synthesis.md",
@@ -159,7 +163,7 @@ def list_agent_definitions() -> list[AgentDefinition]:
 def agent_catalog() -> list[AgentCatalogEntry]:
     """Return API-safe catalog entries."""
 
-    return [agent.to_catalog_entry() for agent in _AGENTS]
+    return [agent.to_catalog_entry() for agent in _AGENTS if agent.selectable]
 
 
 def get_agent_definition(agent_id: str) -> AgentDefinition:

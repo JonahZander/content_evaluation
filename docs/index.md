@@ -53,9 +53,9 @@ Load only the section needed for the current task.
 - Inputs: URL, pasted text, `.txt`, `.md`, imported artifact JSON
 - Primary contract: `AnalysisArtifact` produced by the API and rendered by the UI
 - Runtime modes: `session` by default, optional `workspace` persistence
-- Review UI: paragraph-row text and comment layout, SVG connector lines, live agent progress, agent selection, artifact import/export
+- Review UI: paragraph-row text and comment layout, review summary panel, nearby claim-evidence chips, SVG connector lines, live agent progress, agent selection, artifact import/export
 - Review actions: reply to comments, create reviewer comments, accept/reject/uncertain agent comments
-- Agents: analysis agents (AI-likelihood, value, audience, editorial, synthesis), similarity search, fact-check (deep research, opt-in)
+- Agents: fact-check, AI-likelihood, value, audience, editorial, and synthesis; overlap research now hangs off fact-check instead of a standalone top-level similarity surface
 - Exports: Markdown and JSON derived directly from the artifact
 - Runtime visibility: `/health`, `/ready`, run events, SSE stream, optional debug trace
 - Browser E2E coverage: Playwright installed through the official setup flow in `apps/web`

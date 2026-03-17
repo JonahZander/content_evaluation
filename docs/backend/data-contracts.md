@@ -22,6 +22,7 @@ The top-level output produced by the backend and rendered by the UI.
 | `anchors` | `list[ArtifactAnchor]` | All text-range references produced by agents or humans. |
 | `threads` | `list[ArtifactThread]` | Anchor → comments grouping. |
 | `summary` | `ArtifactSummary \| None` | Aggregate scores. `None` until synthesis completes. |
+| `review_summary` | `ArtifactReviewSummary \| None` | Narrative review context for the panel above the text pane. Optional and backward-compatible. |
 | `events` | `list[ArtifactEvent]` | Chronological run log for the SSE stream and UI timeline. |
 | `debug` | `ArtifactDebug \| None` | Verbose trace data. Present only when `include_debug_trace` is true. |
 | `error_message` | `str \| None` | Human-readable error description for failed runs. |
@@ -121,10 +122,31 @@ One durable event appended to the artifact during a run. Narrates run lifecycle,
 | `artifact` | Artifact-level milestones (normalization done, document saved). |
 | `agent` | Per-agent start, completion, retry, and failure events. |
 
+## ArtifactReviewSummary
+
+Narrative review context shown above the source text pane.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `content_summary` | `str` | Short summary of the article's main value. |
+| `research_summary` | `str` | Fact-check-backed research summary. |
+| `inferred_audience` | `str` | Audience inference shown as summary text. |
+| `overlap_items` | `list[ArtifactOverlapItem]` | Linked overlapping articles with short notes. |
+
+### ArtifactOverlapItem
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `title` | `str` | Linked article title. |
+| `url` | `str` | URL for the overlapping article. |
+| `note` | `str` | Short explanation of why the article overlaps. |
+
 ## Export Schema Stability
 
 - `schema_version` is `"1.2"`. Code that reads exported JSON should handle missing optional fields gracefully.
+- `review_summary` is optional. Older exports may omit it entirely.
 - `anchors[*].segments` is the canonical multi-block shape. `block_id`, `start_offset`, and `end_offset` at the anchor level are kept for backward compatibility and always mirror `segments[0]`.
 - `ArtifactBlockOrigin.synthetic_unmatched` blocks are not original article text. Export consumers should exclude them or render them differently.
 - `agent_results[*].raw_output` contains the unvalidated provider response. Do not rely on its shape externally.
+- Fact-check evidence used by the UI lives on `agent_results[*].findings[*].metadata`, especially `claim_text`, `verdict`, `evidence_summary`, and `source_links`.
 - `debug` is always `null` unless `include_debug_trace: true` was set on the run.

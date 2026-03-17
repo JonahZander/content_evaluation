@@ -60,10 +60,10 @@ def test_build_fact_check_brief_limits_blocks():
 @pytest.mark.asyncio
 async def test_mock_provider_returns_valid_findings():
     result = await MockDeepResearchProvider().fact_check("brief", "Some article text.")
-    assert isinstance(result["findings"], list)
-    assert len(result["findings"]) >= 1
-    f = result["findings"][0]
-    for key in ("excerpt", "rationale", "confidence", "suggestion"):
+    assert isinstance(result["claim_findings"], list)
+    assert len(result["claim_findings"]) >= 1
+    f = result["claim_findings"][0]
+    for key in ("claim_text", "verdict", "evidence_summary", "anchor_excerpt", "confidence"):
         assert key in f
     assert 0.0 <= f["confidence"] <= 1.0
 
@@ -72,6 +72,8 @@ async def test_mock_provider_returns_valid_findings():
 async def test_mock_provider_returns_summary_and_sources():
     result = await MockDeepResearchProvider().fact_check("brief", "text")
     assert isinstance(result["summary"], str)
+    assert isinstance(result["research_summary"], str)
+    assert isinstance(result["overlap_items"], list)
     assert isinstance(result["metadata"]["sources"], list)
 
 
@@ -84,13 +86,24 @@ def test_fact_check_agent_is_registered():
     assert defn.provider_kind is ProviderKind.DEEP_RESEARCH
     assert defn.execution_mode is AgentExecutionMode.MULTI_STEP
     assert defn.depends_on == ()
-    assert defn.default_enabled is False
+    assert defn.default_enabled is True
 
 
 def test_fact_check_instruction_file_loads():
     defn = get_agent_definition("fact_check")
     text = load_instruction_text(defn)
     assert len(text) > 50
+
+
+def test_fact_check_dependency_graph_is_current() -> None:
+    assert get_agent_definition("value").depends_on == ("fact_check",)
+    assert get_agent_definition("editorial").depends_on == ("fact_check", "ai_likelihood")
+    assert get_agent_definition("synthesis").depends_on == (
+        "fact_check",
+        "ai_likelihood",
+        "value",
+        "editorial",
+    )
 
 
 @pytest.mark.asyncio

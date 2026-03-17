@@ -22,9 +22,19 @@ class DeepResearchProvider(Protocol):
         article_text: full article text for excerpt quoting
 
         Returns:
-            {"findings": [{"excerpt": str, "rationale": str,
-                           "confidence": float, "suggestion": str}],
-             "summary": str,
-             "metadata": {"sources": [str]}}
+            {
+              "claim_findings": [{
+                "claim_text": str,
+                "verdict": str,
+                "evidence_summary": str,
+                "source_links": [str],
+                "anchor_excerpt": str,
+                "confidence": float,
+              }],
+              "overlap_items": [{"title": str, "url": str, "overlap_note": str}],
+              "research_summary": str,
+              "summary": str,
+              "metadata": {"sources": [str]}
+            }
         """
         ...

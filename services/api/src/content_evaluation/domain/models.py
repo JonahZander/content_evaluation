@@ -361,6 +361,23 @@ class ArtifactSummary(BaseModel):
     ai_likelihood: float
 
 
+class ArtifactOverlapItem(BaseModel):
+    """Store one overlapping article surfaced for the review summary."""
+
+    title: str
+    url: str
+    note: str
+
+
+class ArtifactReviewSummary(BaseModel):
+    """Store the narrative summary content shown above the document."""
+
+    content_summary: str
+    research_summary: str
+    inferred_audience: str
+    overlap_items: list[ArtifactOverlapItem] = Field(default_factory=list)
+
+
 class ArtifactEvent(BaseModel):
     """Store one durable artifact event."""
 
@@ -427,6 +444,7 @@ class AnalysisArtifact(BaseModel):
     anchors: list[ArtifactAnchor] = Field(default_factory=list)
     threads: list[ArtifactThread] = Field(default_factory=list)
     summary: ArtifactSummary | None = None
+    review_summary: ArtifactReviewSummary | None = None
     events: list[ArtifactEvent] = Field(default_factory=list)
     debug: ArtifactDebug | None = None
     error_message: str | None = None

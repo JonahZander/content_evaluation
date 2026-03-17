@@ -42,6 +42,7 @@ interface DocumentPaneProps {
   anchors: ArtifactAnchor[];
   threads: ArtifactThread[];
   anchorThreadMap: Map<string, AnchorThread>;
+  claimEvidenceByBlock: Map<string, ClaimEvidence[]>;
   selectionEnabled?: boolean;
   hoveredAnchorId: string | null;
   anchorRefs: MutableRefObject<Record<string, HTMLSpanElement | null>>;
@@ -60,6 +61,14 @@ interface DocumentPaneProps {
   onSaveEdit: (commentId: string) => void;
   onCancelEdit: () => void;
   onDeleteComment: (commentId: string) => void;
+}
+
+interface ClaimEvidence {
+  anchorId: string;
+  claimText: string;
+  verdict: string;
+  evidenceSummary: string;
+  sourceLinks: string[];
 }
 
 const reviewActions: ReviewState[] = ["accepted", "rejected", "uncertain"];
@@ -485,6 +494,7 @@ export function DocumentPane({
   anchors,
   threads,
   anchorThreadMap,
+  claimEvidenceByBlock,
   selectionEnabled = true,
   hoveredAnchorId,
   anchorRefs,
@@ -663,7 +673,7 @@ export function DocumentPane({
       resizeObserver?.disconnect();
       window.removeEventListener("resize", handleResize);
     };
-  }, [anchorRefs, commentRefs, blockThreads, document]);
+  }, [anchorRefs, claimEvidenceByBlock, commentRefs, blockThreads, document]);
 
   return (
     <div className={styles.documentPane} ref={paneRef}>
@@ -725,6 +735,37 @@ export function DocumentPane({
               )}
             </div>
             <div className={styles.paragraphComments}>
+              {(claimEvidenceByBlock.get(block.id) ?? []).length ? (
+                <div className={styles.claimEvidencePanel} data-testid={`claim-evidence-${block.index}`}>
+                  {(claimEvidenceByBlock.get(block.id) ?? []).map((item) => (
+                    <article
+                      key={`${item.anchorId}-${item.sourceLinks[0] ?? item.claimText}`}
+                      className={styles.claimEvidenceCard}
+                    >
+                      <div className={styles.claimEvidenceHeader}>
+                        <span className={styles.claimEvidenceVerdict}>{item.verdict.replaceAll("_", " ")}</span>
+                        <span className={styles.claimEvidenceClaim}>{item.claimText}</span>
+                      </div>
+                      <p className={styles.claimEvidenceText}>{item.evidenceSummary}</p>
+                      {item.sourceLinks.length ? (
+                        <div className={styles.claimEvidenceLinks}>
+                          {item.sourceLinks.slice(0, 3).map((source) => (
+                            <a
+                              key={source}
+                              className={styles.claimEvidenceLink}
+                              href={source}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Evidence source
+                            </a>
+                          ))}
+                        </div>
+                      ) : null}
+                    </article>
+                  ))}
+                </div>
+              ) : null}
               {(blockThreads.get(block.id) ?? []).length ? (
                 (blockThreads.get(block.id) ?? []).map((thread) => (
                   <ThreadCards

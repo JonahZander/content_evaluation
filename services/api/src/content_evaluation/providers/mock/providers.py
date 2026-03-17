@@ -147,27 +147,45 @@ class MockDeepResearchProvider:
 
         del brief
         excerpt = article_text[:80].strip() or "Article opening claim."
+        claim_findings = [
+            {
+                "claim_text": excerpt,
+                "verdict": "SUPPORTED",
+                "evidence_summary": "Supported by consistent reporting across the linked sources.",
+                "source_links": ["https://example.com/mock-1"],
+                "anchor_excerpt": excerpt,
+                "confidence": 0.75,
+                "suggestion": "Add an inline citation to the primary supporting source.",
+            }
+        ]
+        overlap_items = [
+            {
+                "title": "Related framing on agentic evaluation",
+                "url": "https://example.com/agentic-evaluation",
+                "overlap_note": "Moderate overlap in framing, but the article still adds useful editorial workflow detail.",
+                "score": 0.58,
+            },
+            {
+                "title": "Editorial review systems for AI content",
+                "url": "https://example.com/editorial-review",
+                "overlap_note": "Low overlap. Similar topic area with a different angle and audience.",
+                "score": 0.24,
+            },
+        ]
         return {
+            "claim_findings": claim_findings,
             "findings": [
                 {
-                    "excerpt": excerpt,
-                    "rationale": (
-                        "SUPPORTED. Mock research found consistent evidence. "
-                        "Sources: https://example.com/mock-1"
-                    ),
-                    "confidence": 0.75,
-                    "suggestion": "Claim appears well-supported. Add citation: https://example.com/mock-1",
-                },
-                {
-                    "excerpt": excerpt[:40] or "Redundancy check.",
-                    "rationale": (
-                        "MIXED OVERLAP. Some similar posts exist but this article's "
-                        "framing adds distinct value."
-                    ),
-                    "confidence": 0.6,
-                    "suggestion": "Differentiate further by citing primary sources.",
-                },
+                    "excerpt": item["anchor_excerpt"],
+                    "rationale": item["evidence_summary"],
+                    "confidence": item["confidence"],
+                    "suggestion": item["suggestion"],
+                    "sources": item["source_links"],
+                }
+                for item in claim_findings
             ],
+            "overlap_items": overlap_items,
+            "research_summary": "Claims are broadly supported, and overlap research suggests the piece is differentiated enough to keep.",
             "summary": "Claims are broadly supported. Article has moderate originality.",
             "metadata": {
                 "sources": [

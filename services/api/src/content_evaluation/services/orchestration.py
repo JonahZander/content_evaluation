@@ -38,6 +38,8 @@ from content_evaluation.domain.models import (
     ArtifactDocument,
     ArtifactDebug,
     ArtifactEvent,
+    ArtifactOverlapItem,
+    ArtifactReviewSummary,
     ContentFormat,
     ExtractedContent,
     ArtifactSource,
@@ -99,6 +101,27 @@ class LangGraphState(TypedDict):
     completed_agents: Annotated[list[str], operator.add]
     node_results: Annotated[list[dict[str, object]], operator.add]
     error_messages: Annotated[list[str], operator.add]
+
+
+class FactCheckClaim(TypedDict):
+    """Normalized fact-check claim data used during assembly."""
+
+    claim_text: str
+    verdict: str
+    evidence_summary: str
+    source_links: list[str]
+    anchor_excerpt: str
+    confidence: float
+    suggestion: str | None
+
+
+class FactCheckOverlap(TypedDict):
+    """Normalized overlap item used during assembly."""
+
+    title: str
+    url: str
+    note: str
+    score: float | None
 
 
 class RunOrchestrator:
@@ -649,6 +672,7 @@ class RunOrchestrator:
         await self._ensure_run_active(state["artifact_id"])
         artifact = await self._require_artifact(state["artifact_id"])
         artifact.summary = _build_summary(artifact)
+        artifact.review_summary = _build_review_summary(artifact)
         await self._repository.update_artifact(artifact)
         updates: dict[str, object] = {
             "completed_nodes": ["finalize_summary"],
@@ -818,32 +842,50 @@ class RunOrchestrator:
             brief = _build_deep_research_brief(instruction, artifact.document)
             article_text = "\n\n".join(b.text for b in artifact.document.blocks if b.text)
             raw_output = await self._deep_research_provider.fact_check(brief, article_text)
-            raw_findings = raw_output.get("findings", [])
-            if not isinstance(raw_findings, list):
+            claim_findings = _normalize_fact_check_claims(raw_output)
+            if not claim_findings:
+                raw_findings = raw_output.get("findings", [])
+                if isinstance(raw_findings, list):
+                    claim_findings = _fallback_fact_check_claims(raw_findings)
+            if not claim_findings:
                 raise ValidationError(
                     f"Agent {definition.agent_id} returned an invalid findings payload"
                 )
-            findings = [FindingPayload.model_validate(item) for item in raw_findings]
             meta = raw_output.get("metadata")
             metadata = meta if isinstance(meta, dict) else {}
             dr_usage: dict[str, int] | None = None
             raw_usage = metadata.pop("usage", None)
             if isinstance(raw_usage, dict):
                 dr_usage = {k: int(v) for k, v in raw_usage.items() if isinstance(v, (int, float))}
-            report_sources: list[str] = []
-            if isinstance(meta, dict):
-                src = meta.get("sources")
-                report_sources = [str(s) for s in src] if isinstance(src, list) else []
-            findings = [FindingPayload.model_validate(item) for item in raw_findings]
-            for f in findings:
-                if not f.sources and report_sources:
-                    f.sources = report_sources
+            overlap_items = _normalize_fact_check_overlap_items(raw_output)
+            research_summary = _fact_check_research_summary(raw_output)
+            findings = [
+                FindingPayload(
+                    excerpt=item["anchor_excerpt"],
+                    rationale=item["evidence_summary"],
+                    confidence=item["confidence"],
+                    suggestion=item["suggestion"],
+                    sources=list(item["source_links"]),
+                    metadata={
+                        "claim_text": item["claim_text"],
+                        "verdict": item["verdict"],
+                        "evidence_summary": item["evidence_summary"],
+                        "source_links": list(item["source_links"]),
+                        "anchor_excerpt": item["anchor_excerpt"],
+                    },
+                )
+                for item in claim_findings
+            ]
             return AgentExecutionResult(
                 definition=definition,
                 raw_output=raw_output,
                 findings=findings,
-                summary=_coerce_str(raw_output.get("summary")),
-                metadata=metadata,
+                summary=research_summary,
+                metadata={
+                    **metadata,
+                    "research_summary": research_summary,
+                    "overlap_items": overlap_items,
+                },
                 model_name=self._deep_research_provider.model_name,
                 usage=dr_usage,
             )
@@ -940,11 +982,13 @@ class RunOrchestrator:
                     "excerpt": cleaned_excerpt,
                     "anchor_match_kind": anchor.match_kind.value,
                     "matched_to_source": anchor.match_kind == ArtifactAnchorMatchKind.SOURCE,
+                    **finding.metadata,
                     **result.metadata,
                 },
             )
             resolved_findings.append(resolved)
-            _append_agent_comment(artifact, resolved, artifact.artifact_id, result.definition.display_name)
+            if _should_create_thread_for_agent(result.definition):
+                _append_agent_comment(artifact, resolved, artifact.artifact_id, result.definition.display_name)
 
         artifact.agent_results = [
             item for item in artifact.agent_results if item.agent_id != result.definition.agent_id
@@ -1174,6 +1218,8 @@ def _expand_agent_ids(selected_agents: list[str]) -> list[str]:
             definition = get_agent_definition(agent_id)
         except KeyError as error:
             raise ValidationError(f"Unknown agent id: {agent_id}") from error
+        if agent_id in selected_agents and not definition.selectable:
+            raise ValidationError(f"Agent {agent_id} is no longer available for new runs")
         for dependency in definition.depends_on:
             visit(dependency)
         visiting.remove(agent_id)
@@ -1254,6 +1300,12 @@ def _append_agent_comment(
     thread.comments.append(comment)
 
 
+def _should_create_thread_for_agent(definition: AgentDefinition) -> bool:
+    """Return whether one agent should appear in the comment rail."""
+
+    return definition.category not in {AgentCategory.AUDIENCE, AgentCategory.FACT_CHECK}
+
+
 def _progress_for_artifact(artifact: AnalysisArtifact) -> float:
     """Compute rough progress for one artifact."""
 
@@ -1267,12 +1319,9 @@ def _progress_for_artifact(artifact: AnalysisArtifact) -> float:
 def _build_summary(artifact: AnalysisArtifact) -> ArtifactSummary:
     """Build the final artifact summary."""
 
-    similarity_result = next((item for item in artifact.agent_results if item.agent_id == "similarity"), None)
-    similarity_scores = []
-    if similarity_result is not None:
-        results = similarity_result.raw_output.get("results", [])
-        if isinstance(results, list):
-            similarity_scores = [_score_from_result(item) for item in results]
+    fact_check_result = next((item for item in artifact.agent_results if item.agent_id == "fact_check"), None)
+    overlap_items = _result_overlap_items(fact_check_result)
+    overlap_scores = _result_overlap_scores(fact_check_result, overlap_items)
 
     ai_result = next((item for item in artifact.agent_results if item.agent_id == "ai_likelihood"), None)
     ai_likelihood = 0.0
@@ -1283,7 +1332,7 @@ def _build_summary(artifact: AnalysisArtifact) -> ArtifactSummary:
     audience_result = next((item for item in artifact.agent_results if item.agent_id == "audience"), None)
     synthesis_result = next((item for item in artifact.agent_results if item.agent_id == "synthesis"), None)
 
-    novelty_score = max(0.0, 1.0 - max(similarity_scores or [0.0]))
+    novelty_score = max(0.0, 1.0 - max(overlap_scores or [0.0]))
     value_summary = _first_rationale(value_result)
     audience_summary = _first_rationale(audience_result)
     verdict = _first_rationale(synthesis_result) or "Analysis completed"
@@ -1303,6 +1352,182 @@ def _build_summary(artifact: AnalysisArtifact) -> ArtifactSummary:
         novelty_score=novelty_score,
         ai_likelihood=ai_likelihood,
     )
+
+
+def _build_review_summary(artifact: AnalysisArtifact) -> ArtifactReviewSummary | None:
+    """Build the narrative summary shown above the document."""
+
+    value_result = next((item for item in artifact.agent_results if item.agent_id == "value"), None)
+    audience_result = next((item for item in artifact.agent_results if item.agent_id == "audience"), None)
+    fact_check_result = next((item for item in artifact.agent_results if item.agent_id == "fact_check"), None)
+
+    content_summary = _first_rationale(value_result)
+    research_summary = ""
+    overlap_items = _result_overlap_items(fact_check_result)
+    if fact_check_result is not None:
+        research_summary = _coerce_str(fact_check_result.metadata.get("research_summary")) or (
+            fact_check_result.summary or ""
+        )
+    inferred_audience = (
+        audience_result.summary or _first_rationale(audience_result)
+        if audience_result is not None
+        else ""
+    )
+
+    if not any([content_summary, research_summary, inferred_audience, overlap_items]):
+        return None
+
+    return ArtifactReviewSummary(
+        content_summary=content_summary,
+        research_summary=research_summary,
+        inferred_audience=inferred_audience,
+        overlap_items=overlap_items,
+    )
+
+
+def _normalize_fact_check_claims(raw_output: dict[str, object]) -> list[FactCheckClaim]:
+    """Normalize fact-check claim payloads into one stable internal shape."""
+
+    claims = _coerce_dict_list(raw_output.get("claim_findings"))
+    normalized: list[FactCheckClaim] = []
+    for item in claims:
+        claim_text = _coerce_str(item.get("claim_text")) or _coerce_str(item.get("claim")) or ""
+        evidence_summary = _coerce_str(item.get("evidence_summary")) or _coerce_str(item.get("rationale")) or ""
+        anchor_excerpt = _coerce_str(item.get("anchor_excerpt")) or _coerce_str(item.get("excerpt")) or claim_text
+        verdict = (_coerce_str(item.get("verdict")) or "UNVERIFIABLE").upper()
+        source_links = _coerce_str_list(item.get("source_links") or item.get("sources"))
+        confidence = _coerce_float(item.get("confidence")) or 0.0
+        suggestion = _coerce_str(item.get("suggestion"))
+        if not anchor_excerpt:
+            continue
+        normalized.append(
+            {
+                "claim_text": claim_text or anchor_excerpt,
+                "verdict": verdict,
+                "evidence_summary": evidence_summary or claim_text or anchor_excerpt,
+                "source_links": source_links,
+                "anchor_excerpt": anchor_excerpt,
+                "confidence": confidence,
+                "suggestion": suggestion,
+            }
+        )
+    return normalized
+
+
+def _fallback_fact_check_claims(raw_findings: list[object]) -> list[FactCheckClaim]:
+    """Coerce legacy fact-check findings into structured claim entries."""
+
+    normalized: list[FactCheckClaim] = []
+    for item in raw_findings:
+        if not isinstance(item, dict):
+            continue
+        excerpt = _coerce_str(item.get("excerpt")) or ""
+        rationale = _coerce_str(item.get("rationale")) or ""
+        if not excerpt:
+            continue
+        normalized.append(
+            {
+                "claim_text": excerpt,
+                "verdict": _infer_fact_check_verdict(rationale),
+                "evidence_summary": rationale,
+                "source_links": _coerce_str_list(item.get("sources")),
+                "anchor_excerpt": excerpt,
+                "confidence": _coerce_float(item.get("confidence")) or 0.0,
+                "suggestion": _coerce_str(item.get("suggestion")),
+            }
+        )
+    return normalized
+
+
+def _normalize_fact_check_overlap_items(raw_output: dict[str, object]) -> list[FactCheckOverlap]:
+    """Normalize overlap research items from fact-check output."""
+
+    items = _coerce_dict_list(raw_output.get("overlap_items"))
+    normalized: list[FactCheckOverlap] = []
+    for item in items:
+        title = _coerce_str(item.get("title")) or ""
+        url = _coerce_str(item.get("url")) or ""
+        note = _coerce_str(item.get("overlap_note")) or _coerce_str(item.get("note")) or ""
+        score = _coerce_float(item.get("score"))
+        if title and url:
+            normalized.append(
+                {
+                    "title": title,
+                    "url": url,
+                    "note": note,
+                    "score": score,
+                }
+            )
+    return normalized
+
+
+def _fact_check_research_summary(raw_output: dict[str, object]) -> str | None:
+    """Return the normalized research summary from fact-check output."""
+
+    return _coerce_str(raw_output.get("research_summary")) or _coerce_str(raw_output.get("summary"))
+
+
+def _infer_fact_check_verdict(text: str) -> str:
+    """Infer one fact-check verdict from legacy prose."""
+
+    normalized = text.upper()
+    for verdict in ("SUPPORTED", "REFUTED", "MIXED", "UNVERIFIABLE"):
+        if verdict in normalized:
+            return verdict
+    return "UNVERIFIABLE"
+
+
+def _result_overlap_items(result: ArtifactAgentResult | None) -> list[ArtifactOverlapItem]:
+    """Extract typed overlap items from one stored agent result."""
+
+    if result is None:
+        return []
+    raw_items = result.metadata.get("overlap_items")
+    if not isinstance(raw_items, list):
+        return []
+    overlap_items: list[ArtifactOverlapItem] = []
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        title = _coerce_str(item.get("title")) or ""
+        url = _coerce_str(item.get("url")) or ""
+        note = _coerce_str(item.get("note")) or ""
+        if title and url:
+            overlap_items.append(ArtifactOverlapItem(title=title, url=url, note=note))
+    return overlap_items
+
+
+def _fact_check_overlap_score(item: ArtifactOverlapItem) -> float | None:
+    """Infer an overlap score from one overlap item note when explicit scores are unavailable."""
+
+    note = item.note.lower()
+    if "high overlap" in note:
+        return 0.8
+    if "moderate overlap" in note:
+        return 0.55
+    if "low overlap" in note:
+        return 0.25
+    return None
+
+
+def _result_overlap_scores(
+    result: ArtifactAgentResult | None,
+    overlap_items: list[ArtifactOverlapItem],
+) -> list[float]:
+    """Return overlap scores from structured metadata with note-based fallback."""
+
+    if result is None:
+        return []
+    raw_items = result.metadata.get("overlap_items")
+    if isinstance(raw_items, list):
+        direct_scores = [
+            score
+            for score in (_coerce_float(item.get("score")) for item in raw_items if isinstance(item, dict))
+            if score is not None
+        ]
+        if direct_scores:
+            return direct_scores
+    return [score for score in (_fact_check_overlap_score(item) for item in overlap_items) if score is not None]
 
 
 def _first_rationale(result: ArtifactAgentResult | None) -> str:
@@ -1335,6 +1560,19 @@ def _coerce_dict_list(value: object) -> list[dict[str, object]]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, dict)]
+
+
+def _coerce_float(value: object) -> float | None:
+    """Convert one optional value into a float."""
+
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
 
 
 def _coerce_int(value: object) -> int:
@@ -1485,7 +1723,17 @@ def _ensure_unmatched_heading_block(artifact: AnalysisArtifact) -> ArtifactBlock
 def _result_context_payload(artifact: AnalysisArtifact, result: ArtifactAgentResult) -> dict[str, object]:
     """Serialize one upstream result without leaking synthetic fallback text."""
 
-    payload = result.model_dump(mode="json")
+    payload: dict[str, object] = {
+        "agent_id": result.agent_id,
+        "category": result.category.value,
+        "status": result.status.value,
+        "summary": result.summary,
+        "metadata": {
+            key: value
+            for key, value in result.metadata.items()
+            if key in {"research_summary", "overlap_items", "usage", "instruction_file", "context_keys"}
+        },
+    }
     serialized_findings: list[dict[str, object]] = []
     for finding in result.findings:
         item = finding.model_dump(mode="json")

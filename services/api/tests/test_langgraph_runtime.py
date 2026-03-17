@@ -19,10 +19,11 @@ from content_evaluation.domain.models import (
 from content_evaluation.providers.mock.providers import (
     MockAnalysisProvider,
     MockContentExtractionProvider,
+    MockDeepResearchProvider,
     MockSimilaritySearchProvider,
 )
 from content_evaluation.repositories.in_memory import InMemoryRunRepository
-from content_evaluation.services.orchestration import RunOrchestrator
+from content_evaluation.services.orchestration import RunOrchestrator, _result_context_payload
 
 
 class CrossParagraphAnalysisProvider(MockAnalysisProvider):
@@ -114,8 +115,14 @@ class ContaminatedContextAnalysisProvider(MockAnalysisProvider):
             }
         if agent_id == "synthesis":
             assert context is not None
-            value_context = context["value"]
-            finding_context = value_context["findings"][0]
+            value_context = context.get("value") or next(iter(context.values()))
+            assert "raw_output" not in value_context
+            finding_context = next(
+                item
+                for item in value_context["findings"]
+                if item.get("metadata", {}).get("matched_to_source") is False
+                or "unmatched_excerpt" in item
+            )
             assert finding_context["metadata"]["matched_to_source"] is False
             assert "excerpt" not in finding_context["metadata"]
             assert finding_context["unmatched_excerpt"] == "Alpha paragraph.\n\nGamma paragraph."
@@ -162,6 +169,7 @@ async def test_langgraph_run_completes_and_clears_checkpoint() -> None:
         RuntimeMode.MOCK,
         False,
         OrchestratorBackend.LANGGRAPH,
+        deep_research_provider=MockDeepResearchProvider(),
     )
     artifact = await orchestrator.create_run(
         RunInput(
@@ -201,6 +209,7 @@ async def test_langgraph_resume_uses_existing_checkpoint() -> None:
         RuntimeMode.MOCK,
         False,
         OrchestratorBackend.LANGGRAPH,
+        deep_research_provider=MockDeepResearchProvider(),
     )
     input_data = RunInput(
         source_type=SourceType.TEXT,
@@ -247,6 +256,7 @@ async def test_retriable_agent_timeout_retries_without_run_resume() -> None:
         RuntimeMode.MOCK,
         False,
         OrchestratorBackend.LANGGRAPH,
+        deep_research_provider=MockDeepResearchProvider(),
     )
     input_data = RunInput(
         source_type=SourceType.TEXT,
@@ -279,6 +289,7 @@ async def test_adjacent_cross_paragraph_excerpts_anchor_to_source_blocks() -> No
         RuntimeMode.MOCK,
         False,
         OrchestratorBackend.LANGGRAPH,
+        deep_research_provider=MockDeepResearchProvider(),
     )
     input_data = RunInput(
         source_type=SourceType.TEXT,
@@ -315,6 +326,7 @@ async def test_distant_cross_paragraph_excerpts_stay_unmatched() -> None:
         RuntimeMode.MOCK,
         False,
         OrchestratorBackend.LANGGRAPH,
+        deep_research_provider=MockDeepResearchProvider(),
     )
     input_data = RunInput(
         source_type=SourceType.TEXT,
@@ -338,7 +350,7 @@ async def test_distant_cross_paragraph_excerpts_stay_unmatched() -> None:
 
 @pytest.mark.asyncio
 async def test_downstream_context_excludes_synthetic_unmatched_excerpt_metadata() -> None:
-    """Keep unmatched fallback prose out of dependency metadata for later agents."""
+    """Keep unmatched fallback prose out of dependency payloads for later agents."""
 
     repository = InMemoryRunRepository()
     orchestrator = RunOrchestrator(
@@ -349,13 +361,14 @@ async def test_downstream_context_excludes_synthetic_unmatched_excerpt_metadata(
         RuntimeMode.MOCK,
         False,
         OrchestratorBackend.LANGGRAPH,
+        deep_research_provider=MockDeepResearchProvider(),
     )
     input_data = RunInput(
         source_type=SourceType.TEXT,
         source_label="Draft",
         title="Draft",
         text="Alpha paragraph.\n\nBeta paragraph.\n\nGamma paragraph.",
-        selected_agents=["value", "synthesis"],
+        selected_agents=["value"],
     )
     artifact = await orchestrator.create_run(input_data)
 
@@ -363,7 +376,13 @@ async def test_downstream_context_excludes_synthetic_unmatched_excerpt_metadata(
 
     updated = await repository.get_artifact(artifact.artifact_id)
     assert updated is not None
-    assert updated.status.value == "completed"
+    value_result = next(result for result in updated.agent_results if result.agent_id == "value")
+    payload = _result_context_payload(updated, value_result)
+    assert "raw_output" not in payload
+    finding_context = payload["findings"][0]
+    assert finding_context["metadata"]["matched_to_source"] is False
+    assert "excerpt" not in finding_context["metadata"]
+    assert finding_context["unmatched_excerpt"] == "Alpha paragraph.\n\nGamma paragraph."
 
 
 @pytest.mark.asyncio
@@ -378,6 +397,7 @@ async def test_agent_result_metadata_includes_usage() -> None:
         RuntimeMode.MOCK,
         False,
         OrchestratorBackend.LANGGRAPH,
+        deep_research_provider=MockDeepResearchProvider(),
     )
     artifact = await orchestrator.create_run(
         RunInput(
@@ -409,3 +429,45 @@ async def test_agent_result_metadata_includes_usage() -> None:
         assert usage["input_tokens"] == 10
         assert usage["output_tokens"] == 5
         assert usage["total_tokens"] == 15
+
+
+@pytest.mark.asyncio
+async def test_completed_run_builds_review_summary_and_keeps_fact_check_out_of_threads() -> None:
+    """Fact-check data should feed the summary surface without cluttering the thread rail."""
+
+    repository = InMemoryRunRepository()
+    orchestrator = RunOrchestrator(
+        repository,
+        MockAnalysisProvider(),
+        MockSimilaritySearchProvider(),
+        MockContentExtractionProvider(),
+        RuntimeMode.MOCK,
+        False,
+        OrchestratorBackend.LANGGRAPH,
+        deep_research_provider=MockDeepResearchProvider(),
+    )
+    input_data = RunInput(
+        source_type=SourceType.TEXT,
+        source_label="Draft",
+        title="Draft",
+        text="Alpha paragraph.\n\nBeta paragraph.",
+    )
+    artifact = await orchestrator.create_run(input_data)
+
+    await orchestrator.process_run(artifact.artifact_id, input_data)
+
+    updated = await repository.get_artifact(artifact.artifact_id)
+    assert updated is not None
+    assert updated.review_summary is not None
+    assert updated.review_summary.research_summary
+    assert updated.review_summary.overlap_items
+    assert not any(
+        comment.category.value == "fact_check"
+        for thread in updated.threads
+        for comment in thread.comments
+    )
+    assert not any(
+        comment.category.value == "audience"
+        for thread in updated.threads
+        for comment in thread.comments
+    )

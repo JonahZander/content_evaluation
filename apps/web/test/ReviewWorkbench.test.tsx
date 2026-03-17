@@ -10,13 +10,13 @@ vi.mock("@/lib/api", () => ({
   API_BASE_URL: "http://localhost:8000",
   fetchAgents: vi.fn().mockResolvedValue([
     {
-      agent_id: "similarity",
-      display_name: "Similarity Research",
-      category: "similarity",
+      agent_id: "fact_check",
+      display_name: "Fact Check",
+      category: "fact_check",
       depends_on: [],
       execution_mode: "multi_step",
-      provider_kind: "search",
-      description: "Looks for similar public posts and framing overlap.",
+      provider_kind: "deep_research",
+      description: "Verifies claims and overlap research.",
       default_enabled: true,
     },
   ]),
@@ -166,7 +166,7 @@ describe("ReviewWorkbench", () => {
           url: "",
           persistenceMode: "workspace",
           includeDebugTrace: true,
-          selectedAgents: ["similarity"],
+          selectedAgents: ["fact_check"],
         },
         hasDownloadedJson: false,
       }),
@@ -200,7 +200,7 @@ describe("ReviewWorkbench", () => {
           url: "",
           persistenceMode: "session",
           includeDebugTrace: true,
-          selectedAgents: ["similarity"],
+          selectedAgents: ["fact_check"],
         },
         hasDownloadedJson: false,
       }),
@@ -262,6 +262,22 @@ describe("ReviewWorkbench", () => {
     expect(
       progressHeading.compareDocumentPosition(runLogHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it("renders the review summary panel above the text pane", () => {
+    render(<ReviewWorkbench initialArtifact={mockArtifact} />);
+
+    expect(screen.getByTestId("review-summary-panel")).toBeInTheDocument();
+    expect(screen.getByText("Research summary")).toBeInTheDocument();
+    expect(screen.getByText("Editorial review systems for AI content")).toBeInTheDocument();
+  });
+
+  it("renders claim evidence near the related paragraph", () => {
+    render(<ReviewWorkbench initialArtifact={mockArtifact} />);
+
+    expect(screen.getByTestId("claim-evidence-0")).toBeInTheDocument();
+    expect(screen.getByText("SUPPORTED")).toBeInTheDocument();
+    expect(screen.getByText("Evidence source")).toBeInTheDocument();
   });
 
   it("adds active progress styling while a run is live", () => {

@@ -19,6 +19,8 @@ Provide a high-legibility review surface where users can inspect source text, wa
   - Supports lightweight markdown presentation for headings, inline emphasis, and fenced code blocks
 - Comment area
   - Each paragraph row owns its own right-side comment stack so later text does not continue until that paragraph's comments end
+- Token usage panel (`AgentUsageSummary`)
+  - Per-agent table of input tokens, output tokens, and estimated USD cost; only rendered when usage data is present
 - Optional debug panel
   - Downloadable trace details when debug output is enabled
 

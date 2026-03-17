@@ -12,6 +12,8 @@ Make every analysis run easy to inspect by humans and future agents.
 - Show run status and failures
 - Show evidence links from findings to spans
 - Show score inputs and final synthesized outcome
+- Show per-agent token usage (input and output tokens)
+- Show estimated cost per agent and run total
 
 ## Logging Guidelines
 
@@ -32,10 +34,25 @@ Make every analysis run easy to inspect by humans and future agents.
   - Persisted per run and exposed both in the API payload and via SSE
 - Review UI event panel
   - Human-readable event stream with stage, agent, model, and retry/resume attempt details
+- Review UI token usage panel (`AgentUsageSummary`)
+  - Per-agent table of input tokens, output tokens, and estimated USD cost
+  - Totals row across all agents that reported usage
+  - Model names truncated to 28 characters with full name on hover
+  - Cost estimation uses a hardcoded pricing table in `apps/web/src/lib/pricing.ts` covering OpenAI, Anthropic, and Google models; unknown models show `—`
 - Structured request logging middleware
   - Request method, path, duration, and request id
+
+## Token Usage and Cost
+
+- `AgentExecutionResult` carries a `usage` field (`{ input_tokens, output_tokens }`) populated by each provider after its LLM call completes.
+- The LangChain provider reads token counts from the `AIMessage` response metadata.
+- The deep research and mock providers populate usage directly.
+- Orchestration threads `usage` into `ArtifactAgentResult.metadata` so the frontend can read it without touching raw backend state.
+- The `AgentUsageSummary` component reads `metadata.usage` from each agent result and renders the per-agent table.
+- Cost estimation is best-effort: if the model name does not match the pricing table the cost cell shows `—` rather than a wrong number.
 
 ## UI Expectations
 
 - A reviewer should be able to inspect a result without opening raw logs.
 - The product should still expose enough detail for debugging suspicious outputs.
+- The token usage panel should only appear when at least one agent result includes usage data.

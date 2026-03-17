@@ -35,10 +35,12 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
    - Run dependent agents after prerequisites complete
    - Retry transient provider timeouts and network failures inside the individual agent execution loop before failing the run
    - Emit progress events and partial artifact updates as each agent completes
+   - Capture token usage (`input_tokens`, `output_tokens`) in `AgentExecutionResult.usage` after each LLM call; populated by the LangChain, deep research, and mock providers
    - Use LangChain chat-model adapters for analysis nodes
    - Require finding-producing agents to quote source text word-for-word, use ellipses only for real omissions, and split evidence that would span more than 3 paragraphs into multiple findings
 7. Artifact assembly
-   - Convert agent outputs into anchors, comments, results, summary data, and debug traces
+   - Convert agent outputs into anchors, comments, results, summary data, debug traces, and usage metadata
+   - Thread `AgentExecutionResult.usage` into `ArtifactAgentResult.metadata` so token counts are available to the frontend without re-querying backend state
    - Resolve anchors against normalized block text, including whitespace-normalized and ellipsis-truncated excerpts when possible
    - Treat ellipsis excerpts as ordered fragments across one source block or a bounded window of adjacent source blocks instead of collapsing them into one normalized string
    - Represent resolved anchors as ordered block-local segments so one finding can span multiple adjacent paragraphs

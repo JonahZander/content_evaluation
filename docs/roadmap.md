@@ -10,14 +10,8 @@ excluded here — that warrants its own planning document when the time comes.
 
 ## Observability & Cost Visibility
 
-- **Token usage and cost display** *(plan written, not started — `docs/plans/active/2026-03-16-token-usage-cost-display.md`)*
-  - Capture per-agent token counts via `UsageMetadataCallbackHandler` in both LangChain and deep-research providers
-  - Thread usage through `AgentExecutionResult` → `ArtifactAgentResult.metadata`
-  - Render per-agent token counts and estimated USD cost in the review workbench below `RunMetrics`
-  - Hardcoded pricing table for OpenAI, Anthropic, Google models
-- **RunMetrics "not yet computed" state**
-  - Currently shows "0%" when no score data is available — misleading
-  - Should show a neutral empty or pending state instead
+- ~~**Token usage and cost display**~~ ✅ *done — `docs/plans/completed/2026-03-16-token-usage-cost-display.md`*
+- ~~**RunMetrics "not yet computed" state**~~ ✅ *done — shows "—" when score is absent*
 
 ---
 
@@ -48,8 +42,7 @@ excluded here — that warrants its own planning document when the time comes.
   - SVG connector lines go stale when anchor/comment refs mount or unmount
 - **Debounce resize handler** *(M21)*
   - Connector path recalculation fires on every pixel of resize
-- **AbortController for stale responses** *(M24)*
-  - Stale SSE or fetch responses can overwrite current UI state when a new run starts
+- ~~**AbortController for stale responses** *(M24)*~~ ✅ *done*
 - **sessionStorage size cap** *(M20)*
   - Full artifact is serialized to sessionStorage on every state change — can hit ~5MB quota on large documents
   - Replace with run-ID-only storage and on-demand fetch
@@ -89,9 +82,7 @@ excluded here — that warrants its own planning document when the time comes.
 - **Authentication layer**
   - No auth, rate limiting, or CSRF protection — intentional for local-first use
   - Required before any shared or multi-user deployment
-- **API URL deduplication** *(M17)*
-  - `API_BASE_URL` is duplicated in `ReviewWorkbench.tsx` and `api.ts`
-  - Divergence would silently break SSE
+- ~~**API URL deduplication** *(M17)*~~ ✅ *done — `API_BASE_URL` exported from `api.ts` and imported everywhere*
 - **Non-root Docker containers** *(L27)*
   - Both Dockerfiles run as root
 - **Reproducible API Docker builds** *(L26)*

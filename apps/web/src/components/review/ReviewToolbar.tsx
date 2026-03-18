@@ -28,6 +28,7 @@ interface ReviewToolbarProps {
   analyzeButtonLabel: string;
   disabledAgentIds: string[];
   importInputKey: number;
+  showUrlImportGuidance: boolean;
   onFormChange: (updater: (current: ReviewFormState) => ReviewFormState) => void;
   onFileChange: (file: File | null) => void;
   onImportFileChange: (file: File | null) => void;
@@ -54,6 +55,7 @@ export function ReviewToolbar({
   analyzeButtonLabel,
   disabledAgentIds,
   importInputKey,
+  showUrlImportGuidance,
   onFormChange,
   onFileChange,
   onImportFileChange,
@@ -146,19 +148,26 @@ export function ReviewToolbar({
       <div className={styles.sourceComposer}>
         {formState.sourceType === "url" ? (
           <>
-            <input
-              className={styles.toolbarInput}
-              data-testid="draft-url-input"
-              value={formState.url}
-              onChange={(event) =>
-                onFormChange((current) => ({
-                  ...current,
-                  url: event.target.value,
-                  sourceLabel: event.target.value,
-                }))
-              }
-              placeholder="https://example.com/post"
-            />
+            <div className={styles.urlInputStack}>
+              <input
+                className={styles.toolbarInput}
+                data-testid="draft-url-input"
+                value={formState.url}
+                onChange={(event) =>
+                  onFormChange((current) => ({
+                    ...current,
+                    url: event.target.value,
+                    sourceLabel: event.target.value,
+                  }))
+                }
+                placeholder="https://example.com/post"
+              />
+              {showUrlImportGuidance ? (
+                <p className={styles.importGuidance} data-testid="url-import-guidance">
+                  Import is not perfect. There might be sections from the site that don&apos;t belong to the post, that can be removed.
+                </p>
+              ) : null}
+            </div>
             <button
               className={styles.ghostButton}
               data-testid="import-url-button"

@@ -119,6 +119,11 @@
   align-items: start;
 }
 
+.urlInputStack {
+  display: grid;
+  gap: 8px;
+}
+
 .sourceComposer > :only-child {
   grid-column: 1 / -1;
 }
@@ -170,6 +175,14 @@
   font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
   font-size: 12px;
   color: var(--muted);
+}
+
+.importGuidance {
+  margin: 0;
+  padding-left: 2px;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.45;
 }
 
 .button,
@@ -585,82 +598,32 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  min-height: 44px;
 }
 
-.previewActionHint {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 8px;
-  border-radius: 999px;
-  background: rgba(255, 248, 240, 0.88);
-  border: 1px solid rgba(56, 43, 28, 0.1);
-  color: var(--muted);
-  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.previewBlockMuted {
+  opacity: 0.38;
+  filter: saturate(0.8);
+  background: rgba(74, 58, 36, 0.08);
 }
 
-.previewBlockHidden {
-  padding: 16px 18px;
-  border-radius: 20px;
-  border: 1px dashed rgba(143, 93, 43, 0.28);
-  background:
-    linear-gradient(180deg, rgba(247, 242, 235, 0.9), rgba(244, 237, 228, 0.78)),
-    repeating-linear-gradient(
-      -45deg,
-      rgba(143, 93, 43, 0.045),
-      rgba(143, 93, 43, 0.045) 8px,
-      transparent 8px,
-      transparent 16px
-    );
+.previewBlockMuted :is(.headingLevel1, .headingLevel2, .headingLevel3, .codeBlock, .paragraph) {
+  opacity: 1;
 }
 
-.previewBlockHiddenLabel {
-  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--muted);
+.previewBlockMuted .anchorText {
+  opacity: 1;
 }
 
-.previewBlockHiddenText {
-  margin-top: 8px;
-  color: rgba(23, 19, 16, 0.74);
-  line-height: 1.6;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
-  overflow: hidden;
+.previewRestoreButton {
+  background: rgba(231, 241, 236, 0.92);
+  border-color: rgba(29, 143, 111, 0.22);
+  color: #175f4b;
 }
 
-.previewRestoreCard {
-  display: grid;
-  gap: 10px;
-  padding: 14px 16px;
-  border-radius: 18px;
-  background: rgba(255, 251, 245, 0.92);
-  border: 1px solid rgba(56, 43, 28, 0.12);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.48);
-}
-
-.previewRestoreEyebrow {
-  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
-  font-size: 10px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.previewRestoreTitle {
-  font-weight: 600;
-  line-height: 1.35;
-}
-
-.previewRestoreText {
-  color: var(--muted);
-  line-height: 1.5;
+.previewRestoreButton:hover {
+  background: rgba(220, 236, 230, 0.96);
+  color: #114c3b;
 }
 
 .claimEvidencePanel {
@@ -759,6 +722,14 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.commentActionRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .card {
@@ -907,6 +878,22 @@
   margin-top: 10px;
   display: grid;
   gap: 8px;
+}
+
+.commentActionButton {
+  border: 1px solid rgba(29, 143, 111, 0.22);
+  border-radius: 999px;
+  padding: 10px 14px;
+  background: rgba(224, 244, 239, 0.84);
+  color: #156650;
+  cursor: pointer;
+  transition: transform 140ms ease, background-color 140ms ease, border-color 140ms ease;
+}
+
+.commentActionButton:hover {
+  transform: translateY(-1px);
+  background: rgba(212, 238, 231, 0.94);
+  border-color: rgba(29, 143, 111, 0.28);
 }
 
 .inlineReplyComposer {

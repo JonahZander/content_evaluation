@@ -429,6 +429,11 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     [completedAgentIds, formState.selectedAgents],
   );
   const canPreviewUrl = formState.sourceType === "url" && formState.url.trim().length > 0;
+  const showUrlImportGuidance =
+    formState.sourceType === "url"
+    && previewDocument !== null
+    && artifact === null
+    && hiddenPreviewBlockIds.length === 0;
   const canAnalyze =
     !isSubmitting &&
     ((isTerminalArtifact && !canStopRun && appendableSelectedAgents.length > 0) ||
@@ -820,6 +825,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
           analyzeButtonLabel={analyzeButtonLabel}
           disabledAgentIds={[...completedAgentIds]}
           importInputKey={importInputKey}
+          showUrlImportGuidance={showUrlImportGuidance}
           onFormChange={(updater) =>
             dispatch({
               type: "UPDATE_FORM_STATE",

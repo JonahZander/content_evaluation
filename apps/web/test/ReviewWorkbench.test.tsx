@@ -10,16 +10,6 @@ vi.mock("@/lib/api", () => ({
   API_BASE_URL: "http://localhost:8000",
   fetchAgents: vi.fn().mockResolvedValue([
     {
-      agent_id: "ai_likelihood",
-      display_name: "AI Likelihood",
-      category: "ai_likelihood",
-      depends_on: [],
-      execution_mode: "single_turn",
-      provider_kind: "analysis",
-      description: "Estimates whether writing appears AI-generated.",
-      default_enabled: true,
-    },
-    {
       agent_id: "fact_check",
       display_name: "Fact Check",
       category: "fact_check",
@@ -29,21 +19,11 @@ vi.mock("@/lib/api", () => ({
       description: "Verifies claims and overlap research.",
       default_enabled: true,
     },
-    {
-      agent_id: "value",
-      display_name: "Value Analysis",
-      category: "value",
-      depends_on: ["fact_check"],
-      execution_mode: "single_turn",
-      provider_kind: "analysis",
-      description: "Finds the strongest value proposition in the text.",
-      default_enabled: true,
-    },
   ]),
   createRun: vi.fn(),
-  appendAgents: vi.fn(),
   previewSource: vi.fn(),
   fetchArtifact: vi.fn(),
+  appendAgents: vi.fn(),
   cancelRun: vi.fn(),
   importArtifact: vi.fn(),
   createComment: vi.fn().mockResolvedValue(undefined),
@@ -80,8 +60,8 @@ beforeEach(() => {
   window.sessionStorage.clear();
   vi.spyOn(window, "confirm").mockReturnValue(true);
   vi.mocked(api.fetchArtifact).mockResolvedValue(mockArtifact);
-  vi.mocked(api.appendAgents).mockResolvedValue({ ...mockArtifact, status: "queued" });
   vi.mocked(api.previewSource).mockResolvedValue(mockArtifact.document!);
+  vi.mocked(api.appendAgents).mockResolvedValue(mockArtifact);
   vi.mocked(api.cancelRun).mockResolvedValue({ ...mockArtifact, status: "canceled" });
 });
 
@@ -109,13 +89,13 @@ describe("ReviewWorkbench", () => {
     expect(screen.queryByPlaceholderText("Add a comment on this note")).not.toBeInTheDocument();
   });
 
-  it("disables completed agents and keeps the action in append mode for terminal artifacts", () => {
+  it("keeps add comment inline with the agent review actions", () => {
     render(<ReviewWorkbench initialArtifact={mockArtifact} />);
 
-    expect(screen.getByRole("button", { name: "Add selected analysis" })).toBeInTheDocument();
-    expect(screen.getByTestId("agent-toggle-fact_check")).toBeDisabled();
-    expect(screen.getByTestId("agent-toggle-value")).toBeDisabled();
-    expect(screen.getByTestId("agent-toggle-ai_likelihood")).not.toBeDisabled();
+    const acceptButton = screen.getAllByRole("button", { name: "Accept" })[0];
+    const addCommentButton = screen.getAllByRole("button", { name: "Add comment" })[0];
+
+    expect(acceptButton.parentElement).toBe(addCommentButton.parentElement);
   });
 
   it("renders markdown headings, inline emphasis, and code blocks", () => {
@@ -171,7 +151,7 @@ describe("ReviewWorkbench", () => {
     expect(screen.getAllByRole("button", { name: "Remove section" }).length).toBeGreaterThan(0);
   });
 
-  it("hides and restores imported preview blocks", async () => {
+  it("shows URL import guidance until a preview block is removed", async () => {
     vi.mocked(api.previewSource).mockResolvedValue(buildUrlPreviewDocument());
     render(<ReviewWorkbench initialArtifact={null} />);
 
@@ -181,15 +161,36 @@ describe("ReviewWorkbench", () => {
     });
     fireEvent.click(screen.getByTestId("import-url-button"));
 
-    expect(await screen.findByText("Imported URL Preview")).toBeInTheDocument();
+    expect(await screen.findByTestId("url-import-guidance")).toBeInTheDocument();
+
     fireEvent.click(screen.getByTestId("hide-preview-block-url-block-3"));
 
-    expect(screen.getByText("Hidden from analysis")).toBeInTheDocument();
-    expect(screen.getByTestId("restore-preview-block-url-block-2")).toBeInTheDocument();
+    expect(screen.queryByTestId("url-import-guidance")).not.toBeInTheDocument();
+  });
 
-    fireEvent.click(screen.getByTestId("restore-preview-block-url-block-2"));
+  it("toggles imported preview blocks in place", async () => {
+    vi.mocked(api.previewSource).mockResolvedValue(buildUrlPreviewDocument());
+    render(<ReviewWorkbench initialArtifact={null} />);
+
+    fireEvent.change(screen.getByTestId("source-type-select"), { target: { value: "url" } });
+    fireEvent.change(screen.getByTestId("draft-url-input"), {
+      target: { value: "https://example.com/post" },
+    });
+    fireEvent.click(screen.getByTestId("import-url-button"));
+
+    await waitFor(() => expect(screen.getByTestId("document-title")).toHaveTextContent("Imported URL Preview"));
+    fireEvent.click(screen.getByTestId("hide-preview-block-url-block-3"));
 
     expect(screen.queryByText("Hidden from analysis")).not.toBeInTheDocument();
+    expect(screen.queryByText("Section removed from the preview draft")).not.toBeInTheDocument();
+    expect(screen.getByTestId("restore-preview-block-url-block-3")).toBeInTheDocument();
+    expect(screen.getByTestId("document-block-2").querySelector('[data-preview-hidden="true"]')).not.toBeNull();
+    expect(screen.getByText("This section is boilerplate and can be removed.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("restore-preview-block-url-block-3"));
+
+    expect(screen.getByTestId("hide-preview-block-url-block-3")).toBeInTheDocument();
+    expect(screen.getByTestId("document-block-2").querySelector('[data-preview-hidden="true"]')).toBeNull();
   });
 
   it("restores all hidden preview blocks at once", async () => {
@@ -201,7 +202,7 @@ describe("ReviewWorkbench", () => {
       target: { value: "https://example.com/post" },
     });
     fireEvent.click(screen.getByTestId("import-url-button"));
-    await screen.findByText("Imported URL Preview");
+    await waitFor(() => expect(screen.getByTestId("document-title")).toHaveTextContent("Imported URL Preview"));
 
     fireEvent.click(screen.getByTestId("hide-preview-block-url-block-1"));
     fireEvent.click(screen.getByTestId("hide-preview-block-url-block-2"));
@@ -221,7 +222,7 @@ describe("ReviewWorkbench", () => {
       target: { value: "https://example.com/post" },
     });
     fireEvent.click(screen.getByTestId("import-url-button"));
-    await screen.findByText("Imported URL Preview");
+    await waitFor(() => expect(screen.getByTestId("document-title")).toHaveTextContent("Imported URL Preview"));
 
     fireEvent.click(screen.getByTestId("hide-preview-block-url-block-2"));
     fireEvent.click(screen.getByTestId("analyze-button"));
@@ -233,12 +234,18 @@ describe("ReviewWorkbench", () => {
         url: "https://example.com/post",
         text: [
           "## Imported URL Preview",
-          "A concise introduction.",
+          "This section is boilerplate and can be removed.",
           "See [source reference](https://example.com/reference) for the cited material.",
         ].join("\n\n"),
       }),
       expect.any(AbortSignal),
     );
+  });
+
+  it("does not show URL import guidance once an artifact exists", () => {
+    render(<ReviewWorkbench initialArtifact={mockArtifact} />);
+
+    expect(screen.queryByTestId("url-import-guidance")).not.toBeInTheDocument();
   });
 
   it("shows new analysis only when an artifact exists", () => {

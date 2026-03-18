@@ -45,13 +45,14 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Selecting a text span opens a reviewer comment composer for a new standalone human comment.
 - URL sources should be imported and previewed before analysis starts so the reviewer can inspect the normalized draft first.
 - Imported URL previews should support reversible per-block removal before analysis so boilerplate or irrelevant sections can be excluded without editing the raw draft.
+- Imported URL previews should keep removed blocks in place with muted styling and a remove/restore toggle so the layout does not shift while the reviewer prunes the draft.
 - Workspace persistence should be the preselected mode for new analyses so reloads can recover the canonical artifact from the backend.
 - Session persistence should remain available as a lightweight local option, but the browser should only store restore metadata rather than a full artifact snapshot.
-- Terminal artifacts should support additive follow-up analysis from the same toolbar instead of forcing a brand-new run.
 - Comments identify the agent or reviewer that produced them.
 - Agent comments are replyable by the human reviewer.
 - Agent comments expose immediate `Accept`, `Reject`, and `Uncertain` actions, and clicking the active state again should clear it back to `unreviewed`.
-- Agent comments should expose an `Add comment` action that reveals the reply field only on demand.
+- Agent comments should expose an `Add comment` action in the same compact action row as `Accept`, `Reject`, and `Uncertain`, revealing the reply field only on demand.
+- Completed, failed, or canceled artifacts should support additive follow-up analysis on the same artifact instead of forcing a new run.
 - Human standalone comments can be edited or deleted inline.
 - Human replies should expose a compact trash delete affordance in the thread UI.
 - Partial findings should appear as each agent finishes instead of waiting for the full run.
@@ -66,8 +67,6 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Export and import actions should be visible from the main toolbar.
 - The toolbar should expose JSON, Markdown, and compact Markdown todo exports from the main action row.
 - The toolbar should expose a stop-run action for queued/running work and a new-analysis reset action.
-- When a terminal artifact is loaded, the main action should switch to `Add selected analysis`.
-- Agents that already completed on the loaded artifact should remain checked, disabled, and additive-only in the toolbar.
 - The toolbar should keep the pasted-text composer in its own full-width source row beneath source selection controls.
 - Invalid review actions should be disabled when no real artifact is loaded.
 - Similarity research is no longer a selectable top-level agent in new runs; overlap research is surfaced through fact-check.
@@ -85,10 +84,8 @@ Provide a high-legibility review surface where users can inspect source text, wa
   - inline links
   - fenced code blocks
 - URL mode should not display the pasted-text textarea because analysis runs from the imported URL preview content.
-- URL preview pruning is preview-only: hidden blocks are excluded from the pending run, can be restored before analysis, and do not mutate persisted artifact state before a run starts.
+- URL preview pruning is preview-only: excluded blocks stay visible in place with subdued styling, are omitted from the pending run, can be restored before analysis, and do not mutate persisted artifact state before a run starts.
 - Unsupported markdown should stay readable as text rather than render rich embeds or media.
-- Follow-up analysis should only be available after a run reaches `completed`, `failed`, or `canceled`.
-- Follow-up analysis should queue only missing selected agents plus missing dependencies and should not discard the current artifact.
 - Agent comments are immutable in content; reviewer input happens through replies and review-state actions.
 - Audience analysis is summary-first in the current UI and should not create new inline annotation-heavy threads for newly generated artifacts.
 - Reviewer comments use the `human` category and are attached to an existing or newly created anchor.
@@ -96,6 +93,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Run status is visible in the toolbar and progress panel.
 - Queued or running progress bars should animate even while the percentage is unchanged so the reviewer can see that work is still active.
 - Retry and resume events should be visible in both the run log and the per-agent status area.
+- Terminal artifacts should switch the primary action to `Add selected analysis`, disable already completed agents, and queue only newly selected follow-up analysis.
 - Starting a new analysis should warn before discarding a not-yet-downloaded JSON artifact.
 - The `New analysis` button should only appear once a real artifact exists.
 - Todo export should include only accepted agent suggestions, ordered by where they appear in the article, with a compact checklist followed by short context that includes both the original agent comment and the suggested change.

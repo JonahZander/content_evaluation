@@ -360,6 +360,7 @@ function ThreadCards({
         {thread.comments.map((comment) => {
           const isEditing = editingCommentId === comment.id;
           const isReplyComposerOpen = activeReplyComposerId === comment.id;
+          const isAgentComment = comment.author_type === "agent";
           return (
             <article
               key={comment.id}
@@ -410,8 +411,8 @@ function ThreadCards({
                   </ul>
                 </div>
               ) : null}
-              {comment.author_type === "agent" ? (
-                <div className={styles.toolbarGroup}>
+              {isAgentComment ? (
+                <div className={styles.commentActionRow}>
                   {reviewActions.map((state) => (
                     <button
                       key={state}
@@ -423,6 +424,14 @@ function ThreadCards({
                       {state === "accepted" ? "Accept" : state === "rejected" ? "Reject" : "Uncertain"}
                     </button>
                   ))}
+                  <button
+                    className={styles.commentActionButton}
+                    data-testid={`reply-toggle-${comment.id}`}
+                    type="button"
+                    onClick={() => onToggleReplyComposer(comment.id)}
+                  >
+                    {isReplyComposerOpen ? "Cancel comment" : "Add comment"}
+                  </button>
                 </div>
               ) : !isEditing ? (
                 <div className={styles.toolbarGroup}>
@@ -469,14 +478,6 @@ function ThreadCards({
               </div>
 
               <div className={styles.replyComposer}>
-                <button
-                  className={styles.ghostButton}
-                  data-testid={`reply-toggle-${comment.id}`}
-                  type="button"
-                  onClick={() => onToggleReplyComposer(comment.id)}
-                >
-                  {isReplyComposerOpen ? "Cancel comment" : "Add comment"}
-                </button>
                 {isReplyComposerOpen ? (
                   <div className={styles.inlineReplyComposer}>
                     <textarea
@@ -721,7 +722,7 @@ export function DocumentPane({
   return (
     <div className={styles.documentPane} ref={paneRef}>
       <div className={styles.sectionTitle}>Text under review</div>
-      <h2 className={styles.documentTitle}>{document?.title ?? "No document loaded"}</h2>
+      <h2 className={styles.documentTitle} data-testid="document-title">{document?.title ?? "No document loaded"}</h2>
       {previewPruningEnabled && hiddenBlockIds.length > 0 ? (
         <div className={styles.previewControls}>
           <div className={styles.previewSummary}>
@@ -742,40 +743,17 @@ export function DocumentPane({
       ) : null}
       {document?.blocks.length ? (
         document.blocks.map((block) => (
-          <div
-            key={block.id}
-            ref={(element) => {
-              rowRefs.current[block.id] = element;
-            }}
-            className={styles.paragraphRow}
-            data-testid={`document-block-${block.index}`}
-          >
-            {hiddenBlockIdSet.has(block.id) ? (
-              <>
-                <div className={`${styles.documentBlock} ${styles.previewBlockHidden}`} data-block-id={block.id}>
-                  <div className={styles.previewBlockHiddenLabel}>Hidden from analysis</div>
-                  <div className={styles.previewBlockHiddenText}>{block.text}</div>
-                </div>
-                <div className={styles.paragraphComments}>
-                  <div className={styles.previewRestoreCard}>
-                    <div className={styles.previewRestoreEyebrow}>Excluded from pending run</div>
-                    <div className={styles.previewRestoreTitle}>Section removed from the preview draft</div>
-                    <div className={styles.previewRestoreText}>
-                      Restore this section to include it again before analysis starts.
-                    </div>
-                    <button
-                      className={styles.ghostButton}
-                      type="button"
-                      data-testid={`restore-preview-block-${block.id}`}
-                      onClick={() => onRestoreBlock(block.id)}
-                    >
-                      Restore section
-                    </button>
-                  </div>
-                </div>
-              </>
-            ) : (
-              <>
+          (() => {
+            const isPreviewHidden = hiddenBlockIdSet.has(block.id);
+            return (
+              <div
+                key={block.id}
+                ref={(element) => {
+                  rowRefs.current[block.id] = element;
+                }}
+                className={styles.paragraphRow}
+                data-testid={`document-block-${block.index}`}
+              >
                 <ConnectorCanvas paths={pathsByBlockId[block.id] ?? []} />
                 <div
                   className={`${styles.documentBlock} ${
@@ -788,9 +766,10 @@ export function DocumentPane({
                       : block.kind === "code"
                         ? styles.documentBlockCode
                         : styles.paragraph
-                  }`}
+                  } ${isPreviewHidden ? styles.previewBlockMuted : ""}`}
                   data-block-id={block.id}
                   data-block-origin={block.origin ?? "source"}
+                  data-preview-hidden={isPreviewHidden ? "true" : "false"}
                   onMouseUp={(event) => {
                     if (!selectionEnabled) {
                       return;
@@ -824,14 +803,13 @@ export function DocumentPane({
                 <div className={styles.paragraphComments}>
                   {previewPruningEnabled ? (
                     <div className={styles.previewBlockActions}>
-                      <span className={styles.previewActionHint}>Preview only</span>
                       <button
-                        className={styles.ghostButton}
+                        className={`${styles.ghostButton} ${isPreviewHidden ? styles.previewRestoreButton : ""}`}
                         type="button"
-                        data-testid={`hide-preview-block-${block.id}`}
-                        onClick={() => onHideBlock(block.id)}
+                        data-testid={isPreviewHidden ? `restore-preview-block-${block.id}` : `hide-preview-block-${block.id}`}
+                        onClick={() => (isPreviewHidden ? onRestoreBlock(block.id) : onHideBlock(block.id))}
                       >
-                        Remove section
+                        {isPreviewHidden ? "Restore section" : "Remove section"}
                       </button>
                     </div>
                   ) : null}
@@ -894,9 +872,9 @@ export function DocumentPane({
                     <div className={styles.paragraphCommentsSpacer} aria-hidden="true" />
                   )}
                 </div>
-              </>
-            )}
-          </div>
+              </div>
+            );
+          })()
         ))
       ) : (
         <div className={styles.emptyState}>Submit a URL, pasted draft, or text file to start the review.</div>

@@ -14,7 +14,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
    - Create an artifact skeleton with run config, selected agents, and empty result slots
    - URL preview runs may submit a reviewer-pruned markdown draft derived from visible preview blocks instead of re-fetching the original URL content
    - Persist a queued `run_job`
-   - Terminal artifacts may later queue additive follow-up jobs that append newly selected agents without recreating the artifact
+   - Terminal artifacts may queue additive follow-up analysis that reuses the existing document and completed findings
 3. Queued execution
    - `RunWorker` claims queued jobs
    - Resets in-flight jobs on startup
@@ -62,11 +62,6 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
    - Export Markdown derived from the artifact
    - Export accepted agent suggestions as a compact Markdown todo list ordered by source position, including both the agent comment text and the suggestion
    - Reopen a saved artifact without rerunning the pipeline
-9. Additive follow-up analysis
-   - Allow terminal artifacts (`completed`, `failed`, `canceled`) to queue additional selected agents plus missing dependencies
-   - Reuse the existing normalized document, anchors, comments, and completed agent results
-   - Skip source extraction and normalization so block ids and human review state remain stable
-   - Recompute summary surfaces after new agent results merge
 
 ## Artifact-First Rules
 
@@ -74,7 +69,6 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 - `ArtifactDocument` preserves raw source content for rendering and normalized plain text for anchoring.
 - `ArtifactBlock.origin` distinguishes real source blocks from synthetic unmatched fallback blocks.
 - `ArtifactAnchor.segments` is the canonical anchor shape; legacy single-block fields remain import-compatible.
-- `RunInput.mode` distinguishes full artifact creation from append-only agent jobs against an existing artifact.
 - The event stream narrates artifact construction; it is not the primary data model.
 - Human comments, replies, and review-state changes live inside the artifact from the start.
 - Persistence is an adapter around artifact snapshots, not the core business model.
@@ -86,12 +80,10 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 
 - `api/main.py`
   - HTTP routes, SSE event stream (with configurable timeout), upload validation, artifact endpoints
-  - `POST /api/v1/runs/{run_id}/agents` queues additive agent analysis on an existing artifact
 - `api/dependencies.py`
   - Long-lived service container; `AppServices.stop()` closes provider HTTP clients on shutdown
 - `services/orchestration.py`
   - Session/workspace run lifecycle, LangGraph execution, dependency-driven scheduling, checkpoint persistence, artifact assembly
-  - Append-analysis path reuses terminal artifacts and runs only missing selected agents/dependencies
 - `providers/langchain/client.py`
   - LangChain-backed provider routing across OpenAI, Anthropic, and Gemini
   - Chat models are cached per (family, model_name) pair for the lifetime of the provider

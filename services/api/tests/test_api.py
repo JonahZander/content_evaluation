@@ -152,6 +152,16 @@ def test_preview_source_returns_normalized_document(monkeypatch: pytest.MonkeyPa
     assert payload["blocks"]
 
 
+def test_api_returns_404_for_unknown_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Return 404 for a run ID that does not exist."""
+
+    monkeypatch.setattr("content_evaluation.api.main.build_services", lambda: AppServices(_mock_settings()))
+    with TestClient(app) as client:
+        response = client.get("/api/v1/runs/00000000-0000-0000-0000-000000000000")
+
+    assert response.status_code == 404
+
+
 def test_append_agents_queues_additional_analysis(monkeypatch: pytest.MonkeyPatch) -> None:
     """Queue additive analysis on a terminal artifact through the API."""
 
@@ -220,16 +230,6 @@ def test_append_agents_rejects_active_run(monkeypatch: pytest.MonkeyPatch) -> No
     assert "only available after a run has finished" in append_response.text
 
 
-def test_api_returns_404_for_unknown_run(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Return 404 for a run ID that does not exist."""
-
-    monkeypatch.setattr("content_evaluation.api.main.build_services", lambda: AppServices(_mock_settings()))
-    with TestClient(app) as client:
-        response = client.get("/api/v1/runs/00000000-0000-0000-0000-000000000000")
-
-    assert response.status_code == 404
-
-
 def test_api_returns_422_for_non_json_non_file_request(monkeypatch: pytest.MonkeyPatch) -> None:
     """Return 422 when neither JSON nor file upload is provided."""
 
@@ -245,7 +245,7 @@ def test_cancel_run_stops_inflight_execution(monkeypatch: pytest.MonkeyPatch) ->
 
     services = AppServices(_mock_settings())
 
-    async def slow_process_run(artifact_id: object, input_data: object, **_: object) -> None:
+    async def slow_process_run(artifact_id: object, input_data: object) -> None:
         del artifact_id
         del input_data
         await asyncio.sleep(0.2)

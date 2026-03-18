@@ -1,5 +1,11 @@
 import { ArtifactAgentPlanItem, ArtifactAgentResult } from "@/lib/types";
-import { estimateCost, formatCost, formatTokens } from "@/lib/pricing";
+import {
+  estimateCost,
+  estimateMixedCost,
+  formatCost,
+  formatTokens,
+  type ModelUsageBreakdownEntry,
+} from "@/lib/pricing";
 import styles from "@/components/ReviewWorkbench.module.css";
 
 interface AgentUsageSummaryProps {
@@ -14,6 +20,7 @@ interface UsageRow {
   inputTokens: number;
   outputTokens: number;
   cost: number | null;
+  usageByModel: ModelUsageBreakdownEntry[];
 }
 
 function extractUsage(
@@ -34,6 +41,49 @@ function extractUsage(
   return null;
 }
 
+function extractUsageByModel(metadata: Record<string, unknown>): ModelUsageBreakdownEntry[] {
+  const usageByModel = metadata.usage_by_model;
+  if (!Array.isArray(usageByModel)) {
+    return [];
+  }
+
+  return usageByModel.flatMap((entry) => {
+    if (entry === null || typeof entry !== "object") {
+      return [];
+    }
+
+    const candidate = entry as {
+      model_name?: unknown;
+      input_tokens?: unknown;
+      output_tokens?: unknown;
+    };
+
+    if (
+      typeof candidate.model_name !== "string" ||
+      typeof candidate.input_tokens !== "number" ||
+      typeof candidate.output_tokens !== "number"
+    ) {
+      return [];
+    }
+
+    return [
+      {
+        modelName: candidate.model_name,
+        inputTokens: candidate.input_tokens,
+        outputTokens: candidate.output_tokens,
+      },
+    ];
+  });
+}
+
+function renderModelName(modelName: string) {
+  return (
+    <span title={modelName}>
+      {modelName.length > 28 ? `${modelName.slice(0, 26)}…` : modelName}
+    </span>
+  );
+}
+
 export function AgentUsageSummary({ agentResults, agentPlan }: AgentUsageSummaryProps) {
   const planByAgentId = new Map<string, ArtifactAgentPlanItem>(
     agentPlan.map((item) => [item.agent_id, item]),
@@ -47,11 +97,15 @@ export function AgentUsageSummary({ agentResults, agentPlan }: AgentUsageSummary
 
     const planItem = planByAgentId.get(result.agent_id);
     const displayName = planItem?.display_name ?? result.agent_id;
-    const modelName = planItem?.model_name ?? null;
+    const usageByModel = extractUsageByModel(result.metadata);
+    const hasMixedModels = usageByModel.length > 1;
+    const modelName = hasMixedModels ? "mixed" : (planItem?.model_name ?? usageByModel[0]?.modelName ?? null);
 
     const cost =
-      modelName !== null
-        ? estimateCost(modelName, usage.input_tokens, usage.output_tokens)
+      hasMixedModels
+        ? estimateMixedCost(usageByModel)
+        : modelName !== null
+          ? estimateCost(modelName, usage.input_tokens, usage.output_tokens)
         : null;
 
     rows.push({
@@ -61,6 +115,7 @@ export function AgentUsageSummary({ agentResults, agentPlan }: AgentUsageSummary
       inputTokens: usage.input_tokens,
       outputTokens: usage.output_tokens,
       cost,
+      usageByModel,
     });
   }
 
@@ -92,9 +147,32 @@ export function AgentUsageSummary({ agentResults, agentPlan }: AgentUsageSummary
               <td>{row.displayName}</td>
               <td>
                 {row.modelName ? (
-                  <span title={row.modelName}>
-                    {row.modelName.length > 28 ? `${row.modelName.slice(0, 26)}…` : row.modelName}
-                  </span>
+                  <div className={styles.usageModelCell}>
+                    {renderModelName(row.modelName)}
+                    {row.usageByModel.length > 1 ? (
+                      <div className={styles.usageModelBreakdown}>
+                        {row.usageByModel.map((entry) => {
+                          const entryCost = estimateCost(
+                            entry.modelName,
+                            entry.inputTokens,
+                            entry.outputTokens,
+                          );
+                          return (
+                            <div key={entry.modelName} className={styles.usageModelBreakdownRow}>
+                              <span className={styles.usageModelBreakdownName} title={entry.modelName}>
+                                {entry.modelName}
+                              </span>
+                              <span className={styles.usageModelBreakdownMetrics}>
+                                {formatTokens(entry.inputTokens)} in / {formatTokens(entry.outputTokens)} out
+                                {" · "}
+                                {entryCost !== null ? formatCost(entryCost) : "—"}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
                 ) : (
                   <span className={styles.usageUnknown}>—</span>
                 )}

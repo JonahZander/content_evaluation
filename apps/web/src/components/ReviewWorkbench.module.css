@@ -1036,6 +1036,36 @@
   font-weight: 600;
 }
 
+.usageModelCell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.usageModelBreakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.usageModelBreakdownRow {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+}
+
+.usageModelBreakdownName {
+  color: rgba(43, 36, 28, 0.82);
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-size: 0.7rem;
+}
+
+.usageModelBreakdownMetrics {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .usageTableNumeric {
   text-align: right;
   font-variant-numeric: tabular-nums;

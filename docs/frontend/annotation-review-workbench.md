@@ -25,6 +25,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
   - Agent comment cards should stay compact when multiple comments target the same section
 - Token usage panel (`AgentUsageSummary`)
   - Per-agent table of input tokens, output tokens, and estimated USD cost; only rendered when usage data is present
+  - Multi-model deep research runs should show `mixed` in the model column with a compact per-model token and cost breakdown underneath
 - Optional debug panel
   - Downloadable trace details when debug output is enabled
 

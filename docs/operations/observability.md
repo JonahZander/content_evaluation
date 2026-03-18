@@ -38,7 +38,8 @@ Make every analysis run easy to inspect by humans and future agents.
   - Per-agent table of input tokens, output tokens, and estimated USD cost
   - Totals row across all agents that reported usage
   - Model names truncated to 28 characters with full name on hover
-  - Cost estimation uses a hardcoded pricing table in `apps/web/src/lib/pricing.ts` covering OpenAI, Anthropic, and Google models; unknown models show `—`
+  - Deep research runs that use more than one model should render as `mixed` with a per-model token and cost breakdown under the primary label
+  - Cost estimation uses the hardcoded OpenAI pricing table in `apps/web/src/lib/pricing.ts`; unknown models still show `—`
 - Structured request logging middleware
   - Request method, path, duration, and request id
 
@@ -49,7 +50,8 @@ Make every analysis run easy to inspect by humans and future agents.
 - The deep research and mock providers populate usage directly.
 - Orchestration threads `usage` into `ArtifactAgentResult.metadata` so the frontend can read it without touching raw backend state.
 - The `AgentUsageSummary` component reads `metadata.usage` from each agent result and renders the per-agent table.
-- Cost estimation is best-effort: if the model name does not match the pricing table the cost cell shows `—` rather than a wrong number.
+- Deep research also persists `metadata.usage_by_model` so the frontend can price mixed-model runs from exact per-model token counts instead of a placeholder.
+- Cost estimation is best-effort: if a model name does not match the pricing table that model shows `—` rather than a wrong number.
 
 ## UI Expectations
 

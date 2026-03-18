@@ -125,6 +125,7 @@ class LiveDeepResearchProvider:
             parsed["metadata"] = {}
         per_model = usage_handler.usage_metadata  # {model_name: {token_counts}}
         if per_model:
+            usage_by_model: list[dict[str, int | str]] = []
             input_t = sum(
                 int(counts.get("input_tokens", 0))
                 for counts in per_model.values()
@@ -135,9 +136,23 @@ class LiveDeepResearchProvider:
                 for counts in per_model.values()
                 if isinstance(counts, dict)
             )
+            for model_name, counts in per_model.items():
+                if not isinstance(counts, dict):
+                    continue
+                model_input_t = int(counts.get("input_tokens", 0))
+                model_output_t = int(counts.get("output_tokens", 0))
+                usage_by_model.append(
+                    {
+                        "model_name": model_name,
+                        "input_tokens": model_input_t,
+                        "output_tokens": model_output_t,
+                        "total_tokens": model_input_t + model_output_t,
+                    }
+                )
             parsed["metadata"]["usage"] = {
                 "input_tokens": input_t,
                 "output_tokens": output_t,
                 "total_tokens": input_t + output_t,
             }
+            parsed["metadata"]["usage_by_model"] = usage_by_model
         return parsed

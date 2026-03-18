@@ -57,6 +57,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Human replies should expose a compact trash delete affordance in the thread UI.
 - Partial findings should appear as each agent finishes instead of waiting for the full run.
 - Hovering or selecting a summary finding should highlight linked spans in the source text.
+- Highlighted spans should stay visually continuous even when the underlying text contains inline markdown links.
 - Fact-check claim highlights should render distinct evidence chips near the relevant paragraph instead of creating more comment-rail cards.
 - Connector lines should visually link each comment card to the relevant highlight.
 - Connector lines should recalculate after thread/document/layout changes and should avoid resize-jank during rapid window resizing.

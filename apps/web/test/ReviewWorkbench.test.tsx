@@ -114,6 +114,17 @@ describe("ReviewWorkbench", () => {
     expect(link).toHaveAttribute("href", "https://example.com/reference");
   });
 
+  it("keeps one continuous highlight when an anchored span crosses inline links", () => {
+    render(<ReviewWorkbench initialArtifact={buildLinkedHighlightArtifact()} />);
+
+    const firstRow = screen.getByTestId("document-block-0");
+    const highlights = firstRow.querySelectorAll('[data-anchor-ids="anchor-link-span"]');
+
+    expect(highlights).toHaveLength(1);
+    expect(highlights[0]?.textContent).toBe("See source reference for the cited material.");
+    expect(highlights[0]?.querySelector('a[href="https://example.com/reference"]')).not.toBeNull();
+  });
+
   it("opens export URLs", () => {
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
     render(<ReviewWorkbench initialArtifact={mockArtifact} />);
@@ -845,5 +856,20 @@ function buildLinkArtifact(): AnalysisArtifact {
   };
   artifact.anchors = [];
   artifact.threads = [];
+  return artifact;
+}
+
+function buildLinkedHighlightArtifact(): AnalysisArtifact {
+  const artifact = buildLinkArtifact();
+  artifact.anchors = [
+    {
+      id: "anchor-link-span",
+      block_id: "block-link",
+      start_offset: 0,
+      end_offset: artifact.document!.blocks[0]!.text.length,
+      quote: artifact.document!.blocks[0]!.text,
+      comment_ids: [],
+    },
+  ];
   return artifact;
 }

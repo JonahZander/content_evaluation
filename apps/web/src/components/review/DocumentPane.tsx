@@ -38,6 +38,22 @@ interface TextSegment {
   refAnchorIds: string[];
 }
 
+interface AnchorRenderGroup {
+  kind: "group";
+  key: string;
+  startOffset: number;
+  endOffset: number;
+  anchors: SegmentAnchor[];
+  refAnchorIds: string[];
+  children: ReactNode[];
+}
+
+interface PlainRenderGroup {
+  kind: "plain";
+  key: string;
+  content: ReactNode;
+}
+
 interface DocumentPaneProps {
   document: ArtifactDocument | null;
   anchors: ArtifactAnchor[];
@@ -263,19 +279,79 @@ function renderBlockText(
   onHoverAnchor: (anchorId: string | null) => void,
 ): ReactNode {
   const segments = buildTextSegments(block, anchors, anchorThreadMap);
-  return segments.map((segment) => {
+  const renderedSegments = segments.map((segment) => {
     const key = `${block.id}-${segment.startOffset}-${segment.endOffset}`;
-    const content = wrapInlineMarks(
-      segment.text,
-      segment.marks,
-      key,
-    );
+    const content = wrapInlineMarks(segment.text, segment.marks, key);
     if (segment.anchors.length === 0) {
-      return <span key={key}>{content}</span>;
+      return { key, kind: "plain" as const, content: <span key={key}>{content}</span> };
     }
-    const isHovered = segment.anchors.some((item) => item.anchor.id === hoveredAnchorId);
-    return renderAnchor(segment, content, isHovered, anchorRefs, onHoverAnchor);
+    return {
+      key,
+      kind: "anchored" as const,
+      segment,
+      content: <span key={key}>{content}</span>,
+    };
   });
+
+  const groups: Array<AnchorRenderGroup | PlainRenderGroup> = [];
+  for (const item of renderedSegments) {
+    if (item.kind === "plain") {
+      groups.push({ kind: "plain", key: item.key, content: item.content });
+      continue;
+    }
+
+    const previous = groups.at(-1);
+    const previousIsGroup = previous?.kind === "group";
+    const canMerge = previousIsGroup
+      && areSameAnchorSet(previous.anchors, item.segment.anchors)
+      && previous.endOffset === item.segment.startOffset;
+
+    if (canMerge) {
+      previous.endOffset = item.segment.endOffset;
+      previous.refAnchorIds.push(...item.segment.refAnchorIds);
+      previous.children.push(item.content);
+      continue;
+    }
+
+    groups.push({
+      kind: "group",
+      key: item.key,
+      startOffset: item.segment.startOffset,
+      endOffset: item.segment.endOffset,
+      anchors: item.segment.anchors,
+      refAnchorIds: [...item.segment.refAnchorIds],
+      children: [item.content],
+    });
+  }
+
+  return groups.map((item) => {
+    if (item.kind === "plain") {
+      return item.content;
+    }
+    const mergedSegment: TextSegment = {
+      startOffset: item.startOffset,
+      endOffset: item.endOffset,
+      text: block.text.slice(item.startOffset, item.endOffset),
+      marks: [],
+      anchors: item.anchors,
+      refAnchorIds: item.refAnchorIds,
+    };
+    const isHovered = item.anchors.some((anchor) => anchor.anchor.id === hoveredAnchorId);
+    return renderAnchor(
+      mergedSegment,
+      <>{item.children}</>,
+      isHovered,
+      anchorRefs,
+      onHoverAnchor,
+    );
+  });
+}
+
+function areSameAnchorSet(left: SegmentAnchor[], right: SegmentAnchor[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  return left.every((anchor, index) => anchor.anchor.id === right[index]?.anchor.id);
 }
 
 function resolveSelectionDraft(

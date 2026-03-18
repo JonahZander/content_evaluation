@@ -38,7 +38,7 @@ async def _validate_url(url: str) -> None:
 
 
 class TrafilaturaExtractionProvider:
-    """Extract readable plain text from a URL with direct fetch + trafilatura."""
+    """Extract readable markdown from a URL with direct fetch + trafilatura."""
 
     provider_name = "direct"
 
@@ -53,7 +53,7 @@ class TrafilaturaExtractionProvider:
         await self._client.aclose()
 
     async def extract(self, url: str) -> ExtractedContent:
-        """Fetch a URL and extract readable article text."""
+        """Fetch a URL and extract readable article markdown."""
 
         await _validate_url(url)
         response = await self._client.get(url)
@@ -61,17 +61,23 @@ class TrafilaturaExtractionProvider:
             raise ProviderError(f"Direct content extraction failed with status {response.status_code}")
 
         downloaded = response.text
-        extracted = trafilatura.extract(downloaded, include_comments=False, include_tables=False)
+        extracted = trafilatura.extract(
+            downloaded,
+            output_format="markdown",
+            include_comments=False,
+            include_tables=False,
+            include_links=True,
+        )
         if not extracted:
             raise ProviderError("Direct content extraction returned no readable article text")
 
         return ExtractedContent(
             title=url,
             content=extracted,
-            content_format=ContentFormat.PLAIN_TEXT,
+            content_format=ContentFormat.MARKDOWN,
             metadata={
                 "provider_name": self.provider_name,
-                "content_format": ContentFormat.PLAIN_TEXT.value,
+                "content_format": ContentFormat.MARKDOWN.value,
                 "source_url": url,
             },
         )

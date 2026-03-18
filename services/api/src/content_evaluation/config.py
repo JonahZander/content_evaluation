@@ -27,9 +27,11 @@ class Settings(BaseSettings):
     anthropic_model_name: str = Field(default="claude-3-5-sonnet-latest")
     gemini_model_name: str = Field(default="gemini-2.0-flash")
     # Optional heavier model for the fact_check agent's research/compression/final-report
-    # steps. When unset, falls back to the analysis model above. The lightweight analysis
-    # model is always used for the cheap webpage-summarisation step.
+    # steps. When unset, falls back to the analysis model above.
     deep_research_model_name: str | None = Field(default=None)
+    # Optional model for deep research webpage summarisation (Tavily result content).
+    # When unset, uses the same model as analysis (e.g. OPENAI_MODEL_NAME).
+    deep_research_summarization_model: str | None = Field(default=None)
     analysis_temperature: float = Field(default=0.0)
     analysis_max_retries: int = Field(default=1)
     agent_max_retries: int = Field(default=2)

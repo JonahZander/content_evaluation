@@ -37,8 +37,8 @@ async def test_fallback_extractor_returns_direct_result_without_tavily() -> None
     primary = StubPrimaryExtractor(
         result=ExtractedContent(
             title="Direct",
-            content="Article body",
-            content_format=ContentFormat.PLAIN_TEXT,
+            content="## Article body",
+            content_format=ContentFormat.MARKDOWN,
             metadata={"provider_name": "direct"},
         )
     )

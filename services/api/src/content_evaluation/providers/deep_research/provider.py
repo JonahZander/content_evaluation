@@ -58,7 +58,8 @@ class LiveDeepResearchProvider:
             os.environ.setdefault("TAVILY_API_KEY", settings.tavily_api_key)
 
         # Light model: used for cheap webpage-summarisation (HTML processing).
-        summarization_model = f"{prefix}:{model_name}"
+        summarization_name = settings.deep_research_summarization_model or model_name
+        summarization_model = f"{prefix}:{summarization_name}"
         # Heavy model: used for supervisor reasoning, researcher agents, compression,
         # and final JSON synthesis. Falls back to the same model when not separately
         # configured via CONTENT_EVAL_DEEP_RESEARCH_MODEL_NAME.

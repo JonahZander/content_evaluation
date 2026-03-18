@@ -49,12 +49,23 @@ async def test_trafilatura_successful_extraction() -> None:
         with _patch_validate_url(), respx.mock(assert_all_called=True) as router:
             router.get(_SAFE_URL).mock(return_value=Response(200, text="<html><body><p>Article body text.</p></body></html>"))
 
-            with patch("content_evaluation.providers.extraction.client.trafilatura.extract", return_value="Article body text."):
+            with patch(
+                "content_evaluation.providers.extraction.client.trafilatura.extract",
+                return_value="[Article body text.](https://example.com/source)",
+            ) as extract_mock:
                 result = await provider.extract(_SAFE_URL)
 
-        assert result.content == "Article body text."
-        assert result.content_format is ContentFormat.PLAIN_TEXT
+        assert result.content == "[Article body text.](https://example.com/source)"
+        assert result.content_format is ContentFormat.MARKDOWN
         assert result.metadata["provider_name"] == "direct"
+        assert result.metadata["content_format"] == ContentFormat.MARKDOWN.value
+        extract_mock.assert_called_once_with(
+            "<html><body><p>Article body text.</p></body></html>",
+            output_format="markdown",
+            include_comments=False,
+            include_tables=False,
+            include_links=True,
+        )
     finally:
         await provider.close()
 

@@ -21,7 +21,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
    - Starts or resumes LangGraph execution from the latest stored checkpoint
 4. Normalization
    - Extract text and metadata into a shared document schema
-   - Use direct fetch + Trafilatura first for URLs, then Tavily extract fallback for blocked or unreadable pages
+   - Use direct fetch + Trafilatura markdown extraction first for URLs, then Tavily extract fallback for blocked or unreadable pages
    - Normalize markdown-aware content into ordered document blocks with render metadata and plain-text anchor offsets
    - Conservatively split oversized plain-text paragraph blocks so collapsed imports do not become one giant review span
    - Save the normalized document into the artifact

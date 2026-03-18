@@ -12,6 +12,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
    - Validate upload type and size at the API boundary
 2. Session or workspace run creation
    - Create an artifact skeleton with run config, selected agents, and empty result slots
+   - URL preview runs may submit a reviewer-pruned markdown draft derived from visible preview blocks instead of re-fetching the original URL content
    - Persist a queued `run_job`
 3. Queued execution
    - `RunWorker` claims queued jobs
@@ -22,7 +23,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 4. Normalization
    - Extract text and metadata into a shared document schema
    - Use direct fetch + Trafilatura markdown extraction first for URLs, then Tavily extract fallback for blocked or unreadable pages
-   - Normalize markdown-aware content into ordered document blocks with render metadata and plain-text anchor offsets
+   - Normalize markdown-aware content into ordered document blocks with render metadata, inline link marks, and plain-text anchor offsets
    - Conservatively split oversized plain-text paragraph blocks so collapsed imports do not become one giant review span
    - Save the normalized document into the artifact
 5. Agent planning

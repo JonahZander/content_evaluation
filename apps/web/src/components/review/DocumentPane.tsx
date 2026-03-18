@@ -11,6 +11,7 @@ import {
   type ArtifactBlock,
   type ArtifactComment,
   type ArtifactDocument,
+  type ArtifactInlineMark,
   type ArtifactInlineMarkKind,
   type ArtifactThread,
   type ReviewState,
@@ -32,7 +33,7 @@ interface TextSegment {
   startOffset: number;
   endOffset: number;
   text: string;
-  marks: ArtifactInlineMarkKind[];
+  marks: ArtifactInlineMark[];
   anchors: SegmentAnchor[];
   refAnchorIds: string[];
 }
@@ -45,10 +46,15 @@ interface DocumentPaneProps {
   claimEvidenceByBlock: Map<string, ClaimEvidence[]>;
   selectionEnabled?: boolean;
   hoveredAnchorId: string | null;
+  hiddenBlockIds?: string[];
+  previewPruningEnabled?: boolean;
   anchorRefs: MutableRefObject<Record<string, HTMLSpanElement | null>>;
   commentRefs: MutableRefObject<Record<string, HTMLElement | null>>;
   onHoverAnchor: (anchorId: string | null) => void;
   onSelectionDraft: (draft: SelectionDraft | null) => void;
+  onHideBlock: (blockId: string) => void;
+  onRestoreBlock: (blockId: string) => void;
+  onRestoreAllBlocks: () => void;
   replyDrafts: Record<string, string>;
   activeReplyComposerId: string | null;
   editingCommentId: string | null;
@@ -122,20 +128,34 @@ function renderAnchor(
   );
 }
 
-function wrapInlineMarks(content: ReactNode, marks: ArtifactInlineMarkKind[], key: string): ReactNode {
-  return marks.reduce<ReactNode>((wrapped, kind, index) => {
-    const markKey = `${key}-${kind}-${index}`;
-    if (kind === "strong") {
+function wrapInlineMarks(content: ReactNode, marks: ArtifactInlineMark[], key: string): ReactNode {
+  return marks.reduce<ReactNode>((wrapped, mark, index) => {
+    const markKey = `${key}-${mark.kind}-${index}`;
+    if (mark.kind === "strong") {
       return <strong key={markKey}>{wrapped}</strong>;
     }
-    if (kind === "emphasis") {
+    if (mark.kind === "emphasis") {
       return <em key={markKey}>{wrapped}</em>;
     }
-    if (kind === "code") {
+    if (mark.kind === "code") {
       return (
         <code key={markKey} className={styles.inlineCode}>
           {wrapped}
         </code>
+      );
+    }
+    if (mark.kind === "link" && mark.href && isSafeHref(mark.href)) {
+      return (
+        <a
+          key={markKey}
+          href={mark.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={styles.inlineLink}
+          onClick={(event) => event.stopPropagation()}
+        >
+          {wrapped}
+        </a>
       );
     }
     return wrapped;
@@ -146,6 +166,7 @@ const MARK_ORDER: Record<ArtifactInlineMarkKind, number> = {
   emphasis: 0,
   strong: 1,
   code: 2,
+  link: 3,
 };
 
 function buildTextSegments(
@@ -198,7 +219,7 @@ function buildTextSegments(
     const activeMarks = (block.marks ?? [])
       .filter((mark) => mark.start_offset <= startOffset && mark.end_offset >= endOffset)
       .sort((left, right) => MARK_ORDER[left.kind] - MARK_ORDER[right.kind])
-      .map((mark) => mark.kind);
+      .map((mark) => mark);
     const activeAnchors = blockAnchors
       .filter((anchor) => anchor.segment.start_offset <= startOffset && anchor.segment.end_offset >= endOffset)
       .map((anchor) => ({
@@ -502,10 +523,15 @@ export function DocumentPane({
   claimEvidenceByBlock,
   selectionEnabled = true,
   hoveredAnchorId,
+  hiddenBlockIds = [],
+  previewPruningEnabled = false,
   anchorRefs,
   commentRefs,
   onHoverAnchor,
   onSelectionDraft,
+  onHideBlock,
+  onRestoreBlock,
+  onRestoreAllBlocks,
   replyDrafts,
   activeReplyComposerId,
   editingCommentId,
@@ -523,6 +549,7 @@ export function DocumentPane({
 }: DocumentPaneProps) {
   const paneRef = useRef<HTMLDivElement | null>(null);
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const hiddenBlockIdSet = useMemo(() => new Set(hiddenBlockIds), [hiddenBlockIds]);
   const [pathsByBlockId, setPathsByBlockId] = useState<
     Record<string, Array<{ id: string; path: string; color: string; active: boolean }>>
   >({});
@@ -565,6 +592,9 @@ export function DocumentPane({
       const nextPathsByBlockId: Record<string, Array<{ id: string; path: string; color: string; active: boolean }>> = {};
 
       document.blocks.forEach((block) => {
+        if (hiddenBlockIdSet.has(block.id)) {
+          return;
+        }
         const row = rowRefs.current[block.id];
         const rowThreads = blockThreads.get(block.id) ?? [];
         if (!row || rowThreads.length === 0) {
@@ -686,12 +716,30 @@ export function DocumentPane({
       resizeObserver?.disconnect();
       window.removeEventListener("resize", handleResize);
     };
-  }, [anchorRefs, claimEvidenceByBlock, commentRefs, blockThreads, document, hoveredAnchorId]);
+  }, [anchorRefs, claimEvidenceByBlock, commentRefs, blockThreads, document, hoveredAnchorId, hiddenBlockIdSet]);
 
   return (
     <div className={styles.documentPane} ref={paneRef}>
       <div className={styles.sectionTitle}>Text under review</div>
       <h2 className={styles.documentTitle}>{document?.title ?? "No document loaded"}</h2>
+      {previewPruningEnabled && hiddenBlockIds.length > 0 ? (
+        <div className={styles.previewControls}>
+          <div className={styles.previewSummary}>
+            <span className={styles.previewBadge}>Preview edit</span>
+            <span className={styles.previewNote}>
+              {hiddenBlockIds.length} hidden {hiddenBlockIds.length === 1 ? "block" : "blocks"} excluded from this run.
+            </span>
+          </div>
+          <button
+            className={styles.ghostButton}
+            type="button"
+            data-testid="restore-all-preview-blocks"
+            onClick={onRestoreAllBlocks}
+          >
+            Restore all
+          </button>
+        </div>
+      ) : null}
       {document?.blocks.length ? (
         document.blocks.map((block) => (
           <div
@@ -702,111 +750,152 @@ export function DocumentPane({
             className={styles.paragraphRow}
             data-testid={`document-block-${block.index}`}
           >
-            <ConnectorCanvas paths={pathsByBlockId[block.id] ?? []} />
-            <div
-            className={`${styles.documentBlock} ${
-              block.origin === "synthetic_unmatched"
-                ? styles.documentBlockSynthetic
-                : ""
-            } ${
-                block.kind === "heading"
-                  ? styles.documentBlockHeading
-                  : block.kind === "code"
-                    ? styles.documentBlockCode
-                    : styles.paragraph
-              }`}
-              data-block-id={block.id}
-              data-block-origin={block.origin ?? "source"}
-              onMouseUp={(event) => {
-                if (!selectionEnabled) {
-                  return;
-                }
-                const draft = resolveSelectionDraft(event.currentTarget, window.getSelection(), block.id);
-                onSelectionDraft(draft);
-              }}
-            >
-              {block.kind === "heading" ? (
-                block.level === 1 ? (
-                  <h1 className={styles.headingLevel1}>
-                    {renderBlockText(block, anchors, anchorThreadMap, hoveredAnchorId, anchorRefs, onHoverAnchor)}
-                  </h1>
-                ) : block.level === 2 ? (
-                  <h2 className={styles.headingLevel2}>
-                    {renderBlockText(block, anchors, anchorThreadMap, hoveredAnchorId, anchorRefs, onHoverAnchor)}
-                  </h2>
-                ) : (
-                  <h3 className={styles.headingLevel3}>
-                    {renderBlockText(block, anchors, anchorThreadMap, hoveredAnchorId, anchorRefs, onHoverAnchor)}
-                  </h3>
-                )
-              ) : block.kind === "code" ? (
-                <pre className={styles.codeBlock}>
-                  <code>{renderBlockText(block, anchors, anchorThreadMap, hoveredAnchorId, anchorRefs, onHoverAnchor)}</code>
-                </pre>
-              ) : (
-                renderBlockText(block, anchors, anchorThreadMap, hoveredAnchorId, anchorRefs, onHoverAnchor)
-              )}
-            </div>
-            <div className={styles.paragraphComments}>
-              {(claimEvidenceByBlock.get(block.id) ?? []).length ? (
-                <div className={styles.claimEvidencePanel} data-testid={`claim-evidence-${block.index}`}>
-                  {(claimEvidenceByBlock.get(block.id) ?? []).map((item) => (
-                    <article
-                      key={`${item.anchorId}-${item.sourceLinks[0] ?? item.claimText}`}
-                      className={styles.claimEvidenceCard}
-                    >
-                      <div className={styles.claimEvidenceHeader}>
-                        <span className={styles.claimEvidenceVerdict}>{item.verdict.replaceAll("_", " ")}</span>
-                        <span className={styles.claimEvidenceClaim}>{item.claimText}</span>
-                      </div>
-                      <p className={styles.claimEvidenceText}>{item.evidenceSummary}</p>
-                      {item.sourceLinks.length ? (
-                        <div className={styles.claimEvidenceLinks}>
-                          {item.sourceLinks.slice(0, 3).map((source) => (
-                            <a
-                              key={source}
-                              className={styles.claimEvidenceLink}
-                              href={source}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              Evidence source
-                            </a>
-                          ))}
-                        </div>
-                      ) : null}
-                    </article>
-                  ))}
+            {hiddenBlockIdSet.has(block.id) ? (
+              <>
+                <div className={`${styles.documentBlock} ${styles.previewBlockHidden}`} data-block-id={block.id}>
+                  <div className={styles.previewBlockHiddenLabel}>Hidden from analysis</div>
+                  <div className={styles.previewBlockHiddenText}>{block.text}</div>
                 </div>
-              ) : null}
-              {(blockThreads.get(block.id) ?? []).length ? (
-                (blockThreads.get(block.id) ?? []).map((thread) => (
-                  <ThreadCards
-                    key={thread.anchor.id}
-                    thread={thread}
-                    hoveredAnchorId={hoveredAnchorId}
-                    commentRefs={commentRefs}
-                    replyDrafts={replyDrafts}
-                    activeReplyComposerId={activeReplyComposerId}
-                    editingCommentId={editingCommentId}
-                    editingBody={editingBody}
-                    onHoverAnchor={onHoverAnchor}
-                    onReplyDraftChange={onReplyDraftChange}
-                    onToggleReplyComposer={onToggleReplyComposer}
-                    onAddReply={onAddReply}
-                    onDeleteReply={onDeleteReply}
-                    onReviewState={onReviewState}
-                    onStartEditing={onStartEditing}
-                    onEditingBodyChange={onEditingBodyChange}
-                    onSaveEdit={onSaveEdit}
-                    onCancelEdit={onCancelEdit}
-                    onDeleteComment={onDeleteComment}
-                  />
-                ))
-              ) : (
-                <div className={styles.paragraphCommentsSpacer} aria-hidden="true" />
-              )}
-            </div>
+                <div className={styles.paragraphComments}>
+                  <div className={styles.previewRestoreCard}>
+                    <div className={styles.previewRestoreEyebrow}>Excluded from pending run</div>
+                    <div className={styles.previewRestoreTitle}>Section removed from the preview draft</div>
+                    <div className={styles.previewRestoreText}>
+                      Restore this section to include it again before analysis starts.
+                    </div>
+                    <button
+                      className={styles.ghostButton}
+                      type="button"
+                      data-testid={`restore-preview-block-${block.id}`}
+                      onClick={() => onRestoreBlock(block.id)}
+                    >
+                      Restore section
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <ConnectorCanvas paths={pathsByBlockId[block.id] ?? []} />
+                <div
+                  className={`${styles.documentBlock} ${
+                    block.origin === "synthetic_unmatched"
+                      ? styles.documentBlockSynthetic
+                      : ""
+                  } ${
+                    block.kind === "heading"
+                      ? styles.documentBlockHeading
+                      : block.kind === "code"
+                        ? styles.documentBlockCode
+                        : styles.paragraph
+                  }`}
+                  data-block-id={block.id}
+                  data-block-origin={block.origin ?? "source"}
+                  onMouseUp={(event) => {
+                    if (!selectionEnabled) {
+                      return;
+                    }
+                    const draft = resolveSelectionDraft(event.currentTarget, window.getSelection(), block.id);
+                    onSelectionDraft(draft);
+                  }}
+                >
+                  {block.kind === "heading" ? (
+                    block.level === 1 ? (
+                      <h1 className={styles.headingLevel1}>
+                        {renderBlockText(block, anchors, anchorThreadMap, hoveredAnchorId, anchorRefs, onHoverAnchor)}
+                      </h1>
+                    ) : block.level === 2 ? (
+                      <h2 className={styles.headingLevel2}>
+                        {renderBlockText(block, anchors, anchorThreadMap, hoveredAnchorId, anchorRefs, onHoverAnchor)}
+                      </h2>
+                    ) : (
+                      <h3 className={styles.headingLevel3}>
+                        {renderBlockText(block, anchors, anchorThreadMap, hoveredAnchorId, anchorRefs, onHoverAnchor)}
+                      </h3>
+                    )
+                  ) : block.kind === "code" ? (
+                    <pre className={styles.codeBlock}>
+                      <code>{renderBlockText(block, anchors, anchorThreadMap, hoveredAnchorId, anchorRefs, onHoverAnchor)}</code>
+                    </pre>
+                  ) : (
+                    renderBlockText(block, anchors, anchorThreadMap, hoveredAnchorId, anchorRefs, onHoverAnchor)
+                  )}
+                </div>
+                <div className={styles.paragraphComments}>
+                  {previewPruningEnabled ? (
+                    <div className={styles.previewBlockActions}>
+                      <span className={styles.previewActionHint}>Preview only</span>
+                      <button
+                        className={styles.ghostButton}
+                        type="button"
+                        data-testid={`hide-preview-block-${block.id}`}
+                        onClick={() => onHideBlock(block.id)}
+                      >
+                        Remove section
+                      </button>
+                    </div>
+                  ) : null}
+                  {(claimEvidenceByBlock.get(block.id) ?? []).length ? (
+                    <div className={styles.claimEvidencePanel} data-testid={`claim-evidence-${block.index}`}>
+                      {(claimEvidenceByBlock.get(block.id) ?? []).map((item) => (
+                        <article
+                          key={`${item.anchorId}-${item.sourceLinks[0] ?? item.claimText}`}
+                          className={styles.claimEvidenceCard}
+                        >
+                          <div className={styles.claimEvidenceHeader}>
+                            <span className={styles.claimEvidenceVerdict}>{item.verdict.replaceAll("_", " ")}</span>
+                            <span className={styles.claimEvidenceClaim}>{item.claimText}</span>
+                          </div>
+                          <p className={styles.claimEvidenceText}>{item.evidenceSummary}</p>
+                          {item.sourceLinks.length ? (
+                            <div className={styles.claimEvidenceLinks}>
+                              {item.sourceLinks.slice(0, 3).map((source) => (
+                                <a
+                                  key={source}
+                                  className={styles.claimEvidenceLink}
+                                  href={source}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  Evidence source
+                                </a>
+                              ))}
+                            </div>
+                          ) : null}
+                        </article>
+                      ))}
+                    </div>
+                  ) : null}
+                  {(blockThreads.get(block.id) ?? []).length ? (
+                    (blockThreads.get(block.id) ?? []).map((thread) => (
+                      <ThreadCards
+                        key={thread.anchor.id}
+                        thread={thread}
+                        hoveredAnchorId={hoveredAnchorId}
+                        commentRefs={commentRefs}
+                        replyDrafts={replyDrafts}
+                        activeReplyComposerId={activeReplyComposerId}
+                        editingCommentId={editingCommentId}
+                        editingBody={editingBody}
+                        onHoverAnchor={onHoverAnchor}
+                        onReplyDraftChange={onReplyDraftChange}
+                        onToggleReplyComposer={onToggleReplyComposer}
+                        onAddReply={onAddReply}
+                        onDeleteReply={onDeleteReply}
+                        onReviewState={onReviewState}
+                        onStartEditing={onStartEditing}
+                        onEditingBodyChange={onEditingBodyChange}
+                        onSaveEdit={onSaveEdit}
+                        onCancelEdit={onCancelEdit}
+                        onDeleteComment={onDeleteComment}
+                      />
+                    ))
+                  ) : (
+                    <div className={styles.paragraphCommentsSpacer} aria-hidden="true" />
+                  )}
+                </div>
+              </>
+            )}
           </div>
         ))
       ) : (
@@ -814,6 +903,11 @@ export function DocumentPane({
       )}
     </div>
   );
+}
+
+function isSafeHref(href: string): boolean {
+  const value = href.trim().toLowerCase();
+  return !(value.startsWith("javascript:") || value.startsWith("data:"));
 }
 
 function TrashIcon() {

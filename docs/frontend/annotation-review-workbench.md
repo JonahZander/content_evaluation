@@ -19,7 +19,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
   - Shows content summary, research summary, inferred audience, and overlap links from fact-check-backed artifact data
 - Source text pane
   - Selectable text with highlighted spans in paragraph rows
-  - Supports lightweight markdown presentation for headings, inline emphasis, and fenced code blocks
+  - Supports lightweight markdown presentation for headings, inline emphasis, inline links, and fenced code blocks
 - Comment area
   - Each paragraph row owns its own right-side comment stack so later text does not continue until that paragraph's comments end
   - Agent comment cards should stay compact when multiple comments target the same section
@@ -44,6 +44,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 
 - Selecting a text span opens a reviewer comment composer for a new standalone human comment.
 - URL sources should be imported and previewed before analysis starts so the reviewer can inspect the normalized draft first.
+- Imported URL previews should support reversible per-block removal before analysis so boilerplate or irrelevant sections can be excluded without editing the raw draft.
 - Workspace persistence should be the preselected mode for new analyses so reloads can recover the canonical artifact from the backend.
 - Session persistence should remain available as a lightweight local option, but the browser should only store restore metadata rather than a full artifact snapshot.
 - Comments identify the agent or reviewer that produced them.
@@ -78,8 +79,10 @@ Provide a high-legibility review surface where users can inspect source text, wa
   - headings
   - `strong`
   - `em`
+  - inline links
   - fenced code blocks
 - URL mode should not display the pasted-text textarea because analysis runs from the imported URL preview content.
+- URL preview pruning is preview-only: hidden blocks are excluded from the pending run, can be restored before analysis, and do not mutate persisted artifact state before a run starts.
 - Unsupported markdown should stay readable as text rather than render rich embeds or media.
 - Agent comments are immutable in content; reviewer input happens through replies and review-state actions.
 - Audience analysis is summary-first in the current UI and should not create new inline annotation-heavy threads for newly generated artifacts.

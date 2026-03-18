@@ -96,6 +96,13 @@ describe("ReviewWorkbench", () => {
     expect(screen.getByText("const verdict = 'worth revising';").closest("code")?.tagName).toBe("CODE");
   });
 
+  it("renders clickable inline markdown links", () => {
+    render(<ReviewWorkbench initialArtifact={buildLinkArtifact()} />);
+
+    const link = screen.getByRole("link", { name: "source reference" });
+    expect(link).toHaveAttribute("href", "https://example.com/reference");
+  });
+
   it("opens export URLs", () => {
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
     render(<ReviewWorkbench initialArtifact={mockArtifact} />);
@@ -130,6 +137,77 @@ describe("ReviewWorkbench", () => {
     fireEvent.click(screen.getByTestId("import-url-button"));
 
     expect(await screen.findByText("How Editorial Teams Can Evaluate AI-Written Posts")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Remove section" }).length).toBeGreaterThan(0);
+  });
+
+  it("hides and restores imported preview blocks", async () => {
+    vi.mocked(api.previewSource).mockResolvedValue(buildUrlPreviewDocument());
+    render(<ReviewWorkbench initialArtifact={null} />);
+
+    fireEvent.change(screen.getByTestId("source-type-select"), { target: { value: "url" } });
+    fireEvent.change(screen.getByTestId("draft-url-input"), {
+      target: { value: "https://example.com/post" },
+    });
+    fireEvent.click(screen.getByTestId("import-url-button"));
+
+    expect(await screen.findByText("Imported URL Preview")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("hide-preview-block-url-block-3"));
+
+    expect(screen.getByText("Hidden from analysis")).toBeInTheDocument();
+    expect(screen.getByTestId("restore-preview-block-url-block-2")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("restore-preview-block-url-block-2"));
+
+    expect(screen.queryByText("Hidden from analysis")).not.toBeInTheDocument();
+  });
+
+  it("restores all hidden preview blocks at once", async () => {
+    vi.mocked(api.previewSource).mockResolvedValue(buildUrlPreviewDocument());
+    render(<ReviewWorkbench initialArtifact={null} />);
+
+    fireEvent.change(screen.getByTestId("source-type-select"), { target: { value: "url" } });
+    fireEvent.change(screen.getByTestId("draft-url-input"), {
+      target: { value: "https://example.com/post" },
+    });
+    fireEvent.click(screen.getByTestId("import-url-button"));
+    await screen.findByText("Imported URL Preview");
+
+    fireEvent.click(screen.getByTestId("hide-preview-block-url-block-1"));
+    fireEvent.click(screen.getByTestId("hide-preview-block-url-block-2"));
+    fireEvent.click(screen.getByTestId("restore-all-preview-blocks"));
+
+    expect(screen.queryByText("Hidden from analysis")).not.toBeInTheDocument();
+  });
+
+  it("submits only visible preview blocks for a URL run", async () => {
+    vi.mocked(api.previewSource).mockResolvedValue(buildUrlPreviewDocument());
+    vi.mocked(api.createRun).mockResolvedValue(mockArtifact);
+
+    render(<ReviewWorkbench initialArtifact={null} />);
+
+    fireEvent.change(screen.getByTestId("source-type-select"), { target: { value: "url" } });
+    fireEvent.change(screen.getByTestId("draft-url-input"), {
+      target: { value: "https://example.com/post" },
+    });
+    fireEvent.click(screen.getByTestId("import-url-button"));
+    await screen.findByText("Imported URL Preview");
+
+    fireEvent.click(screen.getByTestId("hide-preview-block-url-block-2"));
+    fireEvent.click(screen.getByTestId("analyze-button"));
+
+    await waitFor(() => expect(api.createRun).toHaveBeenCalled());
+    expect(api.createRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceType: "url",
+        url: "https://example.com/post",
+        text: [
+          "## Imported URL Preview",
+          "A concise introduction.",
+          "See [source reference](https://example.com/reference) for the cited material.",
+        ].join("\n\n"),
+      }),
+      expect.any(AbortSignal),
+    );
   });
 
   it("shows new analysis only when an artifact exists", () => {
@@ -618,5 +696,105 @@ function buildSyntheticUnmatchedArtifact(): AnalysisArtifact {
       },
     ],
   };
+  return artifact;
+}
+
+function buildUrlPreviewDocument(): AnalysisArtifact["document"] {
+  return {
+    id: "preview-doc",
+    title: "Imported URL Preview",
+    source_type: "url",
+    source_label: "https://example.com/post",
+    content_format: "markdown",
+    raw_content: [
+      "## Imported URL Preview",
+      "",
+      "A concise introduction.",
+      "",
+      "This section is boilerplate and can be removed.",
+      "",
+      "See [source reference](https://example.com/reference) for the cited material.",
+    ].join("\n"),
+    text: [
+      "Imported URL Preview",
+      "A concise introduction.",
+      "This section is boilerplate and can be removed.",
+      "See source reference for the cited material.",
+    ].join("\n\n"),
+    blocks: [
+      {
+        id: "url-block-1",
+        index: 0,
+        text: "Imported URL Preview",
+        kind: "heading",
+        origin: "source",
+        markdown: "## Imported URL Preview",
+        level: 2,
+        marks: [],
+      },
+      {
+        id: "url-block-2",
+        index: 1,
+        text: "A concise introduction.",
+        kind: "paragraph",
+        origin: "source",
+        markdown: "A concise introduction.",
+        marks: [],
+      },
+      {
+        id: "url-block-3",
+        index: 2,
+        text: "This section is boilerplate and can be removed.",
+        kind: "paragraph",
+        origin: "source",
+        markdown: "This section is boilerplate and can be removed.",
+        marks: [],
+      },
+      {
+        id: "url-block-4",
+        index: 3,
+        text: "See source reference for the cited material.",
+        kind: "paragraph",
+        origin: "source",
+        markdown: "See [source reference](https://example.com/reference) for the cited material.",
+        marks: [
+          {
+            start_offset: 4,
+            end_offset: 20,
+            kind: "link",
+            href: "https://example.com/reference",
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function buildLinkArtifact(): AnalysisArtifact {
+  const artifact = structuredClone(mockArtifact);
+  artifact.document = {
+    ...artifact.document!,
+    text: "See source reference for the cited material.",
+    blocks: [
+      {
+        id: "block-link",
+        index: 0,
+        text: "See source reference for the cited material.",
+        kind: "paragraph",
+        origin: "source",
+        markdown: "See [source reference](https://example.com/reference) for the cited material.",
+        marks: [
+          {
+            start_offset: 4,
+            end_offset: 20,
+            kind: "link",
+            href: "https://example.com/reference",
+          },
+        ],
+      },
+    ],
+  };
+  artifact.anchors = [];
+  artifact.threads = [];
   return artifact;
 }

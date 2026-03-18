@@ -12,7 +12,7 @@ export type ProviderKind = "deep_research" | "search" | "analysis" | "extract";
 export type EventType = "run" | "artifact" | "agent";
 export type ArtifactBlockKind = "paragraph" | "heading" | "code";
 export type ArtifactBlockOrigin = "source" | "synthetic_unmatched";
-export type ArtifactInlineMarkKind = "strong" | "emphasis" | "code";
+export type ArtifactInlineMarkKind = "strong" | "emphasis" | "code" | "link";
 export type ArtifactAnchorMatchKind = "source" | "synthetic_unmatched";
 
 export interface ArtifactSource {
@@ -39,6 +39,7 @@ export interface ArtifactInlineMark {
   start_offset: number;
   end_offset: number;
   kind: ArtifactInlineMarkKind;
+  href?: string | null;
 }
 
 export interface ArtifactDocument {

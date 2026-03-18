@@ -142,6 +142,17 @@ def _repo_with_pool(pool: FakePool | None = None) -> PostgresRunRepository:
 
 
 @pytest.mark.asyncio
+async def test_initialize_constructs_pool_without_auto_open() -> None:
+    repo = PostgresRunRepository("postgres://test:test@localhost/test")
+    fake_pool = FakePool()
+
+    with patch("content_evaluation.repositories.postgres.AsyncConnectionPool", return_value=fake_pool) as pool_class:
+        await repo.initialize()
+
+    pool_class.assert_called_once_with("postgres://test:test@localhost/test", min_size=2, max_size=10, open=False)
+
+
+@pytest.mark.asyncio
 async def test_create_artifact_writes_to_postgres_and_cache() -> None:
     repo = _repo_with_pool()
     artifact = _build_artifact()

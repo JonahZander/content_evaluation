@@ -23,6 +23,7 @@ export interface WorkbenchState {
   isSubmitting: boolean;
   isPreviewing: boolean;
   formState: ReviewFormState;
+  hiddenPreviewBlockIds: string[];
   selectedFile: File | null;
   fileInputKey: number;
   importInputKey: number;
@@ -61,6 +62,7 @@ export const initialWorkbenchState: WorkbenchState = {
   isSubmitting: false,
   isPreviewing: false,
   formState: DEFAULT_FORM_STATE,
+  hiddenPreviewBlockIds: [],
   selectedFile: null,
   fileInputKey: 0,
   importInputKey: 0,
@@ -90,6 +92,9 @@ export type WorkbenchAction =
   | { type: "SET_IS_PREVIEWING"; value: boolean }
   | { type: "SET_FORM_STATE"; formState: ReviewFormState }
   | { type: "UPDATE_FORM_STATE"; updater: (current: ReviewFormState) => ReviewFormState }
+  | { type: "HIDE_PREVIEW_BLOCK"; blockId: string }
+  | { type: "RESTORE_PREVIEW_BLOCK"; blockId: string }
+  | { type: "RESTORE_ALL_PREVIEW_BLOCKS" }
   | { type: "SET_SELECTED_FILE"; file: File | null }
   | { type: "BUMP_FILE_INPUT_KEY" }
   | { type: "BUMP_IMPORT_INPUT_KEY" }
@@ -121,7 +126,7 @@ export function workbenchReducer(state: WorkbenchState, action: WorkbenchAction)
     case "SET_ARTIFACT":
       return { ...state, artifact: action.artifact };
     case "SET_PREVIEW_DOCUMENT":
-      return { ...state, previewDocument: action.document };
+      return { ...state, previewDocument: action.document, hiddenPreviewBlockIds: [] };
     case "SET_ACTIVE_ARTIFACT_ID":
       return { ...state, activeArtifactId: action.id };
     case "SET_STATUS_MESSAGE":
@@ -136,6 +141,17 @@ export function workbenchReducer(state: WorkbenchState, action: WorkbenchAction)
       return { ...state, formState: action.formState };
     case "UPDATE_FORM_STATE":
       return { ...state, formState: action.updater(state.formState) };
+    case "HIDE_PREVIEW_BLOCK":
+      return state.hiddenPreviewBlockIds.includes(action.blockId)
+        ? state
+        : { ...state, hiddenPreviewBlockIds: [...state.hiddenPreviewBlockIds, action.blockId] };
+    case "RESTORE_PREVIEW_BLOCK":
+      return {
+        ...state,
+        hiddenPreviewBlockIds: state.hiddenPreviewBlockIds.filter((blockId) => blockId !== action.blockId),
+      };
+    case "RESTORE_ALL_PREVIEW_BLOCKS":
+      return { ...state, hiddenPreviewBlockIds: [] };
     case "SET_SELECTED_FILE":
       return { ...state, selectedFile: action.file };
     case "BUMP_FILE_INPUT_KEY":
@@ -178,6 +194,7 @@ export function workbenchReducer(state: WorkbenchState, action: WorkbenchAction)
         activeReplyComposerId: null,
         editingCommentId: null,
         editingBody: "",
+        hiddenPreviewBlockIds: [],
         selectedFile: null,
         fileInputKey: state.fileInputKey + 1,
         hasDownloadedJson: false,
@@ -189,6 +206,7 @@ export function workbenchReducer(state: WorkbenchState, action: WorkbenchAction)
         ...state,
         artifact: action.artifact,
         previewDocument: action.previewDocument,
+        hiddenPreviewBlockIds: [],
         formState: action.formState,
         hasDownloadedJson: action.hasDownloadedJson,
         activeArtifactId: action.activeArtifactId,

@@ -54,6 +54,7 @@ interface StoredWorkbenchState {
   artifactStatus: RunStatus | null;
   artifactTitle: string | null;
   previewDocument: ArtifactDocument | null;
+  hiddenPreviewBlockIds?: string[];
   formState: ReviewFormState;
   hasDownloadedJson: boolean;
 }
@@ -73,6 +74,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     previewDocument,
     agents,
     statusMessage,
+    hiddenPreviewBlockIds,
     hoveredAnchorId,
     selectionDraft,
     commentDraft,
@@ -208,6 +210,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       artifactStatus: artifact?.status ?? null,
       artifactTitle: artifact?.document?.title ?? artifact?.source.title ?? null,
       previewDocument: artifact === null ? previewDocument : null,
+      hiddenPreviewBlockIds: artifact === null ? hiddenPreviewBlockIds : [],
       formState,
       hasDownloadedJson,
     };
@@ -220,7 +223,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       return;
     }
     window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(storedState));
-  }, [artifact, previewDocument, formState, hasDownloadedJson]);
+  }, [artifact, previewDocument, hiddenPreviewBlockIds, formState, hasDownloadedJson]);
 
   const refreshArtifact = useCallback(async (artifactId: string) => {
     const updated = await fetchArtifact(artifactId);
@@ -394,13 +397,18 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   }, [artifact]);
 
   const displayDocument = artifact?.document ?? previewDocument;
+  const visiblePreviewBlockIds = useMemo(
+    () => new Set((previewDocument?.blocks ?? []).filter((block) => !hiddenPreviewBlockIds.includes(block.id)).map((block) => block.id)),
+    [hiddenPreviewBlockIds, previewDocument?.blocks],
+  );
+  const canAnalyzePreviewDocument = previewDocument !== null && visiblePreviewBlockIds.size > 0;
   const canStopRun = artifact !== null && (artifact.status === "queued" || artifact.status === "running");
   const canExport = artifact !== null;
   const showNewAnalysis = artifact !== null;
   const canPreviewUrl = formState.sourceType === "url" && formState.url.trim().length > 0;
   const canAnalyze =
     !isSubmitting &&
-    ((formState.sourceType === "url" && previewDocument !== null) ||
+    ((formState.sourceType === "url" && canAnalyzePreviewDocument) ||
       (formState.sourceType === "text" && formState.text.trim().length > 0) ||
       (formState.sourceType === "file" && selectedFile !== null));
   const latestResumeEvent = useMemo(
@@ -479,6 +487,10 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         dispatch({ type: "SET_STATUS_MESSAGE", message: "Import the draft from the URL before starting analysis." });
         return;
       }
+      if (formState.sourceType === "url" && !canAnalyzePreviewDocument) {
+        dispatch({ type: "SET_STATUS_MESSAGE", message: "Restore at least one imported block before starting analysis." });
+        return;
+      }
 
       const payload =
         formState.sourceType === "file" && selectedFile !== null
@@ -496,7 +508,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
                 sourceType: "url" as const,
                 sourceLabel: formState.url,
                 title: formState.title || previewDocument.title,
-                text: previewDocument.raw_content || previewDocument.text,
+                text: buildPreviewSubmissionText(previewDocument, hiddenPreviewBlockIds),
                 url: formState.url,
                 selectedAgents: resolveSelectedAgents(formState.selectedAgents, agents),
                 persistenceMode: formState.persistenceMode,
@@ -854,10 +866,15 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
             claimEvidenceByBlock={claimEvidenceByBlock}
             selectionEnabled={artifact !== null}
             hoveredAnchorId={hoveredAnchorId}
+            hiddenBlockIds={artifact === null && formState.sourceType === "url" ? hiddenPreviewBlockIds : []}
+            previewPruningEnabled={artifact === null && formState.sourceType === "url" && previewDocument !== null}
             anchorRefs={anchorRefs}
             commentRefs={commentRefs}
             onHoverAnchor={(anchorId) => dispatch({ type: "SET_HOVERED_ANCHOR_ID", anchorId })}
             onSelectionDraft={(draft) => dispatch({ type: "SET_SELECTION_DRAFT", draft: artifact !== null ? draft : null })}
+            onHideBlock={(blockId) => dispatch({ type: "HIDE_PREVIEW_BLOCK", blockId })}
+            onRestoreBlock={(blockId) => dispatch({ type: "RESTORE_PREVIEW_BLOCK", blockId })}
+            onRestoreAllBlocks={() => dispatch({ type: "RESTORE_ALL_PREVIEW_BLOCKS" })}
             replyDrafts={replyDrafts}
             editingCommentId={editingCommentId}
             editingBody={editingBody}
@@ -917,6 +934,9 @@ function isStoredWorkbenchState(value: unknown): value is StoredWorkbenchState {
     && typeof candidate.formState === "object"
     && candidate.formState !== null
     && typeof candidate.hasDownloadedJson === "boolean"
+    && (!("hiddenPreviewBlockIds" in candidate)
+      || candidate.hiddenPreviewBlockIds === undefined
+      || (Array.isArray(candidate.hiddenPreviewBlockIds) && candidate.hiddenPreviewBlockIds.every((item) => typeof item === "string")))
     && ("artifactId" in candidate)
     && ("previewDocument" in candidate)
   );
@@ -979,6 +999,15 @@ function hydrateFormStateFromArtifact(current: ReviewFormState, artifact: Analys
     persistenceMode: artifact.run_config.persistence_mode,
     includeDebugTrace: artifact.run_config.include_debug_trace,
   };
+}
+
+function buildPreviewSubmissionText(document: ArtifactDocument, hiddenBlockIds: string[]): string {
+  const hiddenIds = new Set(hiddenBlockIds);
+  return document.blocks
+    .filter((block) => !hiddenIds.has(block.id))
+    .map((block) => block.markdown?.trim() || block.text.trim())
+    .filter((block) => block.length > 0)
+    .join("\n\n");
 }
 
 function activeArtifactIdFor(artifact: AnalysisArtifact): string | null {

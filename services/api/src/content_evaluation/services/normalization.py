@@ -266,6 +266,7 @@ def _extract_inline_content(token: Token) -> tuple[str, list[ArtifactInlineMark]
         ArtifactInlineMarkKind.STRONG: [],
         ArtifactInlineMarkKind.EMPHASIS: [],
     }
+    open_links: list[tuple[int, str | None]] = []
     offset = 0
 
     for child in token.children:
@@ -317,6 +318,21 @@ def _extract_inline_content(token: Token) -> tuple[str, list[ArtifactInlineMark]
                         start_offset=start,
                         end_offset=offset,
                         kind=ArtifactInlineMarkKind.EMPHASIS,
+                    )
+                )
+            continue
+        if child.type == "link_open":
+            open_links.append((offset, child.attrGet("href")))
+            continue
+        if child.type == "link_close" and open_links:
+            start, href = open_links.pop()
+            if start < offset and href:
+                marks.append(
+                    ArtifactInlineMark(
+                        start_offset=start,
+                        end_offset=offset,
+                        kind=ArtifactInlineMarkKind.LINK,
+                        href=href,
                     )
                 )
             continue

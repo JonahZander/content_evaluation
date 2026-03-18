@@ -45,7 +45,7 @@ class PostgresRunRepository:
     async def initialize(self) -> None:
         """Create the PostgreSQL schema and open the connection pool."""
 
-        self._pool = AsyncConnectionPool(self._database_url, min_size=2, max_size=10)
+        self._pool = AsyncConnectionPool(self._database_url, min_size=2, max_size=10, open=False)
         await self._pool.open()
 
         statements = [

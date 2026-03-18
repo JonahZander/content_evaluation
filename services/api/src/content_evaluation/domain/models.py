@@ -185,6 +185,7 @@ class ArtifactInlineMarkKind(StrEnum):
     STRONG = "strong"
     EMPHASIS = "emphasis"
     CODE = "code"
+    LINK = "link"
 
 
 class ArtifactInlineMark(BaseModel):
@@ -193,6 +194,7 @@ class ArtifactInlineMark(BaseModel):
     start_offset: int
     end_offset: int
     kind: ArtifactInlineMarkKind
+    href: str | None = None
 
 
 class ArtifactBlock(BaseModel):

@@ -10,6 +10,16 @@ vi.mock("@/lib/api", () => ({
   API_BASE_URL: "http://localhost:8000",
   fetchAgents: vi.fn().mockResolvedValue([
     {
+      agent_id: "ai_likelihood",
+      display_name: "AI Likelihood",
+      category: "ai_likelihood",
+      depends_on: [],
+      execution_mode: "single_turn",
+      provider_kind: "analysis",
+      description: "Estimates whether writing appears AI-generated.",
+      default_enabled: true,
+    },
+    {
       agent_id: "fact_check",
       display_name: "Fact Check",
       category: "fact_check",
@@ -19,8 +29,19 @@ vi.mock("@/lib/api", () => ({
       description: "Verifies claims and overlap research.",
       default_enabled: true,
     },
+    {
+      agent_id: "value",
+      display_name: "Value Analysis",
+      category: "value",
+      depends_on: ["fact_check"],
+      execution_mode: "single_turn",
+      provider_kind: "analysis",
+      description: "Finds the strongest value proposition in the text.",
+      default_enabled: true,
+    },
   ]),
   createRun: vi.fn(),
+  appendAgents: vi.fn(),
   previewSource: vi.fn(),
   fetchArtifact: vi.fn(),
   cancelRun: vi.fn(),
@@ -59,6 +80,7 @@ beforeEach(() => {
   window.sessionStorage.clear();
   vi.spyOn(window, "confirm").mockReturnValue(true);
   vi.mocked(api.fetchArtifact).mockResolvedValue(mockArtifact);
+  vi.mocked(api.appendAgents).mockResolvedValue({ ...mockArtifact, status: "queued" });
   vi.mocked(api.previewSource).mockResolvedValue(mockArtifact.document!);
   vi.mocked(api.cancelRun).mockResolvedValue({ ...mockArtifact, status: "canceled" });
 });
@@ -85,6 +107,15 @@ describe("ReviewWorkbench", () => {
     expect(screen.getAllByRole("button", { name: "Uncertain" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("button", { name: "Add comment" }).length).toBeGreaterThan(0);
     expect(screen.queryByPlaceholderText("Add a comment on this note")).not.toBeInTheDocument();
+  });
+
+  it("disables completed agents and keeps the action in append mode for terminal artifacts", () => {
+    render(<ReviewWorkbench initialArtifact={mockArtifact} />);
+
+    expect(screen.getByRole("button", { name: "Add selected analysis" })).toBeInTheDocument();
+    expect(screen.getByTestId("agent-toggle-fact_check")).toBeDisabled();
+    expect(screen.getByTestId("agent-toggle-value")).toBeDisabled();
+    expect(screen.getByTestId("agent-toggle-ai_likelihood")).not.toBeDisabled();
   });
 
   it("renders markdown headings, inline emphasis, and code blocks", () => {
@@ -322,6 +353,17 @@ describe("ReviewWorkbench", () => {
     fireEvent.click(screen.getByTestId("review-state-comment-2-accepted"));
 
     expect(api.updateReviewState).toHaveBeenCalledWith("comment-2", "unreviewed");
+  });
+
+  it("queues additional analysis for a terminal artifact without replacing it", () => {
+    render(<ReviewWorkbench initialArtifact={mockArtifact} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add selected analysis" }));
+
+    expect(api.appendAgents).toHaveBeenCalledWith({
+      artifactId: mockArtifact.artifact_id,
+      selectedAgents: mockArtifact.run_config.selected_agents,
+    });
   });
 
   it("deletes a human reply from the thread UI", () => {

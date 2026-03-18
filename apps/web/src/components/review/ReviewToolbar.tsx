@@ -25,6 +25,8 @@ interface ReviewToolbarProps {
   canStopRun: boolean;
   canExport: boolean;
   showNewAnalysis: boolean;
+  analyzeButtonLabel: string;
+  disabledAgentIds: string[];
   importInputKey: number;
   onFormChange: (updater: (current: ReviewFormState) => ReviewFormState) => void;
   onFileChange: (file: File | null) => void;
@@ -49,6 +51,8 @@ export function ReviewToolbar({
   canStopRun,
   canExport,
   showNewAnalysis,
+  analyzeButtonLabel,
+  disabledAgentIds,
   importInputKey,
   onFormChange,
   onFileChange,
@@ -123,6 +127,7 @@ export function ReviewToolbar({
                 data-testid={`agent-toggle-${agent.agent_id}`}
                 type="checkbox"
                 checked={checked}
+                disabled={disabledAgentIds.includes(agent.agent_id)}
                 onChange={(event) =>
                   onFormChange((current) => ({
                     ...current,
@@ -206,7 +211,7 @@ export function ReviewToolbar({
           onClick={onSubmit}
           disabled={submitting || !canAnalyze}
         >
-          {submitting ? "Submitting..." : "Analyze content"}
+          {submitting ? "Submitting..." : analyzeButtonLabel}
         </button>
         <button
           className={styles.ghostButton}

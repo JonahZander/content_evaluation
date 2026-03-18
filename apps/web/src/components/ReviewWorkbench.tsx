@@ -19,6 +19,7 @@ import {
 } from "@/components/review/workbench-state";
 import {
   addReply,
+  appendAgents,
   API_BASE_URL,
   cancelRun,
   createComment,
@@ -67,6 +68,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     ...initialWorkbenchState,
     artifact: initialArtifact,
     activeArtifactId: initialArtifact?.artifact_id ?? null,
+    formState: initialArtifact
+      ? hydrateFormStateFromArtifact(initialWorkbenchState.formState, initialArtifact)
+      : initialWorkbenchState.formState,
   });
 
   const {
@@ -405,12 +409,33 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   const canStopRun = artifact !== null && (artifact.status === "queued" || artifact.status === "running");
   const canExport = artifact !== null;
   const showNewAnalysis = artifact !== null;
+  const isTerminalArtifact = artifact !== null && TERMINAL_RUN_STATUSES.has(artifact.status);
+  const completedAgentIds = useMemo(() => {
+    if (artifact === null) {
+      return new Set<string>();
+    }
+    const completed = new Set(
+      artifact.agent_plan
+        .filter((item) => item.status === "completed")
+        .map((item) => item.agent_id),
+    );
+    artifact.agent_results
+      .filter((item) => item.status === "completed")
+      .forEach((item) => completed.add(item.agent_id));
+    return completed;
+  }, [artifact]);
+  const appendableSelectedAgents = useMemo(
+    () => formState.selectedAgents.filter((agentId) => !completedAgentIds.has(agentId)),
+    [completedAgentIds, formState.selectedAgents],
+  );
   const canPreviewUrl = formState.sourceType === "url" && formState.url.trim().length > 0;
   const canAnalyze =
     !isSubmitting &&
-    ((formState.sourceType === "url" && canAnalyzePreviewDocument) ||
-      (formState.sourceType === "text" && formState.text.trim().length > 0) ||
-      (formState.sourceType === "file" && selectedFile !== null));
+    ((isTerminalArtifact && !canStopRun && appendableSelectedAgents.length > 0) ||
+      ((formState.sourceType === "url" && canAnalyzePreviewDocument) ||
+        (formState.sourceType === "text" && formState.text.trim().length > 0) ||
+        (formState.sourceType === "file" && selectedFile !== null)));
+  const analyzeButtonLabel = isTerminalArtifact ? "Add selected analysis" : "Analyze content";
   const latestResumeEvent = useMemo(
     () =>
       [...(artifact?.events ?? [])]
@@ -452,6 +477,29 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   }
 
   async function handleSubmit() {
+    if (isTerminalArtifact && artifact !== null) {
+      dispatch({ type: "SET_STATUS_MESSAGE", message: "Queueing additional analysis..." });
+      dispatch({ type: "SET_IS_SUBMITTING", value: true });
+      try {
+        const updatedArtifact = await appendAgents({
+          artifactId: artifact.artifact_id,
+          selectedAgents: formState.selectedAgents,
+        });
+        dispatch({ type: "SET_ARTIFACT", artifact: updatedArtifact });
+        dispatch({ type: "SET_ACTIVE_ARTIFACT_ID", id: updatedArtifact.artifact_id });
+        dispatch({ type: "SET_FORM_STATE", formState: hydrateFormStateFromArtifact(formState, updatedArtifact) });
+        dispatch({ type: "SET_STATUS_MESSAGE", message: "Additional analysis queued" });
+      } catch (error) {
+        dispatch({
+          type: "SET_STATUS_MESSAGE",
+          message: error instanceof Error ? error.message : "Could not queue additional analysis.",
+        });
+      } finally {
+        dispatch({ type: "SET_IS_SUBMITTING", value: false });
+      }
+      return;
+    }
+
     const isUrlPreviewRun = formState.sourceType === "url" && previewDocument !== null && artifact === null;
     if (!isUrlPreviewRun && (artifact !== null || previewDocument !== null)) {
       const replaced = await maybeReplaceCurrentAnalysis(false);
@@ -527,6 +575,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       const createdArtifact = await createRun(payload, signal);
       dispatch({ type: "SET_ARTIFACT", artifact: createdArtifact });
       dispatch({ type: "SET_ACTIVE_ARTIFACT_ID", id: createdArtifact.artifact_id });
+      dispatch({ type: "SET_FORM_STATE", formState: hydrateFormStateFromArtifact(formState, createdArtifact) });
       dispatch({ type: "SET_SELECTION_DRAFT", draft: null });
       dispatch({ type: "SET_COMMENT_DRAFT", draft: "" });
       dispatch({ type: "SET_EDITING_COMMENT", commentId: null, body: "" });
@@ -610,6 +659,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       dispatch({ type: "SET_ARTIFACT", artifact: imported });
       dispatch({ type: "SET_PREVIEW_DOCUMENT", document: null });
       dispatch({ type: "SET_ACTIVE_ARTIFACT_ID", id: null });
+      dispatch({ type: "SET_FORM_STATE", formState: hydrateFormStateFromArtifact(formState, imported) });
       dispatch({ type: "SET_HAS_DOWNLOADED_JSON", value: true });
       dispatch({ type: "SET_STATUS_MESSAGE", message: `Imported artifact ${imported.artifact_id}` });
     } catch (error) {
@@ -767,6 +817,8 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
           canStopRun={canStopRun}
           canExport={canExport}
           showNewAnalysis={showNewAnalysis}
+          analyzeButtonLabel={analyzeButtonLabel}
+          disabledAgentIds={[...completedAgentIds]}
           importInputKey={importInputKey}
           onFormChange={(updater) =>
             dispatch({

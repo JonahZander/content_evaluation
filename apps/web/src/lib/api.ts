@@ -23,6 +23,11 @@ export interface CreateCommentPayload {
   quote?: string;
 }
 
+export interface AppendAgentsPayload {
+  artifactId: string;
+  selectedAgents: string[];
+}
+
 async function parseJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
     let detail: string | undefined;
@@ -117,6 +122,20 @@ export async function createRunFromFile(
 
 export async function fetchArtifact(artifactId: string): Promise<AnalysisArtifact> {
   return parseJson(await fetch(`${API_BASE_URL}/api/v1/runs/${artifactId}`));
+}
+
+export async function appendAgents(payload: AppendAgentsPayload): Promise<AnalysisArtifact> {
+  return parseJson(
+    await fetch(`${API_BASE_URL}/api/v1/runs/${payload.artifactId}/agents`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        selected_agents: payload.selectedAgents,
+      }),
+    }),
+  );
 }
 
 export async function cancelRun(artifactId: string): Promise<AnalysisArtifact> {

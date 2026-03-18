@@ -56,6 +56,7 @@ from content_evaluation.domain.models import (
     ReviewState,
     RunConfig,
     RunInput,
+    RunMode,
     RunStatus,
     RuntimeMode,
     SourceType,
@@ -180,15 +181,7 @@ class RunOrchestrator:
                 include_debug_trace=input_data.include_debug_trace,
             ),
             agent_plan=[
-                ArtifactAgentPlanItem(
-                    agent_id=definition.agent_id,
-                    display_name=definition.display_name,
-                    category=definition.category,
-                    depends_on=list(definition.depends_on),
-                    provider_kind=definition.provider_kind,
-                    execution_mode=definition.execution_mode,
-                    instruction_file=str(definition.instruction_path().name),
-                )
+                _build_plan_item(definition)
                 for definition in _plan_order(resolved_agent_ids)
             ],
             debug=ArtifactDebug() if input_data.include_debug_trace else None,
@@ -206,6 +199,65 @@ class RunOrchestrator:
             )
         )
         return await self._repository.create_artifact(artifact)
+
+    async def append_agents(self, artifact_id: UUID, selected_agents: list[str]) -> tuple[AnalysisArtifact, RunInput]:
+        """Queue additive analysis work on an existing artifact."""
+
+        if not selected_agents:
+            raise ValidationError("Select at least one agent to add analysis.")
+
+        async with self._artifact_lock(artifact_id):
+            artifact = await self._require_artifact(artifact_id)
+            if artifact.status not in {RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELED}:
+                raise ValidationError("Additional analysis is only available after a run has finished.")
+            if artifact.document is None:
+                raise ValidationError("Artifact must include a normalized document before adding analysis.")
+
+            requested_selected_agents = _union_preserving_order(
+                artifact.run_config.selected_agents,
+                selected_agents,
+            )
+            requested_resolved_agents = _expand_agent_ids(requested_selected_agents)
+            append_agent_ids = _appendable_agent_ids(artifact, requested_resolved_agents)
+            if not append_agent_ids:
+                raise ValidationError("No additional agents are available to run for this artifact.")
+
+            artifact.run_config.selected_agents = requested_selected_agents
+            artifact.run_config.resolved_agents = _union_preserving_order(
+                artifact.run_config.resolved_agents,
+                requested_resolved_agents,
+            )
+            artifact.agent_plan = _merged_agent_plan(
+                artifact,
+                artifact.run_config.resolved_agents,
+                append_agent_ids,
+            )
+            artifact.status = RunStatus.QUEUED
+            artifact.error_message = None
+            artifact.summary = None
+            artifact.review_summary = None
+            await self._append_event(
+                artifact,
+                EventType.RUN,
+                "run",
+                "queued",
+                "Additional analysis queued",
+                progress=_progress_for_artifact(artifact),
+                snapshot_available=True,
+                metadata={"mode": RunMode.APPEND_AGENTS.value, "append_agent_ids": append_agent_ids},
+            )
+
+            input_data = RunInput(
+                mode=RunMode.APPEND_AGENTS,
+                source_type=artifact.source.source_type,
+                source_label=artifact.source.source_label,
+                title=artifact.document.title if artifact.document is not None else artifact.source.title,
+                url=artifact.source.url,
+                selected_agents=requested_selected_agents,
+                persistence_mode=artifact.run_config.persistence_mode,
+                include_debug_trace=artifact.run_config.include_debug_trace,
+            )
+            return artifact, input_data
 
     async def import_artifact(self, artifact: AnalysisArtifact) -> AnalysisArtifact:
         """Persist one imported artifact."""
@@ -265,6 +317,11 @@ class RunOrchestrator:
         """Process one queued artifact."""
 
         try:
+            if input_data.mode is RunMode.APPEND_AGENTS:
+                await self._process_append_agents(
+                    artifact_id, input_data, attempt=attempt, max_attempts=max_attempts
+                )
+                return
             if self._orchestrator_backend is OrchestratorBackend.LANGGRAPH:
                 await self._process_run_with_langgraph(
                     artifact_id, input_data, attempt=attempt, max_attempts=max_attempts
@@ -273,6 +330,98 @@ class RunOrchestrator:
             await self._process_run_legacy(artifact_id, input_data, attempt=attempt, max_attempts=max_attempts)
         finally:
             self._artifact_locks.pop(artifact_id, None)
+
+    async def _process_append_agents(
+        self,
+        artifact_id: UUID,
+        input_data: RunInput,
+        *,
+        attempt: int,
+        max_attempts: int | None,
+    ) -> None:
+        """Process one queued append-agents job without re-extracting the source."""
+
+        artifact = await self._require_artifact(artifact_id)
+        if artifact.document is None:
+            raise ValidationError("Artifact document is missing")
+
+        append_agent_ids = _appendable_agent_ids(artifact, _expand_agent_ids(input_data.selected_agents))
+        if not append_agent_ids:
+            artifact.status = RunStatus.COMPLETED
+            artifact.summary = _build_summary(artifact)
+            artifact.review_summary = _build_review_summary(artifact)
+            await self._repository.update_artifact(artifact)
+            return
+
+        artifact.status = RunStatus.RUNNING
+        artifact.error_message = None
+        if attempt > 1:
+            await self._append_event(
+                artifact,
+                EventType.RUN,
+                "run",
+                "resumed",
+                "Additional analysis resumed after worker retry",
+                progress=_progress_for_artifact(artifact),
+                snapshot_available=True,
+                attempt=attempt,
+                max_attempts=max_attempts,
+                metadata={"mode": RunMode.APPEND_AGENTS.value},
+            )
+        await self._append_event(
+            artifact,
+            EventType.RUN,
+            "run",
+            "started",
+            "Additional analysis started",
+            snapshot_available=True,
+            attempt=attempt,
+            max_attempts=max_attempts,
+            metadata={"mode": RunMode.APPEND_AGENTS.value, "append_agent_ids": append_agent_ids},
+        )
+
+        try:
+            for batch in _execution_batches(append_agent_ids):
+                await self._ensure_run_active(artifact_id)
+                await self._queue_batch(artifact, batch)
+                await self._run_batch(artifact, batch)
+
+            await self._ensure_run_active(artifact_id)
+            artifact.summary = _build_summary(artifact)
+            artifact.review_summary = _build_review_summary(artifact)
+            artifact.status = RunStatus.COMPLETED
+            await self._append_event(
+                artifact,
+                EventType.RUN,
+                "run",
+                "completed",
+                "Additional analysis completed",
+                progress=1.0,
+                snapshot_available=True,
+                metadata={"mode": RunMode.APPEND_AGENTS.value},
+            )
+        except RunCancelledError:
+            artifact = await self._require_artifact(artifact_id)
+            artifact.status = RunStatus.CANCELED
+            await self._repository.update_artifact(artifact)
+        except Exception as error:
+            artifact.status = RunStatus.FAILED
+            artifact.error_message = str(error)
+            error_kind = error.kind if isinstance(error, ProviderError) else None
+            provider_name = error.provider_name if isinstance(error, ProviderError) else None
+            await self._append_event(
+                artifact,
+                EventType.RUN,
+                "run",
+                "failed",
+                str(error),
+                progress=1.0,
+                error_kind=error_kind,
+                provider_name=provider_name,
+                snapshot_available=True,
+                metadata={"mode": RunMode.APPEND_AGENTS.value},
+            )
+            raise
 
     async def _process_run_legacy(
         self,
@@ -1166,6 +1315,82 @@ def _require_plan_item(artifact: AnalysisArtifact, agent_id: str) -> ArtifactAge
     if plan_item is None:
         raise ValidationError(f"Agent plan item {agent_id} not found")
     return plan_item
+
+
+def _build_plan_item(definition: AgentDefinition) -> ArtifactAgentPlanItem:
+    """Create a fresh plan item for one agent definition."""
+
+    return ArtifactAgentPlanItem(
+        agent_id=definition.agent_id,
+        display_name=definition.display_name,
+        category=definition.category,
+        depends_on=list(definition.depends_on),
+        provider_kind=definition.provider_kind,
+        execution_mode=definition.execution_mode,
+        instruction_file=str(definition.instruction_path().name),
+    )
+
+
+def _union_preserving_order(existing: list[str], additions: list[str]) -> list[str]:
+    """Return the ordered union of two string lists."""
+
+    merged: list[str] = []
+    seen: set[str] = set()
+    for item in [*existing, *additions]:
+        if item in seen:
+            continue
+        seen.add(item)
+        merged.append(item)
+    return merged
+
+
+def _completed_agent_ids(artifact: AnalysisArtifact) -> set[str]:
+    """Return agents already completed on the artifact."""
+
+    completed = {
+        item.agent_id
+        for item in artifact.agent_plan
+        if item.status is AgentPlanStatus.COMPLETED
+    }
+    completed.update(
+        result.agent_id
+        for result in artifact.agent_results
+        if result.status is AgentPlanStatus.COMPLETED
+    )
+    return completed
+
+
+def _appendable_agent_ids(artifact: AnalysisArtifact, requested_resolved_agents: list[str]) -> list[str]:
+    """Return requested agents that still need to run."""
+
+    completed = _completed_agent_ids(artifact)
+    return [agent_id for agent_id in requested_resolved_agents if agent_id not in completed]
+
+
+def _merged_agent_plan(
+    artifact: AnalysisArtifact,
+    resolved_agent_ids: list[str],
+    append_agent_ids: list[str],
+) -> list[ArtifactAgentPlanItem]:
+    """Return an updated ordered plan for additive analysis."""
+
+    existing_by_id = {item.agent_id: item.model_copy(deep=True) for item in artifact.agent_plan}
+    appendable = set(append_agent_ids)
+    completed = _completed_agent_ids(artifact)
+    merged: list[ArtifactAgentPlanItem] = []
+    for definition in _plan_order(resolved_agent_ids):
+        plan_item = existing_by_id.get(definition.agent_id, _build_plan_item(definition))
+        if definition.agent_id in completed and plan_item.status is not AgentPlanStatus.COMPLETED:
+            plan_item.status = AgentPlanStatus.COMPLETED
+            plan_item.message = "Agent completed"
+        if definition.agent_id in appendable and definition.agent_id not in completed:
+            plan_item.status = AgentPlanStatus.PENDING
+            plan_item.started_at = None
+            plan_item.completed_at = None
+            plan_item.model_name = None
+            plan_item.message = "Queued for additional analysis"
+        merged.append(plan_item)
+    return merged
 
 
 def _build_deep_research_brief(instruction: str, document: ArtifactDocument) -> str:

@@ -152,6 +152,74 @@ def test_preview_source_returns_normalized_document(monkeypatch: pytest.MonkeyPa
     assert payload["blocks"]
 
 
+def test_append_agents_queues_additional_analysis(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Queue additive analysis on a terminal artifact through the API."""
+
+    monkeypatch.setattr("content_evaluation.api.main.build_services", lambda: AppServices(_mock_settings()))
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/runs",
+            json={
+                "source_type": "text",
+                "source_label": "Draft",
+                "title": "Draft",
+                "text": "This draft helps editors assess content.\n\nIt repeats itself in places.",
+                "selected_agents": ["ai_likelihood"],
+            },
+        )
+        assert response.status_code == 200
+        run_id = response.json()["artifact_id"]
+        _wait_for_run_completion(client, run_id)
+
+        append_response = client.post(
+            f"/api/v1/runs/{run_id}/agents",
+            json={"selected_agents": ["value"]},
+        )
+        assert append_response.status_code == 200
+        assert append_response.json()["status"] == "queued"
+
+        run_payload = _wait_for_run_completion(client, run_id)
+        assert run_payload["status"] == "completed"
+        assert {item["agent_id"] for item in run_payload["agent_results"]} >= {"ai_likelihood", "fact_check", "value"}
+        assert run_payload["run_config"]["selected_agents"] == ["ai_likelihood", "value"]
+
+
+def test_append_agents_rejects_active_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reject additive analysis while the artifact is still active."""
+
+    services = AppServices(_mock_settings())
+
+    async def slow_process_run(artifact_id: object, input_data: object, **_: object) -> None:
+        del artifact_id
+        del input_data
+        await asyncio.sleep(0.2)
+
+    monkeypatch.setattr("content_evaluation.api.main.build_services", lambda: services)
+    monkeypatch.setattr(services.orchestrator, "process_run", slow_process_run)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/runs",
+            json={
+                "source_type": "text",
+                "source_label": "Draft",
+                "title": "Draft",
+                "text": "This draft helps editors assess content.\n\nIt repeats itself in places.",
+                "selected_agents": ["ai_likelihood"],
+            },
+        )
+        assert response.status_code == 200
+        run_id = response.json()["artifact_id"]
+
+        append_response = client.post(
+            f"/api/v1/runs/{run_id}/agents",
+            json={"selected_agents": ["value"]},
+        )
+
+    assert append_response.status_code == 400
+    assert "only available after a run has finished" in append_response.text
+
+
 def test_api_returns_404_for_unknown_run(monkeypatch: pytest.MonkeyPatch) -> None:
     """Return 404 for a run ID that does not exist."""
 
@@ -177,7 +245,7 @@ def test_cancel_run_stops_inflight_execution(monkeypatch: pytest.MonkeyPatch) ->
 
     services = AppServices(_mock_settings())
 
-    async def slow_process_run(artifact_id: object, input_data: object) -> None:
+    async def slow_process_run(artifact_id: object, input_data: object, **_: object) -> None:
         del artifact_id
         del input_data
         await asyncio.sleep(0.2)

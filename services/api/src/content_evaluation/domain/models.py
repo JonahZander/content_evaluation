@@ -83,6 +83,13 @@ class RunJobStatus(StrEnum):
     CANCELED = "canceled"
 
 
+class RunMode(StrEnum):
+    """Enumerate queued run behaviors."""
+
+    CREATE = "create"
+    APPEND_AGENTS = "append_agents"
+
+
 class AuthorType(StrEnum):
     """Enumerate comment author types."""
 
@@ -455,6 +462,7 @@ class AnalysisArtifact(BaseModel):
 class RunInput(BaseModel):
     """Store one input request for a run."""
 
+    mode: RunMode = RunMode.CREATE
     source_type: SourceType
     source_label: str
     text: str | None = None

@@ -27,6 +27,12 @@ class CreateRunRequest(PreviewSourceRequest):
     include_debug_trace: bool = False
 
 
+class AppendAgentsRequest(BaseModel):
+    """Store a request to append agent analyses to an existing artifact."""
+
+    selected_agents: list[str] = Field(default_factory=list)
+
+
 class ImportArtifactRequest(BaseModel):
     """Store a request to import an artifact."""
 

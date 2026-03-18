@@ -23,6 +23,7 @@ from content_evaluation.api.dependencies import (
     get_services,
 )
 from content_evaluation.api.schemas import (
+    AppendAgentsRequest,
     CreateCommentRequest,
     CreateReplyRequest,
     CreateRunRequest,
@@ -137,6 +138,19 @@ async def get_run(run_id: UUID, repository: RepositoryDependency) -> AnalysisArt
     artifact = await repository.get_artifact(run_id)
     if artifact is None:
         raise HTTPException(status_code=404, detail="Run not found")
+    return artifact
+
+
+@app.post("/api/v1/runs/{run_id}/agents")
+async def append_agents(
+    run_id: UUID,
+    request: AppendAgentsRequest,
+    services: ServicesDependency,
+) -> AnalysisArtifact:
+    """Queue additional agent analysis for one existing artifact."""
+
+    artifact, input_data = await services.orchestrator.append_agents(run_id, request.selected_agents)
+    await services.repository.enqueue_run_job(RunJob(artifact_id=artifact.artifact_id, input_data=input_data))
     return artifact
 
 

@@ -13,6 +13,7 @@ from content_evaluation.domain.models import (
     OrchestratorBackend,
     ProviderRoute,
     RunInput,
+    RunMode,
     RuntimeMode,
     SourceType,
 )
@@ -471,3 +472,46 @@ async def test_completed_run_builds_review_summary_and_keeps_fact_check_out_of_t
         for thread in updated.threads
         for comment in thread.comments
     )
+
+
+@pytest.mark.asyncio
+async def test_append_agents_reuses_existing_artifact_and_runs_only_missing_dependencies() -> None:
+    """Append analysis should keep completed work and run only newly required agents."""
+
+    repository = InMemoryRunRepository()
+    orchestrator = RunOrchestrator(
+        repository,
+        MockAnalysisProvider(),
+        MockSimilaritySearchProvider(),
+        MockContentExtractionProvider(),
+        RuntimeMode.MOCK,
+        False,
+        OrchestratorBackend.LANGGRAPH,
+        deep_research_provider=MockDeepResearchProvider(),
+    )
+    input_data = RunInput(
+        source_type=SourceType.TEXT,
+        source_label="Draft",
+        title="Draft",
+        text="Alpha paragraph.\n\nBeta paragraph.",
+        selected_agents=["ai_likelihood"],
+    )
+    artifact = await orchestrator.create_run(input_data)
+    await orchestrator.process_run(artifact.artifact_id, input_data)
+
+    queued_artifact, append_input = await orchestrator.append_agents(artifact.artifact_id, ["value"])
+    assert queued_artifact.status.value == "queued"
+    assert append_input.mode is RunMode.APPEND_AGENTS
+
+    await orchestrator.process_run(artifact.artifact_id, append_input)
+
+    updated = await repository.get_artifact(artifact.artifact_id)
+    assert updated is not None
+    assert updated.status.value == "completed"
+    assert updated.document is not None
+    assert [result.agent_id for result in updated.agent_results].count("ai_likelihood") == 1
+    assert {result.agent_id for result in updated.agent_results} >= {"ai_likelihood", "fact_check", "value"}
+    assert updated.run_config.selected_agents == ["ai_likelihood", "value"]
+    assert updated.run_config.resolved_agents == ["ai_likelihood", "fact_check", "value"]
+    assert any(event.message == "Additional analysis queued" for event in updated.events)
+    assert any(event.message == "Additional analysis completed" for event in updated.events)

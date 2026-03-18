@@ -77,6 +77,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     selectionDraft,
     commentDraft,
     replyDrafts,
+    activeReplyComposerId,
     editingCommentId,
     editingBody,
     isSubmitting,
@@ -661,6 +662,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       await addReply(commentId, body);
       await refreshArtifact(artifact.artifact_id);
       dispatch({ type: "SET_REPLY_DRAFT", commentId, body: "" });
+      dispatch({ type: "SET_ACTIVE_REPLY_COMPOSER", commentId: null });
     } catch (error) {
       dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not save reply." });
     }
@@ -862,6 +864,13 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
             onReplyDraftChange={(commentId, value) => {
               dispatch({ type: "SET_REPLY_DRAFT", commentId, body: value });
             }}
+            activeReplyComposerId={activeReplyComposerId}
+            onToggleReplyComposer={(commentId) =>
+              dispatch({
+                type: "SET_ACTIVE_REPLY_COMPOSER",
+                commentId: activeReplyComposerId === commentId ? null : commentId,
+              })
+            }
             onAddReply={handleReply}
             onDeleteReply={handleDeleteReply}
             onReviewState={handleReviewState}

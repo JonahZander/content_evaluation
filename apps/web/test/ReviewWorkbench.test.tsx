@@ -83,7 +83,8 @@ describe("ReviewWorkbench", () => {
     expect(screen.getAllByRole("button", { name: "Accept" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("button", { name: "Reject" }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("button", { name: "Uncertain" }).length).toBeGreaterThan(0);
-    expect(screen.getAllByPlaceholderText("Reply to this comment").length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: "Add comment" }).length).toBeGreaterThan(0);
+    expect(screen.queryByPlaceholderText("Add a comment on this note")).not.toBeInTheDocument();
   });
 
   it("renders markdown headings, inline emphasis, and code blocks", () => {
@@ -362,8 +363,17 @@ describe("ReviewWorkbench", () => {
 
     const sharedSegment = firstRow.querySelector('[data-anchor-count="3"]') as HTMLElement | null;
     expect(sharedSegment).not.toBeNull();
-    expect(sharedSegment?.style.background).toContain("linear-gradient");
+    expect(sharedSegment?.style.background).toContain("rgba(111, 118, 126, 0.18)");
     expect(sharedSegment?.getAttribute("data-anchor-ids")).toContain("anchor-overlap-1");
+  });
+
+  it("reveals the inline comment composer only after clicking add comment", () => {
+    render(<ReviewWorkbench initialArtifact={mockArtifact} />);
+
+    fireEvent.click(screen.getByTestId("reply-toggle-comment-2"));
+
+    expect(screen.getByTestId("reply-input-comment-2")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save comment" })).toBeInTheDocument();
   });
 
   it("renders one thread across adjacent source blocks with continuation highlights", () => {

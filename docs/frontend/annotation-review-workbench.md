@@ -22,6 +22,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
   - Supports lightweight markdown presentation for headings, inline emphasis, and fenced code blocks
 - Comment area
   - Each paragraph row owns its own right-side comment stack so later text does not continue until that paragraph's comments end
+  - Agent comment cards should stay compact when multiple comments target the same section
 - Token usage panel (`AgentUsageSummary`)
   - Per-agent table of input tokens, output tokens, and estimated USD cost; only rendered when usage data is present
 - Optional debug panel
@@ -48,8 +49,9 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Comments identify the agent or reviewer that produced them.
 - Agent comments are replyable by the human reviewer.
 - Agent comments expose immediate `Accept`, `Reject`, and `Uncertain` actions, and clicking the active state again should clear it back to `unreviewed`.
+- Agent comments should expose an `Add comment` action that reveals the reply field only on demand.
 - Human standalone comments can be edited or deleted inline.
-- Human replies should expose a compact delete affordance in the thread UI.
+- Human replies should expose a compact trash delete affordance in the thread UI.
 - Partial findings should appear as each agent finishes instead of waiting for the full run.
 - Hovering or selecting a summary finding should highlight linked spans in the source text.
 - Fact-check claim highlights should render distinct evidence chips near the relevant paragraph instead of creating more comment-rail cards.
@@ -68,8 +70,9 @@ Provide a high-legibility review surface where users can inspect source text, wa
 
 ## Target Behaviors
 
-- Highlight colors are category-based and consistent across the text pane, comment labels, and connector lines.
-- When multiple agents or anchor ranges overlap on the same visible text, render one neutral highlight fill with thin agent-color rails instead of layered color overlays.
+- Highlighted text should stay neutral by default so dense clusters remain legible, with agent color becoming prominent on hover or focus from the linked thread.
+- Connector lines should stay subtle by default and bring forward the linked agent color on hover or focus.
+- When multiple agents or anchor ranges overlap on the same visible text, render one neutral highlight fill rather than layered color overlays.
 - Fact-check evidence should stay lightweight: one compact chip row or small stacked evidence block beside the paragraph, capped to a few links.
 - Supported markdown rendering is intentionally narrow in v1:
   - headings

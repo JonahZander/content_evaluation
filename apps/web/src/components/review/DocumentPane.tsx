@@ -50,9 +50,11 @@ interface DocumentPaneProps {
   onHoverAnchor: (anchorId: string | null) => void;
   onSelectionDraft: (draft: SelectionDraft | null) => void;
   replyDrafts: Record<string, string>;
+  activeReplyComposerId: string | null;
   editingCommentId: string | null;
   editingBody: string;
   onReplyDraftChange: (commentId: string, value: string) => void;
+  onToggleReplyComposer: (commentId: string) => void;
   onAddReply: (commentId: string) => void;
   onDeleteReply: (replyId: string) => void;
   onReviewState: (commentId: string, state: ReviewState) => void;
@@ -83,10 +85,6 @@ function renderAnchor(
   const allColors = [...new Set(segment.anchors.flatMap((item) => item.colors))];
   const primaryColor = allColors[0] ?? colorForCategory("human");
   const sharedSegment = segment.anchors.length > 1 || allColors.length > 1;
-  const railWidth = Math.max(8, allColors.length * 4);
-  const background = sharedSegment
-    ? `linear-gradient(90deg, ${buildRailStops(allColors, railWidth)}, rgba(255, 247, 236, 0.92) ${railWidth}px 100%)`
-    : `color-mix(in srgb, ${primaryColor} 18%, white)`;
   const hoverAnchorId = segment.anchors.find((item) => item.anchor.id === segment.refAnchorIds[0])?.anchor.id
     ?? segment.anchors[0]?.anchor.id
     ?? null;
@@ -110,24 +108,18 @@ function renderAnchor(
       onMouseEnter={() => onHoverAnchor(hoverAnchorId)}
       onMouseLeave={() => onHoverAnchor(null)}
       style={{
-        background,
-        boxShadow:
-          sharedSegment
-            ? `inset 0 0 0 1px rgba(0,0,0,0.04), inset ${railWidth}px 0 0 rgba(0,0,0,0)`
-            : undefined,
-        borderBottom: `2px solid ${primaryColor}`,
+        background: isHovered
+          ? `color-mix(in srgb, ${primaryColor} 16%, rgba(120, 126, 134, 0.24))`
+          : sharedSegment
+            ? "rgba(111, 118, 126, 0.18)"
+            : "rgba(111, 118, 126, 0.13)",
+        borderBottom: `2px solid ${isHovered ? primaryColor : "rgba(88, 95, 103, 0.45)"}`,
+        outline: isHovered ? `1px solid color-mix(in srgb, ${primaryColor} 44%, white)` : "1px solid transparent",
       }}
     >
       {children}
     </span>
   );
-}
-
-function buildRailStops(colors: string[], railWidth: number): string {
-  const stripeWidth = railWidth / Math.max(colors.length, 1);
-  return colors
-    .map((color, index) => `${color} ${index * stripeWidth}px ${(index + 1) * stripeWidth}px`)
-    .join(", ");
 }
 
 function wrapInlineMarks(content: ReactNode, marks: ArtifactInlineMarkKind[], key: string): ReactNode {
@@ -302,10 +294,12 @@ function ThreadCards({
   hoveredAnchorId,
   commentRefs,
   replyDrafts,
+  activeReplyComposerId,
   editingCommentId,
   editingBody,
   onHoverAnchor,
   onReplyDraftChange,
+  onToggleReplyComposer,
   onAddReply,
   onDeleteReply,
   onReviewState,
@@ -319,10 +313,12 @@ function ThreadCards({
   hoveredAnchorId: string | null;
   commentRefs: MutableRefObject<Record<string, HTMLElement | null>>;
   replyDrafts: Record<string, string>;
+  activeReplyComposerId: string | null;
   editingCommentId: string | null;
   editingBody: string;
   onHoverAnchor: (anchorId: string | null) => void;
   onReplyDraftChange: (commentId: string, value: string) => void;
+  onToggleReplyComposer: (commentId: string) => void;
   onAddReply: (commentId: string) => void;
   onDeleteReply: (replyId: string) => void;
   onReviewState: (commentId: string, state: ReviewState) => void;
@@ -339,13 +335,10 @@ function ThreadCards({
       onMouseEnter={() => onHoverAnchor(thread.anchor.id)}
       onMouseLeave={() => onHoverAnchor(null)}
     >
-      <div className={styles.threadHeader}>
-        <strong>Linked section</strong>
-        <span className={styles.threadQuote}>{thread.anchor.quote}</span>
-      </div>
       <div className={styles.threadCards}>
         {thread.comments.map((comment) => {
           const isEditing = editingCommentId === comment.id;
+          const isReplyComposerOpen = activeReplyComposerId === comment.id;
           return (
             <article
               key={comment.id}
@@ -359,7 +352,6 @@ function ThreadCards({
                 <span className={styles.pill} style={{ color: colorForCategory(comment.category) }}>
                   {comment.author_label}
                 </span>
-                <span className={styles.pill}>{comment.category.replace("_", " ")}</span>
                 <span className={styles.reviewBadge}>{comment.review_state}</span>
               </div>
               {isEditing ? (
@@ -422,12 +414,13 @@ function ThreadCards({
                     Edit
                   </button>
                   <button
-                    className={styles.ghostButton}
+                    className={styles.iconButtonDanger}
                     data-testid={`delete-comment-${comment.id}`}
                     type="button"
+                    aria-label="Delete comment"
                     onClick={() => onDeleteComment(comment.id)}
                   >
-                    Delete
+                    <TrashIcon />
                   </button>
                 </div>
               ) : null}
@@ -445,7 +438,7 @@ function ThreadCards({
                           aria-label={`Delete reply by ${reply.author_label}`}
                           onClick={() => onDeleteReply(reply.id)}
                         >
-                          x
+                          <TrashIcon />
                         </button>
                       ) : null}
                     </div>
@@ -455,21 +448,33 @@ function ThreadCards({
               </div>
 
               <div className={styles.replyComposer}>
-                <textarea
-                  className={styles.replyInput}
-                  data-testid={`reply-input-${comment.id}`}
-                  value={replyDrafts[comment.id] ?? ""}
-                  onChange={(event) => onReplyDraftChange(comment.id, event.target.value)}
-                  placeholder="Reply to this comment"
-                />
                 <button
-                  className={styles.button}
-                  data-testid={`reply-submit-${comment.id}`}
+                  className={styles.ghostButton}
+                  data-testid={`reply-toggle-${comment.id}`}
                   type="button"
-                  onClick={() => onAddReply(comment.id)}
+                  onClick={() => onToggleReplyComposer(comment.id)}
                 >
-                  Add reply
+                  {isReplyComposerOpen ? "Cancel comment" : "Add comment"}
                 </button>
+                {isReplyComposerOpen ? (
+                  <div className={styles.inlineReplyComposer}>
+                    <textarea
+                      className={styles.replyInput}
+                      data-testid={`reply-input-${comment.id}`}
+                      value={replyDrafts[comment.id] ?? ""}
+                      onChange={(event) => onReplyDraftChange(comment.id, event.target.value)}
+                      placeholder="Add a comment on this note"
+                    />
+                    <button
+                      className={styles.button}
+                      data-testid={`reply-submit-${comment.id}`}
+                      type="button"
+                      onClick={() => onAddReply(comment.id)}
+                    >
+                      Save comment
+                    </button>
+                  </div>
+                ) : null}
               </div>
             </article>
           );
@@ -502,9 +507,11 @@ export function DocumentPane({
   onHoverAnchor,
   onSelectionDraft,
   replyDrafts,
+  activeReplyComposerId,
   editingCommentId,
   editingBody,
   onReplyDraftChange,
+  onToggleReplyComposer,
   onAddReply,
   onDeleteReply,
   onReviewState,
@@ -516,7 +523,9 @@ export function DocumentPane({
 }: DocumentPaneProps) {
   const paneRef = useRef<HTMLDivElement | null>(null);
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const [pathsByBlockId, setPathsByBlockId] = useState<Record<string, Array<{ id: string; path: string; color: string }>>>({});
+  const [pathsByBlockId, setPathsByBlockId] = useState<
+    Record<string, Array<{ id: string; path: string; color: string; active: boolean }>>
+  >({});
 
   const blockThreads = useMemo(() => {
     const grouped = new Map<string, ArtifactThread[]>();
@@ -553,7 +562,7 @@ export function DocumentPane({
     }
 
     const updatePaths = () => {
-      const nextPathsByBlockId: Record<string, Array<{ id: string; path: string; color: string }>> = {};
+      const nextPathsByBlockId: Record<string, Array<{ id: string; path: string; color: string; active: boolean }>> = {};
 
       document.blocks.forEach((block) => {
         const row = rowRefs.current[block.id];
@@ -583,7 +592,11 @@ export function DocumentPane({
             const controlOffset = Math.max(32, (endX - startX) / 2);
             return {
               id: comment.id,
-              color: categoryColors[comment.category] ?? "var(--ink)",
+              color:
+                hoveredAnchorId === thread.anchor.id
+                  ? categoryColors[comment.category] ?? "var(--ink)"
+                  : "rgba(102, 109, 118, 0.55)",
+              active: hoveredAnchorId === thread.anchor.id,
               path: `M ${startX} ${startY} C ${startX + controlOffset} ${startY}, ${endX - controlOffset} ${endY}, ${endX} ${endY}`,
             };
           });
@@ -673,7 +686,7 @@ export function DocumentPane({
       resizeObserver?.disconnect();
       window.removeEventListener("resize", handleResize);
     };
-  }, [anchorRefs, claimEvidenceByBlock, commentRefs, blockThreads, document]);
+  }, [anchorRefs, claimEvidenceByBlock, commentRefs, blockThreads, document, hoveredAnchorId]);
 
   return (
     <div className={styles.documentPane} ref={paneRef}>
@@ -774,10 +787,12 @@ export function DocumentPane({
                     hoveredAnchorId={hoveredAnchorId}
                     commentRefs={commentRefs}
                     replyDrafts={replyDrafts}
+                    activeReplyComposerId={activeReplyComposerId}
                     editingCommentId={editingCommentId}
                     editingBody={editingBody}
                     onHoverAnchor={onHoverAnchor}
                     onReplyDraftChange={onReplyDraftChange}
+                    onToggleReplyComposer={onToggleReplyComposer}
                     onAddReply={onAddReply}
                     onDeleteReply={onDeleteReply}
                     onReviewState={onReviewState}
@@ -798,5 +813,16 @@ export function DocumentPane({
         <div className={styles.emptyState}>Submit a URL, pasted draft, or text file to start the review.</div>
       )}
     </div>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+      <path
+        d="M6 2.5h4l.5 1H13v1H3v-1h2.5l.5-1Zm-1 3h1v6H5v-6Zm3 0h1v6H8v-6Zm3 0h-1v6h1v-6ZM4.5 5h7l-.4 7.1a1 1 0 0 1-1 .9H5.9a1 1 0 0 1-1-.9L4.5 5Z"
+        fill="currentColor"
+      />
+    </svg>
   );
 }

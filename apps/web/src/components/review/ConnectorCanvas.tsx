@@ -4,6 +4,7 @@ interface ConnectorPath {
   id: string;
   path: string;
   color: string;
+  active: boolean;
 }
 
 interface ConnectorCanvasProps {
@@ -20,8 +21,8 @@ export function ConnectorCanvas({ paths }: ConnectorCanvasProps) {
           d={item.path}
           fill="none"
           stroke={item.color}
-          strokeWidth="2.5"
-          strokeOpacity="0.7"
+          strokeWidth={item.active ? "2.5" : "1.75"}
+          strokeOpacity={item.active ? "0.92" : "0.55"}
           strokeLinecap="round"
         />
       ))}

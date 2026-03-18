@@ -601,13 +601,13 @@
   padding: 3px 4px;
   border-radius: 8px;
   cursor: pointer;
-  transition: background 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+  transition: background 140ms ease, box-shadow 140ms ease, transform 140ms ease, border-color 140ms ease;
 }
 
 .anchorText:hover,
 .anchorTextActive {
   transform: translateY(-1px);
-  box-shadow: 0 10px 20px rgba(61, 46, 27, 0.12);
+  box-shadow: 0 10px 20px rgba(61, 46, 27, 0.08);
 }
 
 .commentPane {
@@ -618,88 +618,74 @@
 
 .thread {
   position: relative;
-  padding: 16px;
-  border-radius: 22px;
-  background: rgba(255, 248, 240, 0.88);
-  border: 1px solid rgba(56, 43, 28, 0.12);
-}
-
-.threadHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 14px;
-}
-
-.threadQuote {
-  font-size: 0.98rem;
-  line-height: 1.45;
-  color: var(--muted);
+  padding: 10px 0 0;
 }
 
 .threadCards {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .card {
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.72);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.82);
   border: 1px solid rgba(57, 44, 29, 0.12);
-  padding: 14px;
+  padding: 11px 12px;
 }
 
 .cardHeader {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .pill {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px;
+  padding: 4px 8px;
   border-radius: 999px;
   font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
-  font-size: 11px;
-  letter-spacing: 0.12em;
+  font-size: 10px;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  background: rgba(255, 255, 255, 0.76);
+  background: rgba(248, 244, 237, 0.9);
 }
 
 .reviewBadge {
   margin-left: auto;
-  padding: 6px 10px;
+  padding: 4px 8px;
   border-radius: 999px;
   font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
-  font-size: 11px;
+  font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.08em;
   background: rgba(22, 18, 14, 0.08);
   color: var(--muted);
 }
 
 .cardBody {
   margin: 0;
-  line-height: 1.65;
+  font-size: 0.96rem;
+  line-height: 1.55;
 }
 
 .suggestion {
-  margin-top: 10px;
-  padding: 10px 12px;
-  border-radius: 14px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
   background: rgba(12, 12, 12, 0.04);
+  font-size: 0.93rem;
+  line-height: 1.5;
 }
 
 .sources {
-  margin-top: 10px;
-  padding: 10px 12px;
-  border-radius: 14px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
   background: rgba(12, 12, 12, 0.04);
 }
 
@@ -730,19 +716,21 @@
 }
 
 .replyList {
-  margin-top: 12px;
-  padding-top: 12px;
+  margin-top: 10px;
+  padding-top: 10px;
   border-top: 1px solid rgba(48, 36, 24, 0.08);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .reply {
-  padding: 10px 12px;
-  border-radius: 14px;
+  padding: 9px 10px;
+  border-radius: 12px;
   background: rgba(255, 250, 241, 0.88);
   border: 1px solid rgba(49, 38, 23, 0.08);
+  font-size: 0.93rem;
+  line-height: 1.5;
 }
 
 .replyHeader {
@@ -763,24 +751,53 @@
 }
 
 .replyDeleteButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
   border: 0;
-  background: transparent;
-  color: var(--muted);
+  border-radius: 999px;
+  background: rgba(184, 76, 36, 0.08);
+  color: #b84c24;
   cursor: pointer;
-  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
-  font-size: 14px;
-  line-height: 1;
   padding: 0;
 }
 
 .replyDeleteButton:hover {
-  color: var(--ink);
+  background: rgba(184, 76, 36, 0.14);
+  color: #922f13;
 }
 
 .replyComposer {
-  margin-top: 12px;
+  margin-top: 10px;
   display: grid;
-  gap: 10px;
+  gap: 8px;
+}
+
+.inlineReplyComposer {
+  display: grid;
+  gap: 8px;
+}
+
+.iconButtonDanger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(184, 76, 36, 0.08);
+  color: #b84c24;
+  cursor: pointer;
+  transition: transform 140ms ease, background-color 140ms ease, color 140ms ease;
+}
+
+.iconButtonDanger:hover {
+  transform: translateY(-1px);
+  background: rgba(184, 76, 36, 0.14);
+  color: #922f13;
 }
 
 .selectionBanner {

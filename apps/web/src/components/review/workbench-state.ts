@@ -31,6 +31,7 @@ export interface WorkbenchState {
   selectionDraft: SelectionDraft | null;
   commentDraft: string;
   replyDrafts: Record<string, string>;
+  activeReplyComposerId: string | null;
   editingCommentId: string | null;
   editingBody: string;
   hoveredAnchorId: string | null;
@@ -67,6 +68,7 @@ export const initialWorkbenchState: WorkbenchState = {
   selectionDraft: null,
   commentDraft: "",
   replyDrafts: {},
+  activeReplyComposerId: null,
   editingCommentId: null,
   editingBody: "",
   hoveredAnchorId: null,
@@ -94,6 +96,7 @@ export type WorkbenchAction =
   | { type: "SET_SELECTION_DRAFT"; draft: SelectionDraft | null }
   | { type: "SET_COMMENT_DRAFT"; draft: string }
   | { type: "SET_REPLY_DRAFT"; commentId: string; body: string }
+  | { type: "SET_ACTIVE_REPLY_COMPOSER"; commentId: string | null }
   | { type: "SET_EDITING_COMMENT"; commentId: string | null; body: string }
   | { type: "SET_EDITING_BODY"; body: string }
   | { type: "SET_HOVERED_ANCHOR_ID"; anchorId: string | null }
@@ -145,6 +148,8 @@ export function workbenchReducer(state: WorkbenchState, action: WorkbenchAction)
       return { ...state, commentDraft: action.draft };
     case "SET_REPLY_DRAFT":
       return { ...state, replyDrafts: { ...state.replyDrafts, [action.commentId]: action.body } };
+    case "SET_ACTIVE_REPLY_COMPOSER":
+      return { ...state, activeReplyComposerId: action.commentId };
     case "SET_EDITING_COMMENT":
       return { ...state, editingCommentId: action.commentId, editingBody: action.body };
     case "SET_EDITING_BODY":
@@ -170,6 +175,7 @@ export function workbenchReducer(state: WorkbenchState, action: WorkbenchAction)
         selectionDraft: null,
         commentDraft: "",
         replyDrafts: {},
+        activeReplyComposerId: null,
         editingCommentId: null,
         editingBody: "",
         selectedFile: null,

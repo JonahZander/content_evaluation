@@ -70,7 +70,7 @@ Each agent should be declared with:
 ## Instruction Organization
 
 - Agent instructions live in their own folder under the API package.
-- One instruction file should exist per agent.
+- Each agent should point at one instruction file, but that file may live in a nested subdirectory such as `fact_check/research_brief.md`.
 - Provider code should load instruction text from those files instead of embedding prompts inline.
 - Adding an agent should mainly require:
   - one instruction file

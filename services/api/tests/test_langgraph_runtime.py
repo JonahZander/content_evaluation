@@ -515,3 +515,51 @@ async def test_append_agents_reuses_existing_artifact_and_runs_only_missing_depe
     assert updated.run_config.resolved_agents == ["ai_likelihood", "fact_check", "value"]
     assert any(event.message == "Additional analysis queued" for event in updated.events)
     assert any(event.message == "Additional analysis completed" for event in updated.events)
+
+
+@pytest.mark.asyncio
+async def test_append_agents_can_schedule_new_agents_after_dependencies_already_completed() -> None:
+    """Append analysis should treat prior completed agents as satisfied dependencies."""
+
+    repository = InMemoryRunRepository()
+    orchestrator = RunOrchestrator(
+        repository,
+        MockAnalysisProvider(),
+        MockSimilaritySearchProvider(),
+        MockContentExtractionProvider(),
+        RuntimeMode.MOCK,
+        False,
+        OrchestratorBackend.LANGGRAPH,
+        deep_research_provider=MockDeepResearchProvider(),
+    )
+    input_data = RunInput(
+        source_type=SourceType.TEXT,
+        source_label="Draft",
+        title="Draft",
+        text="Alpha paragraph.\n\nBeta paragraph.",
+        selected_agents=["ai_likelihood", "value"],
+    )
+    artifact = await orchestrator.create_run(input_data)
+    await orchestrator.process_run(artifact.artifact_id, input_data)
+
+    queued_artifact, append_input = await orchestrator.append_agents(
+        artifact.artifact_id,
+        ["editorial", "synthesis"],
+    )
+    assert queued_artifact.status.value == "queued"
+    assert append_input.mode is RunMode.APPEND_AGENTS
+
+    await orchestrator.process_run(artifact.artifact_id, append_input)
+
+    updated = await repository.get_artifact(artifact.artifact_id)
+    assert updated is not None
+    assert updated.status.value == "completed"
+    assert updated.document is not None
+    assert {result.agent_id for result in updated.agent_results} >= {
+        "ai_likelihood",
+        "fact_check",
+        "value",
+        "editorial",
+        "synthesis",
+    }
+    assert updated.run_config.selected_agents == ["ai_likelihood", "value", "editorial", "synthesis"]

@@ -381,7 +381,7 @@ class RunOrchestrator:
         )
 
         try:
-            for batch in _execution_batches(append_agent_ids):
+            for batch in _execution_batches(append_agent_ids, initially_completed=_completed_agent_ids(artifact)):
                 await self._ensure_run_active(artifact_id)
                 await self._queue_batch(artifact, batch)
                 await self._run_batch(artifact, batch)
@@ -1461,12 +1461,16 @@ def _plan_order(agent_ids: list[str]) -> list[AgentDefinition]:
     return [get_agent_definition(agent_id) for agent_id in agent_ids]
 
 
-def _execution_batches(agent_ids: list[str]) -> list[list[AgentDefinition]]:
+def _execution_batches(
+    agent_ids: list[str],
+    *,
+    initially_completed: set[str] | None = None,
+) -> list[list[AgentDefinition]]:
     """Return dependency-safe execution batches."""
 
     definitions = _plan_order(agent_ids)
     remaining = {definition.agent_id: definition for definition in definitions}
-    completed: set[str] = set()
+    completed: set[str] = set(initially_completed or set())
     batches: list[list[AgentDefinition]] = []
     while remaining:
         ready = [

@@ -32,8 +32,9 @@ This project uses a code-orchestrated multi-agent model:
 - Audience analysis agent
   - Infers the target audience and fit
   - Output is summary-first in the current UI rather than annotation-heavy
-- Editorial recommendation agent
-  - Produces span-level comments and rewrite suggestions
+- Structure and conversion review agent
+  - Produces span-level guidance on hook quality, narrative flow, skimmability, and call-to-action strength
+  - Uses an adaptable framework toolkit including PAS, LEMA, AIDA, StoryBrand-style message clarity, jobs-to-be-done, and four-part blog structure heuristics instead of generic line editing
   - Consumes fact-check and AI-likelihood output explicitly
 - Evaluation synthesis agent
   - Produces a final verdict after upstream specialist agents complete

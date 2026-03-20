@@ -119,8 +119,8 @@ _AGENTS: tuple[AgentDefinition, ...] = (
     ),
     AgentDefinition(
         agent_id="editorial",
-        display_name="Editorial Recommendations",
-        description="Creates span-level editorial suggestions.",
+        display_name="Structure and Conversion Review",
+        description="Reviews hook, flow, skimmability, and calls to action using PAS, LEMA, and blog-structure heuristics.",
         category=AgentCategory.EDITORIAL,
         depends_on=("fact_check", "ai_likelihood"),
         provider_kind=ProviderKind.ANALYSIS,

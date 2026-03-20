@@ -1,11 +1,13 @@
 """Tests for the fact_check agent and related components."""
 
+import os
 from typing import Protocol
 
 import pytest
 
 from content_evaluation.domain.models import (
     AgentCategory,
+    AnalysisProviderFamily,
     ArtifactBlock,
     ArtifactBlockKind,
     ArtifactBlockOrigin,
@@ -150,3 +152,35 @@ async def test_live_deep_research_provider_attaches_usage_handler(monkeypatch: p
     assert any(
         isinstance(cb, UsageMetadataCallbackHandler) for cb in callbacks
     ), "UsageMetadataCallbackHandler not found in config['callbacks']"
+
+
+@pytest.mark.parametrize(
+    ("family", "settings_kwargs", "env_key"),
+    [
+        (AnalysisProviderFamily.OPENAI, {"openai_api_key": "openai-key"}, "OPENAI_API_KEY"),
+        (AnalysisProviderFamily.ANTHROPIC, {"anthropic_api_key": "anthropic-key"}, "ANTHROPIC_API_KEY"),
+        (AnalysisProviderFamily.GEMINI, {"gemini_api_key": "gemini-key"}, "GOOGLE_API_KEY"),
+    ],
+)
+def test_live_deep_research_provider_exports_family_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+    family: AnalysisProviderFamily,
+    settings_kwargs: dict[str, str],
+    env_key: str,
+) -> None:
+    """Export the active provider family's API key for the vendored graph."""
+
+    from content_evaluation.config import Settings
+    from content_evaluation.providers.deep_research.provider import LiveDeepResearchProvider
+
+    monkeypatch.delenv(env_key, raising=False)
+
+    LiveDeepResearchProvider(
+        Settings(
+            analysis_provider_family=family,
+            tavily_api_key="tavily-key",
+            **settings_kwargs,
+        )
+    )
+
+    assert os.getenv(env_key) == next(iter(settings_kwargs.values()))

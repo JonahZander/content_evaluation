@@ -87,6 +87,16 @@ class AgentExecutionResult:
     usage: dict[str, int] | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class SummaryScoringConfig:
+    """Name the tunable weights used to build the top-level summary score."""
+
+    base_score: float = 72.0
+    confidence_multiplier: float = 10.0
+    ai_likelihood_penalty: float = 20.0
+    novelty_penalty_max: float = 25.0
+
+
 class LangGraphState(TypedDict):
     """Represent the internal LangGraph state for one artifact run."""
 
@@ -407,19 +417,11 @@ class RunOrchestrator:
         except Exception as error:
             artifact.status = RunStatus.FAILED
             artifact.error_message = str(error)
-            error_kind = error.kind if isinstance(error, ProviderError) else None
-            provider_name = error.provider_name if isinstance(error, ProviderError) else None
-            await self._append_event(
+            await self._append_run_failed_event(
                 artifact,
-                EventType.RUN,
-                "run",
-                "failed",
-                str(error),
+                error,
                 progress=1.0,
-                error_kind=error_kind,
-                provider_name=provider_name,
-                snapshot_available=True,
-                metadata={"mode": RunMode.APPEND_AGENTS.value},
+                mode=RunMode.APPEND_AGENTS,
             )
             raise
 
@@ -514,19 +516,7 @@ class RunOrchestrator:
         except Exception as error:
             artifact.status = RunStatus.FAILED
             artifact.error_message = str(error)
-            error_kind = error.kind if isinstance(error, ProviderError) else None
-            provider_name = error.provider_name if isinstance(error, ProviderError) else None
-            await self._append_event(
-                artifact,
-                EventType.RUN,
-                "run",
-                "failed",
-                str(error),
-                progress=1.0,
-                error_kind=error_kind,
-                provider_name=provider_name,
-                snapshot_available=True,
-            )
+            await self._append_run_failed_event(artifact, error, progress=1.0)
             raise
 
     async def _process_run_with_langgraph(
@@ -582,19 +572,7 @@ class RunOrchestrator:
             artifact = await self._require_artifact(artifact_id)
             artifact.status = RunStatus.FAILED
             artifact.error_message = str(error)
-            error_kind = error.kind if isinstance(error, ProviderError) else None
-            provider_name = error.provider_name if isinstance(error, ProviderError) else None
-            await self._append_event(
-                artifact,
-                EventType.RUN,
-                "run",
-                "failed",
-                str(error),
-                progress=1.0,
-                error_kind=error_kind,
-                provider_name=provider_name,
-                snapshot_available=True,
-            )
+            await self._append_run_failed_event(artifact, error, progress=1.0)
             raise
         await self._repository.delete_graph_checkpoint(artifact_id)
 
@@ -1002,10 +980,7 @@ class RunOrchestrator:
                 )
             meta = raw_output.get("metadata")
             metadata = meta if isinstance(meta, dict) else {}
-            dr_usage: dict[str, int] | None = None
-            raw_usage = metadata.pop("usage", None)
-            if isinstance(raw_usage, dict):
-                dr_usage = {k: int(v) for k, v in raw_usage.items() if isinstance(v, (int, float))}
+            dr_usage = _extract_usage_from_metadata(metadata)
             overlap_items = _normalize_fact_check_overlap_items(raw_output)
             research_summary = _fact_check_research_summary(raw_output)
             findings = [
@@ -1051,10 +1026,7 @@ class RunOrchestrator:
         if not isinstance(raw_findings, list):
             raise ValidationError(f"Agent {definition.agent_id} returned an invalid findings payload")
         findings = [FindingPayload.model_validate(item) for item in raw_findings]
-        lc_usage: dict[str, int] | None = None
-        raw_usage = raw_output.pop("usage", None)
-        if isinstance(raw_usage, dict):
-            lc_usage = {k: int(v) for k, v in raw_usage.items() if isinstance(v, (int, float))}
+        lc_usage = _extract_usage_from_metadata(raw_output)
         return AgentExecutionResult(
             definition=definition,
             raw_output=raw_output,
@@ -1220,6 +1192,32 @@ class RunOrchestrator:
         artifact.events.append(event)
         artifact.updated_at = datetime.now(UTC)
         await self._repository.update_artifact(artifact)
+
+    async def _append_run_failed_event(
+        self,
+        artifact: AnalysisArtifact,
+        error: Exception,
+        *,
+        progress: float = 1.0,
+        mode: RunMode | None = None,
+    ) -> None:
+        """Append a standardized failed run event and persist it."""
+
+        metadata = {"mode": mode.value} if mode is not None else None
+        error_kind = error.kind if isinstance(error, ProviderError) else None
+        provider_name = error.provider_name if isinstance(error, ProviderError) else None
+        await self._append_event(
+            artifact,
+            EventType.RUN,
+            "run",
+            "failed",
+            str(error),
+            progress=progress,
+            error_kind=error_kind,
+            provider_name=provider_name,
+            snapshot_available=True,
+            metadata=metadata,
+        )
 
     async def _require_artifact(self, artifact_id: UUID) -> AnalysisArtifact:
         """Return one artifact or raise."""
@@ -1548,6 +1546,7 @@ def _progress_for_artifact(artifact: AnalysisArtifact) -> float:
 def _build_summary(artifact: AnalysisArtifact) -> ArtifactSummary:
     """Build the final artifact summary."""
 
+    config = SummaryScoringConfig()
     fact_check_result = next((item for item in artifact.agent_results if item.agent_id == "fact_check"), None)
     overlap_items = _result_overlap_items(fact_check_result)
     overlap_scores = _result_overlap_scores(fact_check_result, overlap_items)
@@ -1572,7 +1571,12 @@ def _build_summary(artifact: AnalysisArtifact) -> ArtifactSummary:
         if result.category in {AgentCategory.VALUE, AgentCategory.AUDIENCE}
         for finding in result.findings
     )
-    raw_score = 72 + (confidence_bonus * 10) - (ai_likelihood * 20) - ((1.0 - novelty_score) * 25)
+    raw_score = (
+        config.base_score
+        + (confidence_bonus * config.confidence_multiplier)
+        - (ai_likelihood * config.ai_likelihood_penalty)
+        - ((1.0 - novelty_score) * config.novelty_penalty_max)
+    )
     return ArtifactSummary(
         overall_score=max(0, min(100, int(raw_score))),
         verdict=verdict,
@@ -1765,6 +1769,19 @@ def _first_rationale(result: ArtifactAgentResult | None) -> str:
     if result is None or not result.findings:
         return ""
     return result.findings[0].rationale
+
+
+def _extract_usage_from_metadata(payload: dict[str, object]) -> dict[str, int] | None:
+    """Pop normalized token-usage metadata from one provider payload."""
+
+    raw_usage = payload.pop("usage", None)
+    if not isinstance(raw_usage, dict):
+        return None
+    return {
+        key: int(value)
+        for key, value in raw_usage.items()
+        if isinstance(value, (int, float))
+    }
 
 
 def _coerce_str(value: object) -> str | None:

@@ -153,6 +153,8 @@ _AGENTS: tuple[AgentDefinition, ...] = (
     ),
 )
 
+_AGENT_MAP: dict[str, AgentDefinition] = {agent.agent_id: agent for agent in _AGENTS}
+
 
 def list_agent_definitions() -> list[AgentDefinition]:
     """Return all configured agents."""
@@ -169,10 +171,7 @@ def agent_catalog() -> list[AgentCatalogEntry]:
 def get_agent_definition(agent_id: str) -> AgentDefinition:
     """Return one agent definition or raise."""
 
-    for agent in _AGENTS:
-        if agent.agent_id == agent_id:
-            return agent
-    raise KeyError(agent_id)
+    return _AGENT_MAP[agent_id]
 
 
 def load_instruction_text(agent: AgentDefinition) -> str:

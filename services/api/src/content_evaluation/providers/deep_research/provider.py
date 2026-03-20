@@ -19,6 +19,12 @@ _PROVIDER_MODEL_PREFIX: dict[AnalysisProviderFamily, str] = {
     AnalysisProviderFamily.GEMINI: "google_genai",
 }
 
+_PROVIDER_SETTINGS: dict[AnalysisProviderFamily, tuple[str, str, str]] = {
+    AnalysisProviderFamily.OPENAI: ("openai_model_name", "openai_api_key", "OPENAI_API_KEY"),
+    AnalysisProviderFamily.ANTHROPIC: ("anthropic_model_name", "anthropic_api_key", "ANTHROPIC_API_KEY"),
+    AnalysisProviderFamily.GEMINI: ("gemini_model_name", "gemini_api_key", "GOOGLE_API_KEY"),
+}
+
 
 class LiveDeepResearchProvider:
     """Run the vendored deep researcher graph and return structured FindingPayload dicts."""
@@ -41,18 +47,11 @@ class LiveDeepResearchProvider:
 
         # Derive model string from the same provider family the rest of the app uses.
         prefix = _PROVIDER_MODEL_PREFIX[settings.analysis_provider_family]
-        if settings.analysis_provider_family is AnalysisProviderFamily.OPENAI:
-            model_name = settings.openai_model_name
-            if settings.openai_api_key:
-                os.environ.setdefault("OPENAI_API_KEY", settings.openai_api_key)
-        elif settings.analysis_provider_family is AnalysisProviderFamily.ANTHROPIC:
-            model_name = settings.anthropic_model_name
-            if settings.anthropic_api_key:
-                os.environ.setdefault("ANTHROPIC_API_KEY", settings.anthropic_api_key)
-        else:
-            model_name = settings.gemini_model_name
-            if settings.gemini_api_key:
-                os.environ.setdefault("GOOGLE_API_KEY", settings.gemini_api_key)
+        model_attr, api_key_attr, env_key = _PROVIDER_SETTINGS[settings.analysis_provider_family]
+        model_name = getattr(settings, model_attr)
+        api_key = getattr(settings, api_key_attr)
+        if api_key:
+            os.environ.setdefault(env_key, api_key)
 
         if settings.tavily_api_key:
             os.environ.setdefault("TAVILY_API_KEY", settings.tavily_api_key)

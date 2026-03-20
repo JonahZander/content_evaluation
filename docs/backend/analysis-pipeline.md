@@ -17,10 +17,14 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
    - Terminal artifacts may queue additive follow-up analysis that reuses the existing document and completed findings
 3. Queued execution
    - `RunWorker` claims queued jobs
+   - `RunWorker` delegates claimed jobs to `RunOrchestrator.process_run()`
    - Resets in-flight jobs on startup
    - Requeues failed attempts up to the configured max attempts only for worker/process recovery
    - Cancels queued or active jobs when the user stops a run
-   - Starts or resumes LangGraph execution from the latest stored checkpoint
+   - Routes each job through one of three execution paths:
+     - append-agent runs reuse the existing normalized document and only execute newly requested agents
+     - `langgraph` runs start or resume LangGraph execution from the latest stored checkpoint
+     - `legacy` runs execute the older batch loop without LangGraph checkpoints
 4. Normalization
    - Extract text and metadata into a shared document schema
    - Use direct fetch + Trafilatura markdown extraction first for URLs, then Tavily extract fallback for blocked or unreadable pages
@@ -76,6 +80,13 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 - `GraphRunState` is internal runtime state, not a public API contract.
 - `ArtifactEvent` is the public place to surface run retries, worker resumptions, and provider failure metadata to the UI.
 
+## Orchestration Backend Selection
+
+- `OrchestratorBackend.LANGGRAPH` is the default backend and drives new full-run execution.
+- `OrchestratorBackend.LEGACY` remains available as a compatibility path for the older batch executor.
+- Additive follow-up analysis does not use the full-run backend switch; it routes through the dedicated append-agents path.
+- The active backend is configured through `Settings.orchestrator_backend` and is surfaced in readiness output.
+
 ## Current Implementation Notes
 
 - `api/main.py`
@@ -83,7 +94,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 - `api/dependencies.py`
   - Long-lived service container; `AppServices.stop()` closes provider HTTP clients on shutdown
 - `services/orchestration.py`
-  - Session/workspace run lifecycle, LangGraph execution, dependency-driven scheduling, checkpoint persistence, artifact assembly
+  - Session/workspace run lifecycle, backend selection (`append_agents`, `langgraph`, or `legacy`), dependency-driven scheduling, checkpoint persistence, and artifact assembly
 - `providers/langchain/client.py`
   - LangChain-backed provider routing across OpenAI, Anthropic, and Gemini
   - Chat models are cached per (family, model_name) pair for the lifetime of the provider
@@ -98,7 +109,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 - `services/exporting.py`
   - Artifact JSON, Markdown, and compact todo export builders
 - `services/worker.py`
-  - Repository-backed polling worker with bounded concurrency (`worker_max_concurrent_runs` setting, `asyncio.Semaphore`)
+  - Repository-backed polling worker that claims queued jobs, delegates execution to the orchestrator, and enforces bounded concurrency (`worker_max_concurrent_runs` setting, `asyncio.Semaphore`)
   - `stop()` drains in-flight tasks before shutting down
 - `agents/`
   - Declarative registry plus per-agent instruction files
@@ -119,6 +130,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 
 ## Public API Surface
 
+- `GET /api/v1/agents`
 - `POST /api/v1/runs`
 - `POST /api/v1/runs/{run_id}/agents`
 - `POST /api/v1/sources/preview`

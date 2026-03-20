@@ -5,22 +5,23 @@ This guide covers the concrete steps for adding a new specialist agent to the co
 ## Overview
 
 Adding an agent requires changes in these locations:
-1. A new instruction file under `agents/instructions/`
+1. An instruction file under `agents/instructions/`
 2. A `result_schema` Pydantic model (or reuse `FindingPayload`)
 3. A registry entry in `agents/registry.py`
-4. A LangGraph node in `services/orchestration.py`
-5. A result-assembly step in the artifact builder
-6. A category color in `category-colors.ts`
-7. A test for the agent result schema
-8. A doc update in `multi-agent-workflow.md`
+4. Optional orchestration changes if the agent needs a new execution path or custom artifact handling
+5. Frontend category/type updates if you add a new category
+6. Tests for the registry, schema, and any custom behavior
+7. A doc update in `multi-agent-workflow.md`
 
 ## Step 1: Write the instruction file
 
-Create a markdown file at:
+Create a markdown file somewhere under:
 
 ```
-services/api/src/content_evaluation/agents/instructions/<agent_id>.md
+services/api/src/content_evaluation/agents/instructions/
 ```
+
+The registry entry's `instruction_file` should point to that relative path. Most agents use a flat file like `value.md`; nested paths like `fact_check/research_brief.md` also work.
 
 Write the analysis prompt. Follow the patterns in the existing instruction files:
 - State the agent's job in one sentence.
@@ -64,33 +65,40 @@ AgentDefinition(
 
 **Dependency notes:**
 - `depends_on=()` means the agent runs in parallel with other independent agents.
-- `depends_on=("similarity", "value")` means this agent waits for those agents first.
+- `depends_on=("fact_check", "value")` means this agent waits for those agents first.
 - `synthesis` already depends on all current specialist agents; update its `depends_on` if your agent should feed into the synthesis score.
 
-## Step 4: Add the LangGraph node
+## Step 4: Verify whether orchestration changes are actually needed
 
-In `services/api/src/content_evaluation/services/orchestration.py`, add a node to the LangGraph graph for the new agent. Follow the pattern of existing single-turn or multi-step nodes. The node receives `GraphRunState` and should:
+Most new agents do not need a manually registered LangGraph node. The current graph is built from the registry in `services/orchestration.py`, and dependencies from `depends_on` are wired automatically.
 
-1. Call `self._run_analysis_agent(agent_id, state)` for analysis agents.
-2. Emit progress events before and after execution.
-3. Record the result in `state["node_results"]`.
+You only need orchestration changes when the new agent:
+- uses a new `provider_kind` or `execution_mode`
+- needs custom upstream context beyond the standard dependency payload
+- needs special artifact assembly behavior beyond the default finding-to-thread flow
 
-Register the node in `_build_graph()` using `graph.add_node(agent_id, node_function)` and add edges based on `depends_on`.
+If the agent fits the existing analysis/deep-research patterns, the registry entry is enough for graph planning and execution.
 
-## Step 5: Add the result-assembly step
+## Step 5: Verify whether custom artifact assembly is needed
 
-In the artifact builder section of `orchestration.py`, add handling for the new agent's output in `_assemble_artifact()`. This converts the raw node result into:
+The default artifact builder already converts generic finding payloads into:
 - `ArtifactAgentResult` entries
-- `ArtifactAnchor` + `ArtifactThread` entries for each finding
-- Summary contributions if applicable
+- `ArtifactAnchor` records
+- `ArtifactThread` comment-rail items for agents that should create threads
 
-## Step 6: Add the category color
+Add custom assembly logic only if the agent needs summary-only behavior, special metadata shaping, or UI-specific surfaces like the current fact-check evidence and audience summary flows.
 
-In `apps/web/src/components/review/category-colors.ts`, add a color for the new `AgentCategory` value if you added one. If reusing an existing category like `editorial`, no change is needed.
+## Step 6: Add frontend category updates if needed
 
-## Step 7: Write a schema test
+If you add a new `AgentCategory` value, update:
+- `apps/web/src/lib/types.ts`
+- `apps/web/src/components/review/category-colors.ts`
 
-Add a test to `services/api/tests/` that verifies the agent's result schema can be instantiated and validates correctly. Example:
+If the agent reuses an existing category like `editorial`, no frontend category changes are needed.
+
+## Step 7: Write tests
+
+At minimum, add a backend test that verifies the registry entry and result schema behave as expected. If you added custom orchestration or assembly behavior, cover that too. Example:
 
 ```python
 def test_my_agent_result_schema():
@@ -102,6 +110,8 @@ def test_my_agent_result_schema():
     assert payload.confidence == 0.85
 ```
 
+Also add or extend a registry/dependency test when the new agent changes execution order.
+
 ## Step 8: Update multi-agent-workflow.md
 
 Add the new agent to the "Current Agent Roles" section in `docs/agents/multi-agent-workflow.md`. Describe:
@@ -111,11 +121,11 @@ Add the new agent to the "Current Agent Roles" section in `docs/agents/multi-age
 
 ## Quick Checklist
 
-- [ ] `agents/instructions/<agent_id>.md` created
+- [ ] Instruction file created under `agents/instructions/`
 - [ ] Result schema defined (or `FindingPayload` reused)
 - [ ] `AgentDefinition` added to `_AGENTS` in `registry.py`
-- [ ] LangGraph node added to `orchestration.py`
-- [ ] Result-assembly step added to artifact builder
-- [ ] Category color added to `category-colors.ts` (if new category)
-- [ ] Schema test written
+- [ ] Orchestration updated only if the agent needs a new execution path or custom context
+- [ ] Artifact assembly updated only if the default finding flow is not enough
+- [ ] Frontend category/type updates made if a new category was introduced
+- [ ] Tests added for schema, registry, and any custom behavior
 - [ ] `multi-agent-workflow.md` updated

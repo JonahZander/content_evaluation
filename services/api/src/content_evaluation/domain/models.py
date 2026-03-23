@@ -466,6 +466,10 @@ class ArtifactDiffItem(BaseModel):
 
     id: str = Field(default_factory=lambda: f"diff-{uuid4()}")
     change_type: str
+    original_start_line: int = 0
+    original_end_line: int = 0
+    candidate_start_line: int = 0
+    candidate_end_line: int = 0
     before_text: str = ""
     after_text: str = ""
     decision: RevisedMarkdownDiffDecision = RevisedMarkdownDiffDecision.PENDING

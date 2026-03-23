@@ -21,5 +21,13 @@ class AnalysisProvider(Protocol):
     ) -> dict[str, object]:
         """Return one structured JSON object for an agent run."""
 
+    async def generate_revised_markdown(
+        self,
+        original_markdown: str,
+        accepted_suggestions: list[dict[str, object]],
+        route: ProviderRoute | None = None,
+    ) -> dict[str, object]:
+        """Return one revised-markdown payload built from accepted suggestions."""
+
     def resolve_model_name(self, route: ProviderRoute | None = None) -> str:
         """Return the resolved model name for one analysis run."""

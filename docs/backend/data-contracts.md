@@ -202,6 +202,8 @@ Narrative review context shown above the source text pane.
 - `ArtifactRevisedDocument` stores the generated candidate markdown plus the accepted comment ids that informed it.
 - `ArtifactDiffReview` stores `original_markdown`, `candidate_markdown`, and `diff_items`.
 - Each `ArtifactDiffItem` carries a `change_type`, `before_text`, `after_text`, and reviewer `decision`.
+- Diff items also preserve original and candidate line ranges so selective application can rebuild the next working markdown deterministically.
+- Applying reviewed diffs promotes a newly normalized document, clears prior agent results/anchors/threads, and leaves the artifact ready for a follow-up analysis run on the revised draft.
 
 ## Export Schema Stability
 

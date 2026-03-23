@@ -101,6 +101,51 @@ class LangChainAnalysisProvider:
             parsed["usage"] = usage
         return parsed
 
+    async def generate_revised_markdown(
+        self,
+        original_markdown: str,
+        accepted_suggestions: list[dict[str, object]],
+        route: ProviderRoute | None = None,
+    ) -> dict[str, object]:
+        """Rewrite markdown from accepted suggestions using the routed chat model."""
+
+        resolved_route = self._resolve_route(route)
+        model = self._get_chat_model(resolved_route)
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    "You revise markdown articles. Return only the full revised markdown document with no preamble.",
+                ),
+                (
+                    "human",
+                    "{request}",
+                ),
+            ]
+        )
+        request = self._build_rewrite_prompt(original_markdown, accepted_suggestions)
+        handler = UsageMetadataCallbackHandler()
+        try:
+            response = await (prompt | model).ainvoke({"request": request}, config={"callbacks": [handler]})
+        except Exception as error:  # pragma: no cover - framework exception types vary
+            raise self._classify_provider_error(error) from error
+
+        content = getattr(response, "content", response)
+        if isinstance(content, list):
+            text = "".join(
+                item.get("text", "") for item in content if isinstance(item, dict)
+            ).strip()
+        else:
+            text = str(content).strip()
+        if not text:
+            raise ProviderError("Revised markdown response was empty", kind="invalid_response")
+
+        payload: dict[str, object] = {"markdown": text}
+        usage = self._extract_usage_from_handler(handler)
+        if usage is not None:
+            payload["usage"] = usage
+        return payload
+
     def _get_chat_model(self, route: ProviderRoute) -> Any:
         """Return a cached chat model for the given route, building one on first access."""
 
@@ -267,4 +312,18 @@ class LangChainAnalysisProvider:
             f"Upstream context:\n{context}\n\n"
             "Return structured findings only.\n\n"
             f"Document:\n{joined_blocks}"
+        )
+
+    @staticmethod
+    def _build_rewrite_prompt(
+        original_markdown: str,
+        accepted_suggestions: list[dict[str, object]],
+    ) -> str:
+        """Build the prompt body for revised-markdown generation."""
+
+        return (
+            "Revise the following markdown article using only the accepted review suggestions.\n"
+            "Preserve markdown structure where it still fits. Apply the accepted suggestions, but do not add commentary.\n\n"
+            f"Accepted suggestions:\n{accepted_suggestions}\n\n"
+            f"Original markdown:\n{original_markdown}"
         )

@@ -106,6 +106,35 @@ class MockAnalysisProvider:
         del route
         return self.model_name
 
+    async def generate_revised_markdown(
+        self,
+        original_markdown: str,
+        accepted_suggestions: list[dict[str, object]],
+        route: ProviderRoute | None = None,
+    ) -> dict[str, object]:
+        """Return a deterministic revised-markdown candidate for tests."""
+
+        del route
+        revised = original_markdown.strip()
+        for item in accepted_suggestions:
+            quote = str(item.get("quote", "")).strip()
+            suggestion = str(item.get("suggestion", "")).strip()
+            if not quote or not suggestion or quote not in revised:
+                continue
+            revised = revised.replace(quote, suggestion, 1)
+        if revised == original_markdown.strip() and accepted_suggestions:
+            notes = "\n".join(
+                f"- {str(item.get('suggestion', '')).strip()}"
+                for item in accepted_suggestions
+                if str(item.get("suggestion", "")).strip()
+            )
+            if notes:
+                revised = f"{revised}\n\n## Accepted revisions\n{notes}".strip()
+        return {
+            "markdown": revised,
+            "usage": {"input_tokens": 20, "output_tokens": 12, "total_tokens": 32},
+        }
+
 
 class MockDeepResearchProvider:
     """Return deterministic fact-check findings for tests and no-key development."""

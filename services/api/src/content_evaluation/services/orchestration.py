@@ -9,6 +9,7 @@ import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from difflib import SequenceMatcher
 from typing import Annotated, Any, TypedDict, cast
 from uuid import UUID
 
@@ -38,10 +39,13 @@ from content_evaluation.domain.models import (
     ArtifactBlockOrigin,
     ArtifactClaimSummary,
     ArtifactComment,
+    ArtifactDiffItem,
+    ArtifactDiffReview,
     ArtifactDocument,
     ArtifactDebug,
     ArtifactEvent,
     ArtifactOverlapItem,
+    ArtifactRevisedDocument,
     ArtifactReviewSummary,
     ArtifactStructuralCompleteness,
     ContentFormat,
@@ -58,6 +62,7 @@ from content_evaluation.domain.models import (
     ProviderKind,
     ProviderRoute,
     ReviewState,
+    RevisedMarkdownDiffDecision,
     RunConfig,
     RunInput,
     RunMode,
@@ -99,6 +104,18 @@ class SummaryScoringConfig:
     confidence_multiplier: float = 10.0
     ai_likelihood_penalty: float = 20.0
     novelty_penalty_max: float = 25.0
+
+
+@dataclass(frozen=True, slots=True)
+class RevisionSuggestionInput:
+    """Store one accepted suggestion used for revised-markdown generation."""
+
+    comment_id: str
+    quote: str
+    comment: str
+    suggestion: str
+    author_label: str
+    sort_key: tuple[int, int, int, str, datetime, str]
 
 
 class LangGraphState(TypedDict):
@@ -296,6 +313,121 @@ class RunOrchestrator:
             extracted.title,
             content_format=extracted.content_format,
         )
+
+    async def generate_revised_markdown(self, artifact_id: UUID) -> AnalysisArtifact:
+        """Generate candidate revised markdown from accepted suggestions."""
+
+        async with self._artifact_lock(artifact_id):
+            artifact = await self._require_artifact(artifact_id)
+            if artifact.status not in {RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELED}:
+                raise ValidationError("Revised markdown is only available after a run has finished.")
+            if artifact.document is None:
+                raise ValidationError("Artifact must include a normalized document before generating revised markdown.")
+
+            accepted_items = _accepted_revision_inputs(artifact)
+            if not accepted_items:
+                raise ValidationError("Accept at least one agent suggestion before generating revised markdown.")
+
+            original_markdown = artifact.document.raw_content or _document_markdown(artifact.document)
+            suggestion_payload = [
+                {
+                    "comment_id": item.comment_id,
+                    "quote": item.quote,
+                    "comment": item.comment,
+                    "suggestion": item.suggestion,
+                    "author_label": item.author_label,
+                }
+                for item in accepted_items
+            ]
+            rewrite_payload = await self._analysis_provider.generate_revised_markdown(
+                original_markdown,
+                suggestion_payload,
+                route=_route_for_revision(self._runtime_mode, self._analysis_provider),
+            )
+            candidate_markdown = _coerce_str(rewrite_payload.get("markdown"))
+            if not candidate_markdown:
+                raise ValidationError("Revised markdown generation returned an empty document.")
+
+            artifact.revised_document = ArtifactRevisedDocument(
+                markdown=candidate_markdown,
+                accepted_comment_ids=[item.comment_id for item in accepted_items],
+            )
+            artifact.diff_review = ArtifactDiffReview(
+                original_markdown=original_markdown,
+                candidate_markdown=candidate_markdown,
+                diff_items=_build_diff_items(original_markdown, candidate_markdown),
+            )
+            await self._append_event(
+                artifact,
+                EventType.ARTIFACT,
+                "revised_markdown",
+                "completed",
+                "Candidate revised markdown generated",
+                snapshot_available=True,
+            )
+            return artifact
+
+    async def update_diff_review(
+        self,
+        artifact_id: UUID,
+        decisions: list[tuple[str, RevisedMarkdownDiffDecision]],
+    ) -> AnalysisArtifact:
+        """Persist per-diff review decisions without replacing canonical markdown yet."""
+
+        async with self._artifact_lock(artifact_id):
+            artifact = await self._require_artifact(artifact_id)
+            if artifact.diff_review is None:
+                raise ValidationError("Generate revised markdown before reviewing diffs.")
+
+            decision_map = {diff_id: decision for diff_id, decision in decisions}
+            for item in artifact.diff_review.diff_items:
+                if item.id in decision_map:
+                    item.decision = decision_map[item.id]
+
+            await self._repository.update_artifact(artifact)
+            return artifact
+
+    async def apply_diff_review(self, artifact_id: UUID) -> AnalysisArtifact:
+        """Apply reviewed diff decisions and promote the accepted markdown."""
+
+        async with self._artifact_lock(artifact_id):
+            artifact = await self._require_artifact(artifact_id)
+            if artifact.document is None or artifact.diff_review is None:
+                raise ValidationError("No revised markdown diff is available to apply.")
+            if any(item.decision is RevisedMarkdownDiffDecision.PENDING for item in artifact.diff_review.diff_items):
+                raise ValidationError("Review every diff item before applying revised markdown.")
+
+            applied_markdown = _apply_diff_review(artifact.diff_review)
+            artifact.document = normalize_text(
+                RunInput(
+                    source_type=artifact.source.source_type,
+                    source_label=artifact.source.source_label,
+                    title=artifact.document.title,
+                    url=artifact.source.url,
+                    text=applied_markdown,
+                ),
+                applied_markdown,
+                artifact.document.title,
+                content_format=ContentFormat.MARKDOWN,
+            )
+            artifact.source.title = artifact.document.title
+            artifact.agent_plan = []
+            artifact.agent_results = []
+            artifact.anchors = []
+            artifact.threads = []
+            artifact.summary = None
+            artifact.review_summary = None
+            artifact.error_message = None
+            artifact.status = RunStatus.COMPLETED
+            await self._append_event(
+                artifact,
+                EventType.ARTIFACT,
+                "revised_markdown",
+                "applied",
+                "Reviewed revised markdown promoted to the working document",
+                snapshot_available=True,
+            )
+            return artifact
 
     async def cancel_run(self, artifact_id: UUID) -> AnalysisArtifact:
         """Cancel one queued or running run."""
@@ -1970,6 +2102,97 @@ def _coerce_int(value: object) -> int:
     return 0
 
 
+def _accepted_revision_inputs(artifact: AnalysisArtifact) -> list[RevisionSuggestionInput]:
+    """Return accepted agent suggestions in stable article order."""
+
+    if artifact.document is None:
+        return []
+
+    block_index_by_id = {block.id: block.index for block in artifact.document.blocks}
+    items: list[RevisionSuggestionInput] = []
+    for thread in artifact.threads:
+        for comment in thread.comments:
+            if comment.author_type is not AuthorType.AGENT:
+                continue
+            if comment.review_state is not ReviewState.ACCEPTED or not comment.suggestion:
+                continue
+            primary = thread.anchor.segments[0]
+            items.append(
+                RevisionSuggestionInput(
+                    comment_id=comment.id,
+                    quote=_compact_text(thread.anchor.quote),
+                    comment=_compact_text(comment.body),
+                    suggestion=_compact_text(comment.suggestion),
+                    author_label=comment.author_label,
+                    sort_key=(
+                        1 if thread.anchor.match_kind == ArtifactAnchorMatchKind.SYNTHETIC_UNMATCHED else 0,
+                        block_index_by_id.get(primary.block_id, 10**9),
+                        primary.start_offset,
+                        thread.anchor.id,
+                        comment.created_at,
+                        comment.id,
+                    ),
+                )
+            )
+    items.sort(key=lambda item: item.sort_key)
+    return items
+
+
+def _document_markdown(document: ArtifactDocument) -> str:
+    """Render canonical markdown from a normalized document when raw content is absent."""
+
+    return "\n\n".join((block.markdown or block.text).strip() for block in document.blocks if block.text.strip())
+
+
+def _build_diff_items(original_markdown: str, candidate_markdown: str) -> list[ArtifactDiffItem]:
+    """Build deterministic diff items from whole-document markdown comparison."""
+
+    original_lines = original_markdown.splitlines()
+    candidate_lines = candidate_markdown.splitlines()
+    matcher = SequenceMatcher(a=original_lines, b=candidate_lines)
+    items: list[ArtifactDiffItem] = []
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            continue
+        items.append(
+            ArtifactDiffItem(
+                change_type=tag,
+                original_start_line=i1 + 1,
+                original_end_line=i2,
+                candidate_start_line=j1 + 1,
+                candidate_end_line=j2,
+                before_text="\n".join(original_lines[i1:i2]),
+                after_text="\n".join(candidate_lines[j1:j2]),
+            )
+        )
+    return items
+
+
+def _apply_diff_review(diff_review: ArtifactDiffReview) -> str:
+    """Apply accepted and rejected diff decisions to reconstruct the next working markdown."""
+
+    original_lines = diff_review.original_markdown.splitlines()
+    applied_lines: list[str] = []
+    cursor = 0
+    for item in sorted(diff_review.diff_items, key=lambda diff: (diff.original_start_line, diff.original_end_line, diff.id)):
+        start = max(0, item.original_start_line - 1)
+        end = max(start, item.original_end_line)
+        applied_lines.extend(original_lines[cursor:start])
+        if item.decision is RevisedMarkdownDiffDecision.ACCEPTED:
+            applied_lines.extend(item.after_text.splitlines())
+        else:
+            applied_lines.extend(original_lines[start:end])
+        cursor = end
+    applied_lines.extend(original_lines[cursor:])
+    return "\n".join(applied_lines).strip()
+
+
+def _compact_text(value: str) -> str:
+    """Collapse whitespace for revision prompts and deterministic sorting."""
+
+    return " ".join(value.split())
+
+
 def _route_for_definition(
     definition: AgentDefinition,
     runtime_mode: RuntimeMode,
@@ -1981,6 +2204,18 @@ def _route_for_definition(
     if runtime_mode is RuntimeMode.MOCK:
         return None
     return definition.preferred_route
+
+
+def _route_for_revision(
+    runtime_mode: RuntimeMode,
+    analysis_provider: AnalysisProvider,
+) -> ProviderRoute | None:
+    """Resolve provider routing for revised-markdown generation."""
+
+    del analysis_provider
+    if runtime_mode is RuntimeMode.MOCK:
+        return None
+    return None
 
 
 def _score_from_result(item: object) -> float:

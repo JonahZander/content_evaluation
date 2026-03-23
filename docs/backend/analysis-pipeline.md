@@ -70,6 +70,9 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
    - Export the artifact as JSON
    - Export Markdown derived from the artifact
    - Export accepted agent suggestions as a compact Markdown todo list ordered by source position, including both the agent comment text and the suggestion
+   - Generate candidate revised markdown only after accepted suggestions exist
+   - Compute diff-review items deterministically from whole-document markdown comparison
+   - Replace the canonical markdown only after reviewed diff decisions are applied
    - Reopen a saved artifact without rerunning the pipeline
 
 ## Artifact-First Rules
@@ -141,6 +144,9 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 - `POST /api/v1/sources/preview`
 - `GET /api/v1/runs/{run_id}`
 - `POST /api/v1/runs/{run_id}/cancel`
+- `POST /api/v1/runs/{run_id}/revised-markdown`
+- `PATCH /api/v1/runs/{run_id}/revised-markdown/diff-review`
+- `POST /api/v1/runs/{run_id}/revised-markdown/apply`
 - `GET /api/v1/runs/{run_id}/events`
 - `POST /api/v1/comments`
 - `PATCH /api/v1/comments/{comment_id}`

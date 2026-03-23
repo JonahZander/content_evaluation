@@ -1,5 +1,28 @@
+import type { ReactNode } from "react";
+
 import styles from "@/components/ReviewWorkbench.module.css";
 import type { ArtifactReviewSummary } from "@/lib/types";
+
+const URL_PATTERN = /(https?:\/\/[^\s,)}\]>"]+)/g;
+
+function linkifyText(text: string): ReactNode[] {
+  const parts = text.split(URL_PATTERN);
+  return parts.map((part, index) =>
+    URL_PATTERN.test(part) ? (
+      <a
+        key={index}
+        className={styles.claimEvidenceInlineLink}
+        href={part}
+        target="_blank"
+        rel="noreferrer"
+      >
+        {part}
+      </a>
+    ) : (
+      part
+    ),
+  );
+}
 
 interface ReviewSummaryPanelProps {
   reviewSummary: ArtifactReviewSummary | null;
@@ -83,7 +106,7 @@ export function ReviewSummaryPanel({ reviewSummary }: ReviewSummaryPanelProps) {
               {summary.research_summary || "Pending"}
             </p>
           </article>
-          <article className={styles.reviewSummaryCard}>
+          <article className={`${styles.reviewSummaryCard} ${styles.reviewSummaryCardWide}`}>
             <div className={styles.metricLabel}>Main claims</div>
             {hasMainClaims ? (
               <div className={styles.claimEvidencePanel}>
@@ -99,8 +122,8 @@ export function ReviewSummaryPanel({ reviewSummary }: ReviewSummaryPanelProps) {
                         <span className={styles.claimEvidenceVerdict}>Verdict: {claim.verdict}</span>
                         <span className={styles.claimEvidenceClaim}>{claim.claim_text}</span>
                       </div>
-                      <p className={styles.claimEvidenceText}>{claim.evidence_summary}</p>
-                      {claim.value_add ? <p className={styles.claimEvidenceText}>{claim.value_add}</p> : null}
+                      <p className={styles.claimEvidenceText}>{linkifyText(claim.evidence_summary)}</p>
+                      {claim.value_add ? <p className={styles.claimEvidenceText}>{linkifyText(claim.value_add)}</p> : null}
                       {claim.anchor_quote ? <p className={styles.claimEvidenceText}>“{claim.anchor_quote}”</p> : null}
                       {links.length > 0 ? (
                         <div className={styles.claimEvidenceLinks}>

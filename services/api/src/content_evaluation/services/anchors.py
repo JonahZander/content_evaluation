@@ -16,10 +16,17 @@ from content_evaluation.domain.models import (
 
 
 ELLIPSIS_PATTERN = re.compile(r"(?:\.\.\.|…)+")
+ATTRIBUTION_PATTERN = re.compile(
+    r"""^.*?\b(?:states?\s+that|said\s+that|notes?\s+that|reports?\s+that|"""
+    r"""found\s+that|shows?\s+that|indicates?\s+that|suggests?\s+that|"""
+    r"""according\s+to\s+\w[\w\s,']*?(?:,|:))\s*[:"]?\s*""",
+    re.IGNORECASE,
+)
 UNMATCHED_SECTION_MARKERS = ("## Unmatched references", "Unmatched references")
 WINDOW_SEPARATOR = "\n\n"
 MAX_BLOCK_WINDOW = 3
 MAX_FUZZY_EDIT_DISTANCE = 2
+MIN_SUBSTRING_RATIO = 0.45
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +65,15 @@ def sanitize_excerpt(excerpt: str) -> str:
         break
 
     return cleaned.strip()
+
+
+def _strip_attribution(excerpt: str) -> str | None:
+    """Strip leading attribution framing and return the core quote, if any."""
+
+    stripped = ATTRIBUTION_PATTERN.sub("", excerpt).strip().strip('"').strip()
+    if stripped and len(stripped) >= 20 and stripped != excerpt:
+        return stripped
+    return None
 
 
 def _normalize_with_map(text: str) -> tuple[str, list[int]]:
@@ -226,6 +242,47 @@ def _find_ellipsis_span(text: str, excerpt: str) -> tuple[int, int] | None:
     return None
 
 
+def _longest_common_substring_span(
+    text: str,
+    excerpt: str,
+    *,
+    min_ratio: float = MIN_SUBSTRING_RATIO,
+) -> tuple[int, int] | None:
+    """Find the best overlap between text and excerpt using longest common substring."""
+
+    payload = _normalized_search_payload(text, excerpt)
+    if payload is None:
+        return None
+    normalized_text, text_map, normalized_excerpt = payload
+
+    if len(normalized_excerpt) < 20:
+        return None
+
+    n = len(normalized_text)
+    m = len(normalized_excerpt)
+    best_length = 0
+    best_end_i = 0
+
+    # Use a rolling row DP for memory efficiency
+    previous = [0] * (m + 1)
+    for i in range(1, n + 1):
+        current = [0] * (m + 1)
+        for j in range(1, m + 1):
+            if normalized_text[i - 1] == normalized_excerpt[j - 1]:
+                current[j] = previous[j - 1] + 1
+                if current[j] > best_length:
+                    best_length = current[j]
+                    best_end_i = i
+        previous = current
+
+    ratio = best_length / m if m > 0 else 0
+    if ratio < min_ratio:
+        return None
+
+    start_i = best_end_i - best_length
+    return text_map[start_i], text_map[best_end_i - 1] + 1
+
+
 def _source_blocks(blocks: Iterable[ArtifactBlock]) -> list[ArtifactBlock]:
     """Return only original source blocks for anchor matching."""
 
@@ -366,4 +423,40 @@ def create_anchor_from_excerpt(
                 if anchor is not None:
                     return anchor
 
-    return None
+    # Fallback: try again after stripping attribution framing.
+    stripped = _strip_attribution(cleaned_excerpt)
+    if stripped is not None:
+        anchor = create_anchor_from_excerpt(blocks, stripped, block_id=block_id)
+        if anchor is not None:
+            # Keep the original (unstripped) quote for display.
+            return ArtifactAnchor(
+                quote=cleaned_excerpt,
+                match_kind=anchor.match_kind,
+                segments=anchor.segments,
+            )
+
+    # Last resort: longest common substring match against each source block.
+    best_anchor: ArtifactAnchor | None = None
+    best_ratio: float = 0.0
+    for block in source_blocks:
+        span = _longest_common_substring_span(block.text, cleaned_excerpt)
+        if span is None:
+            continue
+        start_offset, end_offset = span
+        match_length = end_offset - start_offset
+        ratio = match_length / max(len(cleaned_excerpt), 1)
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_anchor = ArtifactAnchor(
+                quote=cleaned_excerpt,
+                match_kind=ArtifactAnchorMatchKind.SOURCE,
+                segments=[
+                    ArtifactAnchorSegment(
+                        block_id=block.id,
+                        start_offset=start_offset,
+                        end_offset=end_offset,
+                    )
+                ],
+            )
+
+    return best_anchor

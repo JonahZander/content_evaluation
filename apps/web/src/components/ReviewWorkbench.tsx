@@ -463,6 +463,12 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     && diffReview === null
     && !isGeneratingRevision
     && !isApplyingRevision;
+  const reviewProgress = useMemo(() => {
+    if (!artifact) return null;
+    const agentComments = artifact.threads.flatMap((t) => t.comments).filter((c) => c.author_type !== "human");
+    const reviewed = agentComments.filter((c) => c.review_state !== "unreviewed").length;
+    return { reviewed, total: agentComments.length };
+  }, [artifact]);
   const analyzeButtonLabel = revisionWorkflowPending
     ? "Apply revised markdown first"
     : isTerminalArtifact
@@ -932,6 +938,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
           disabledAgentIds={[...completedAgentIds]}
           importInputKey={importInputKey}
           showUrlImportGuidance={showUrlImportGuidance}
+          hasLoadedContent={artifact !== null}
           onFormChange={(updater) =>
             dispatch({
               type: "UPDATE_FORM_STATE",
@@ -1010,19 +1017,47 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
               </article>
             ))}
           </div>
+          <hr className={styles.runDetailsDivider} />
+          <AgentUsageSummary
+            agentResults={artifact?.agent_results ?? []}
+            agentPlan={artifact?.agent_plan ?? []}
+          />
+          <hr className={styles.runDetailsDivider} />
+          <details className={styles.runLogDetails}>
+            <summary className={styles.runLogToggle}>
+              Run log ({(artifact?.events ?? []).length} events)
+            </summary>
+            <CommentRail events={artifact?.events ?? []} />
+          </details>
         </section>
-
-        <CommentRail events={artifact?.events ?? []} />
 
         <RunMetrics summary={artifact?.summary ?? null} />
 
-        <AgentUsageSummary
-          agentResults={artifact?.agent_results ?? []}
-          agentPlan={artifact?.agent_plan ?? []}
-        />
+        <ReviewSummaryPanel reviewSummary={artifact?.review_summary ?? null} />
+
+        {artifact !== null && isTerminalArtifact && hasAcceptedSuggestions && diffReview === null ? (
+          <section className={styles.revisionCta} data-testid="revision-cta-top">
+            <span>Ready to generate the revised version</span>
+            <button
+              className={styles.button}
+              data-testid="generate-revised-markdown-button"
+              type="button"
+              onClick={handleGenerateRevision}
+              disabled={!canGenerateRevision || isGeneratingRevision}
+            >
+              {isGeneratingRevision ? "Generating revision..." : "Generate revised markdown"}
+            </button>
+          </section>
+        ) : null}
 
         <section className={styles.workspace} ref={workspaceRef}>
-          <ReviewSummaryPanel reviewSummary={artifact?.review_summary ?? null} />
+          {reviewProgress !== null && reviewProgress.total > 0 ? (
+            <div className={styles.reviewProgressBar}>
+              <span className={styles.pill}>
+                {reviewProgress.reviewed} of {reviewProgress.total} comments reviewed
+              </span>
+            </div>
+          ) : null}
           {diffReview !== null ? (
             <RevisedMarkdownPanel
               originalMarkdown={diffReview.originalMarkdown}
@@ -1079,6 +1114,20 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
             onDeleteComment={handleDeleteHumanComment}
           />
         </section>
+
+        {artifact !== null && isTerminalArtifact && hasAcceptedSuggestions && diffReview === null ? (
+          <section className={styles.revisionCta} data-testid="revision-cta-bottom">
+            <span>Ready to generate the revised version</span>
+            <button
+              className={styles.button}
+              type="button"
+              onClick={handleGenerateRevision}
+              disabled={!canGenerateRevision || isGeneratingRevision}
+            >
+              {isGeneratingRevision ? "Generating revision..." : "Generate revised markdown"}
+            </button>
+          </section>
+        ) : null}
       </div>
     </main>
   );

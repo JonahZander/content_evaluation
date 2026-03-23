@@ -471,10 +471,10 @@ describe("ReviewWorkbench", () => {
     render(<ReviewWorkbench initialArtifact={mockArtifact} />);
 
     const progressHeading = screen.getByText("Run progress");
-    const runLogHeading = screen.getByText("Run log");
+    const runLogToggle = screen.getByText(/Run log/);
 
     expect(
-      progressHeading.compareDocumentPosition(runLogHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+      progressHeading.compareDocumentPosition(runLogToggle) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
 

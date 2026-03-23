@@ -366,6 +366,32 @@
   line-height: 1.5;
 }
 
+.runDetailsDivider {
+  border: none;
+  border-top: 1px solid rgba(57, 44, 29, 0.1);
+  margin: 12px 0;
+}
+
+.runLogDetails {
+  margin-top: 4px;
+}
+
+.runLogToggle {
+  cursor: pointer;
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--muted);
+  padding: 6px 0;
+  list-style: disclosure-closed;
+}
+
+.runLogDetails[open] > .runLogToggle {
+  list-style: disclosure-open;
+  margin-bottom: 10px;
+}
+
 .metricCard {
   padding: 16px;
   border-radius: 22px;
@@ -391,6 +417,26 @@
   font-size: 1rem;
   line-height: 1.65;
   color: rgba(23, 19, 16, 0.9);
+}
+
+.reviewProgressBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.revisionCta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 20px 24px;
+  border-radius: 24px;
+  background: linear-gradient(135deg, rgba(224, 244, 239, 0.9), rgba(248, 251, 245, 0.9));
+  border: 1px solid rgba(29, 143, 111, 0.18);
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-size: 13px;
+  color: var(--muted);
 }
 
 .workspace {
@@ -635,11 +681,11 @@
 
 .claimEvidencePanel {
   display: grid;
-  gap: 10px;
+  gap: 16px;
 }
 
 .claimEvidenceCard {
-  padding: 12px 14px;
+  padding: 18px 20px;
   border-radius: 18px;
   background: rgba(224, 244, 239, 0.65);
   border: 1px solid rgba(29, 143, 111, 0.16);
@@ -671,7 +717,7 @@
 }
 
 .claimEvidenceText {
-  margin: 8px 0 0;
+  margin: 12px 0 0;
   line-height: 1.55;
   color: rgba(23, 19, 16, 0.86);
 }
@@ -679,8 +725,25 @@
 .claimEvidenceLinks {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.reviewSummaryCardWide {
+  grid-column: 1 / -1;
+}
+
+.claimEvidenceInlineLink {
+  color: var(--teal);
+  text-decoration: underline;
+  text-decoration-color: rgba(29, 143, 111, 0.35);
+  text-underline-offset: 2px;
+  word-break: break-all;
+}
+
+.claimEvidenceInlineLink:hover {
+  color: var(--cobalt);
+  text-decoration-color: currentColor;
 }
 
 .claimEvidenceLink {

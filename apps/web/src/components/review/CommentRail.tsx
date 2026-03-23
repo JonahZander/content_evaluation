@@ -29,8 +29,7 @@ function getAttemptLabel(event: ArtifactEvent): string | null {
 
 export function CommentRail({ events }: CommentRailProps) {
   return (
-    <section className={styles.eventPanel}>
-      <div className={styles.sectionTitle}>Run log</div>
+    <div>
       {events.length ? (
         events.map((event) => (
           <article key={event.id} className={styles.eventItem} data-testid={`run-event-${event.id}`}>
@@ -48,6 +47,6 @@ export function CommentRail({ events }: CommentRailProps) {
       ) : (
         <div className={styles.emptyEventState}>No run events yet.</div>
       )}
-    </section>
+    </div>
   );
 }

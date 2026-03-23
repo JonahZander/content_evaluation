@@ -32,6 +32,7 @@ interface ReviewToolbarProps {
   disabledAgentIds: string[];
   importInputKey: number;
   showUrlImportGuidance: boolean;
+  hasLoadedContent: boolean;
   onFormChange: (updater: (current: ReviewFormState) => ReviewFormState) => void;
   onFileChange: (file: File | null) => void;
   onImportFileChange: (file: File | null) => void;
@@ -63,6 +64,7 @@ export function ReviewToolbar({
   disabledAgentIds,
   importInputKey,
   showUrlImportGuidance,
+  hasLoadedContent,
   onFormChange,
   onFileChange,
   onImportFileChange,
@@ -76,21 +78,23 @@ export function ReviewToolbar({
   return (
     <section className={styles.toolbar}>
       <div className={styles.toolbarSettings}>
-        <select
-          className={styles.toolbarSelect}
-          data-testid="source-type-select"
-          value={formState.sourceType}
-          onChange={(event) =>
-            onFormChange((current) => ({
-              ...current,
-              sourceType: event.target.value as ReviewFormState["sourceType"],
-            }))
-          }
-        >
-          <option value="text">Pasted text</option>
-          <option value="url">URL</option>
-          <option value="file">Text file</option>
-        </select>
+        {!hasLoadedContent ? (
+          <select
+            className={styles.toolbarSelect}
+            data-testid="source-type-select"
+            value={formState.sourceType}
+            onChange={(event) =>
+              onFormChange((current) => ({
+                ...current,
+                sourceType: event.target.value as ReviewFormState["sourceType"],
+              }))
+            }
+          >
+            <option value="text">Pasted text</option>
+            <option value="url">URL</option>
+            <option value="file">Text file</option>
+          </select>
+        ) : null}
         <input
           className={styles.toolbarInput}
           data-testid="draft-title-input"
@@ -153,62 +157,64 @@ export function ReviewToolbar({
         })}
       </div>
 
-      <div className={styles.sourceComposer}>
-        {formState.sourceType === "url" ? (
-          <>
-            <div className={styles.urlInputStack}>
+      {!hasLoadedContent ? (
+        <div className={styles.sourceComposer}>
+          {formState.sourceType === "url" ? (
+            <>
+              <div className={styles.urlInputStack}>
+                <input
+                  className={styles.toolbarInput}
+                  data-testid="draft-url-input"
+                  value={formState.url}
+                  onChange={(event) =>
+                    onFormChange((current) => ({
+                      ...current,
+                      url: event.target.value,
+                      sourceLabel: event.target.value,
+                    }))
+                  }
+                  placeholder="https://example.com/post"
+                />
+                {showUrlImportGuidance ? (
+                  <p className={styles.importGuidance} data-testid="url-import-guidance">
+                    Import is not perfect. There might be sections from the site that don&apos;t belong to the post, that can be removed.
+                  </p>
+                ) : null}
+              </div>
+              <button
+                className={styles.ghostButton}
+                data-testid="import-url-button"
+                type="button"
+                onClick={onPreviewUrl}
+                disabled={!canPreviewUrl || previewing}
+              >
+                {previewing ? "Importing..." : "Import draft from URL"}
+              </button>
+            </>
+          ) : null}
+          {formState.sourceType === "file" ? (
+            <div className={styles.fileInputWrap}>
               <input
+                key={fileInputKey}
                 className={styles.toolbarInput}
-                data-testid="draft-url-input"
-                value={formState.url}
-                onChange={(event) =>
-                  onFormChange((current) => ({
-                    ...current,
-                    url: event.target.value,
-                    sourceLabel: event.target.value,
-                  }))
-                }
-                placeholder="https://example.com/post"
+                data-testid="draft-file-input"
+                type="file"
+                accept=".txt,.md,text/plain,text/markdown"
+                onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
               />
-              {showUrlImportGuidance ? (
-                <p className={styles.importGuidance} data-testid="url-import-guidance">
-                  Import is not perfect. There might be sections from the site that don&apos;t belong to the post, that can be removed.
-                </p>
-              ) : null}
+              {selectedFile ? <span className={styles.fileMeta}>{selectedFile.name}</span> : null}
             </div>
-            <button
-              className={styles.ghostButton}
-              data-testid="import-url-button"
-              type="button"
-              onClick={onPreviewUrl}
-              disabled={!canPreviewUrl || previewing}
-            >
-              {previewing ? "Importing..." : "Import draft from URL"}
-            </button>
-          </>
-        ) : null}
-        {formState.sourceType === "file" ? (
-          <div className={styles.fileInputWrap}>
-            <input
-              key={fileInputKey}
-              className={styles.toolbarInput}
-              data-testid="draft-file-input"
-              type="file"
-              accept=".txt,.md,text/plain,text/markdown"
-              onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
+          ) : formState.sourceType === "text" ? (
+            <textarea
+              className={styles.toolbarTextarea}
+              data-testid="draft-text-input"
+              value={formState.text}
+              onChange={(event) => onFormChange((current) => ({ ...current, text: event.target.value }))}
+              placeholder="Paste draft text"
             />
-            {selectedFile ? <span className={styles.fileMeta}>{selectedFile.name}</span> : null}
-          </div>
-        ) : formState.sourceType === "text" ? (
-          <textarea
-            className={styles.toolbarTextarea}
-            data-testid="draft-text-input"
-            value={formState.text}
-            onChange={(event) => onFormChange((current) => ({ ...current, text: event.target.value }))}
-            placeholder="Paste draft text"
-          />
-        ) : null}
-      </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className={styles.toolbarActions}>
         {showNewAnalysis ? (
@@ -230,17 +236,6 @@ export function ReviewToolbar({
         >
           {submitting ? "Submitting..." : analyzeButtonLabel}
         </button>
-        {showGenerateRevision ? (
-          <button
-            className={styles.ghostButton}
-            data-testid="generate-revised-markdown-button"
-            type="button"
-            onClick={onGenerateRevision}
-            disabled={!canGenerateRevision || generatingRevision}
-          >
-            {generatingRevision ? "Generating revision..." : "Generate revised markdown"}
-          </button>
-        ) : null}
         <button
           className={styles.ghostButton}
           data-testid="stop-run-button"

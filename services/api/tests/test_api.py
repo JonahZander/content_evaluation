@@ -41,6 +41,46 @@ def _wait_for_run_completion(client: TestClient, run_id: str) -> dict[str, objec
     raise AssertionError("Run did not complete before timeout")
 
 
+def _accept_agent_comments(client: TestClient, run_payload: dict[str, object]) -> list[str]:
+    """Accept all agent comments with suggestions in a completed run payload."""
+
+    accepted_comment_ids: list[str] = []
+    for thread in run_payload["threads"]:
+        for comment in thread["comments"]:
+            if comment["author_type"] != "agent" or not comment.get("suggestion"):
+                continue
+            review_response = client.patch(
+                f"/api/v1/comments/{comment['id']}/review-state",
+                json={"review_state": "accepted"},
+            )
+            assert review_response.status_code == 200
+            assert review_response.json()["review_state"] == "accepted"
+            accepted_comment_ids.append(comment["id"])
+    return accepted_comment_ids
+
+
+def _render_applied_markdown(diff_review: dict[str, object]) -> str:
+    """Reconstruct the applied markdown from diff-review decisions."""
+
+    original_lines = str(diff_review["original_markdown"]).splitlines()
+    applied_lines: list[str] = []
+    cursor = 0
+    for item in sorted(
+        diff_review["diff_items"],
+        key=lambda diff: (diff["original_start_line"], diff["original_end_line"], diff["id"]),
+    ):
+        start = max(0, item["original_start_line"] - 1)
+        end = max(start, item["original_end_line"])
+        applied_lines.extend(original_lines[cursor:start])
+        if item["decision"] == "accepted":
+            applied_lines.extend(str(item["after_text"]).splitlines())
+        else:
+            applied_lines.extend(original_lines[start:end])
+        cursor = end
+    applied_lines.extend(original_lines[cursor:])
+    return "\n".join(applied_lines).strip()
+
+
 def test_api_run_flow_and_exports(monkeypatch: pytest.MonkeyPatch) -> None:
     """Create a run, wait for completion, and export it."""
 
@@ -85,6 +125,85 @@ def test_api_run_flow_and_exports(monkeypatch: pytest.MonkeyPatch) -> None:
         json_export = client.get(f"/api/v1/runs/{run_id}/export.json")
         assert markdown_export.status_code == 200
         assert json_export.status_code == 200
+
+
+def test_generate_revised_markdown_requires_accepted_suggestions(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reject revised-markdown generation until at least one suggestion has been accepted."""
+
+    monkeypatch.setattr("content_evaluation.api.main.build_services", lambda: AppServices(_mock_settings()))
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/runs",
+            json={
+                "source_type": "text",
+                "source_label": "Draft",
+                "title": "Draft",
+                "text": "This draft helps editors assess content.\n\nIt repeats itself in places.",
+            },
+        )
+        assert response.status_code == 200
+        run_id = response.json()["artifact_id"]
+        _wait_for_run_completion(client, run_id)
+
+        generate_response = client.post(f"/api/v1/runs/{run_id}/revised-markdown")
+
+    assert generate_response.status_code == 400
+    assert "Accept at least one agent suggestion" in generate_response.text
+
+
+def test_revised_markdown_diff_review_and_apply_flow(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Generate revised markdown, review its diff items, and apply the reviewed result."""
+
+    monkeypatch.setattr("content_evaluation.api.main.build_services", lambda: AppServices(_mock_settings()))
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/runs",
+            json={
+                "source_type": "text",
+                "source_label": "Draft",
+                "title": "Draft",
+                "text": "This draft helps editors assess content.\n\nIt repeats itself in places.",
+            },
+        )
+        assert response.status_code == 200
+        run_id = response.json()["artifact_id"]
+        run_payload = _wait_for_run_completion(client, run_id)
+        accepted_comment_ids = _accept_agent_comments(client, run_payload)
+
+        generate_response = client.post(f"/api/v1/runs/{run_id}/revised-markdown")
+        assert generate_response.status_code == 200
+        revised_payload = generate_response.json()
+        assert set(revised_payload["revised_document"]["accepted_comment_ids"]) == set(accepted_comment_ids)
+        assert revised_payload["diff_review"]["diff_items"]
+
+        diff_items = revised_payload["diff_review"]["diff_items"]
+        decisions = [
+            {
+                "diff_id": item["id"],
+                "decision": "accepted" if index % 2 == 0 else "rejected",
+            }
+            for index, item in enumerate(diff_items)
+        ]
+        update_response = client.patch(
+            f"/api/v1/runs/{run_id}/revised-markdown/diff-review",
+            json={"decisions": decisions},
+        )
+        assert update_response.status_code == 200
+        updated_diff_review = update_response.json()["diff_review"]
+        updated_diff_items = updated_diff_review["diff_items"]
+        assert [item["decision"] for item in updated_diff_items] == [
+            "accepted" if index % 2 == 0 else "rejected"
+            for index in range(len(updated_diff_items))
+        ]
+        expected_applied_markdown = _render_applied_markdown(updated_diff_review)
+
+        apply_response = client.post(f"/api/v1/runs/{run_id}/revised-markdown/apply")
+        assert apply_response.status_code == 200
+        applied_payload = apply_response.json()
+        assert applied_payload["status"] == "completed"
+        assert applied_payload["threads"] == []
+        assert applied_payload["agent_results"] == []
+        assert applied_payload["document"]["raw_content"] == expected_applied_markdown
 
 
 def test_api_rejects_invalid_upload_type(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -281,3 +400,83 @@ def test_cancel_run_stops_inflight_execution(monkeypatch: pytest.MonkeyPatch) ->
 
         run_payload = _wait_for_run_completion(client, run_id)
         assert run_payload["status"] == "canceled"
+
+
+def test_generate_revised_markdown_requires_accepted_suggestions(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reject revised-markdown generation until an agent suggestion is accepted."""
+
+    monkeypatch.setattr("content_evaluation.api.main.build_services", lambda: AppServices(_mock_settings()))
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/runs",
+            json={
+                "source_type": "text",
+                "source_label": "Draft",
+                "title": "Draft",
+                "text": "Alpha paragraph.\n\nBeta paragraph.",
+                "selected_agents": ["editorial"],
+            },
+        )
+        assert response.status_code == 200
+        run_id = response.json()["artifact_id"]
+        _wait_for_run_completion(client, run_id)
+
+        revised_response = client.post(f"/api/v1/runs/{run_id}/revised-markdown")
+
+    assert revised_response.status_code == 400
+    assert "Accept at least one agent suggestion" in revised_response.text
+
+
+def test_api_generates_and_applies_revised_markdown(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Generate revised markdown, review the diffs, and promote the document."""
+
+    monkeypatch.setattr("content_evaluation.api.main.build_services", lambda: AppServices(_mock_settings()))
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/runs",
+            json={
+                "source_type": "text",
+                "source_label": "Draft",
+                "title": "Draft",
+                "text": "Alpha paragraph.\n\nBeta paragraph.",
+                "selected_agents": ["editorial"],
+            },
+        )
+        assert response.status_code == 200
+        run_id = response.json()["artifact_id"]
+
+        run_payload = _wait_for_run_completion(client, run_id)
+        comment_id = run_payload["threads"][0]["comments"][0]["id"]
+        review_response = client.patch(
+            f"/api/v1/comments/{comment_id}/review-state",
+            json={"review_state": "accepted"},
+        )
+        assert review_response.status_code == 200
+
+        revised_response = client.post(f"/api/v1/runs/{run_id}/revised-markdown")
+        assert revised_response.status_code == 200
+        revised_payload = revised_response.json()
+        assert revised_payload["revised_document"] is not None
+        assert revised_payload["diff_review"] is not None
+        diff_items = revised_payload["diff_review"]["diff_items"]
+        assert diff_items
+
+        diff_review_response = client.patch(
+            f"/api/v1/runs/{run_id}/revised-markdown/diff-review",
+            json={
+                "decisions": [
+                    {"diff_id": item["id"], "decision": "accepted"}
+                    for item in diff_items
+                ]
+            },
+        )
+        assert diff_review_response.status_code == 200
+
+        apply_response = client.post(f"/api/v1/runs/{run_id}/revised-markdown/apply")
+        assert apply_response.status_code == 200
+        applied_payload = apply_response.json()
+        assert applied_payload["document"] is not None
+        assert applied_payload["agent_results"] == []
+        assert applied_payload["agent_plan"] == []
+        assert applied_payload["summary"] is None
+        assert applied_payload["review_summary"] is None

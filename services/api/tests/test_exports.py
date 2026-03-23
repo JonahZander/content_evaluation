@@ -19,7 +19,13 @@ from content_evaluation.domain.models import (
     RuntimeMode,
     SourceType,
 )
-from content_evaluation.services.exporting import build_json_export, build_markdown_export, build_todo_export
+from content_evaluation.services.exporting import (
+    build_json_export,
+    build_markdown_export,
+    build_revised_markdown_payload,
+    build_revision_suggestion_items,
+    build_todo_export,
+)
 
 
 def test_exports_include_comments_and_replies() -> None:
@@ -180,3 +186,63 @@ def test_todo_export_includes_only_accepted_agent_suggestions_in_article_order()
     assert "Ignore me." not in todo_export
     assert "Should not export." not in todo_export
     assert "Anchor: unmatched synthetic fallback" in todo_export
+
+
+def test_revised_markdown_payload_uses_accepted_suggestion_order() -> None:
+    """Build a stable payload for revised markdown generation."""
+
+    blocks = [
+        ArtifactBlock(index=0, text="Alpha section."),
+        ArtifactBlock(index=1, text="Beta section."),
+        ArtifactBlock(index=2, text="Gamma section."),
+    ]
+    document = ArtifactDocument(
+        title="Draft",
+        source_type=SourceType.TEXT,
+        source_label="draft",
+        text="\n\n".join(block.text for block in blocks),
+        blocks=blocks,
+        raw_content="Alpha section.\n\nBeta section.\n\nGamma section.",
+    )
+    anchor_gamma = ArtifactAnchor(block_id=blocks[2].id, start_offset=0, end_offset=5, quote="Gamma")
+    anchor_alpha = ArtifactAnchor(block_id=blocks[0].id, start_offset=0, end_offset=5, quote="Alpha")
+    artifact = AnalysisArtifact(
+        source=ArtifactSource(source_type=SourceType.TEXT, source_label="draft"),
+        document=document,
+        run_config=RunConfig(selected_agents=["editorial"], runtime_mode=RuntimeMode.MOCK),
+        anchors=[anchor_gamma, anchor_alpha],
+    )
+    accepted_gamma = ArtifactComment(
+        artifact_id=artifact.artifact_id,
+        anchor_id=anchor_gamma.id,
+        author_type=AuthorType.AGENT,
+        author_label="editorial agent",
+        category=AgentCategory.EDITORIAL,
+        body="Strengthen the gamma section.",
+        suggestion="Move the gamma note earlier.",
+        review_state=ReviewState.ACCEPTED,
+    )
+    accepted_alpha = ArtifactComment(
+        artifact_id=artifact.artifact_id,
+        anchor_id=anchor_alpha.id,
+        author_type=AuthorType.AGENT,
+        author_label="ai likelihood agent",
+        category=AgentCategory.AI_LIKELIHOOD,
+        body="Refine the alpha section.",
+        suggestion="Trim the alpha claim.",
+        review_state=ReviewState.ACCEPTED,
+    )
+    artifact.threads = [
+        ArtifactThread(anchor=anchor_gamma, comments=[accepted_gamma]),
+        ArtifactThread(anchor=anchor_alpha, comments=[accepted_alpha]),
+    ]
+
+    payload = build_revised_markdown_payload(artifact)
+    revision_items = build_revision_suggestion_items(artifact)
+
+    assert payload["original_markdown"] == document.raw_content
+    accepted = payload["accepted_suggestions"]
+    assert [item["quote"] for item in accepted] == ["Alpha", "Gamma"]
+    assert accepted[0]["comment_id"] == accepted_alpha.id
+    assert accepted[1]["comment_id"] == accepted_gamma.id
+    assert [item.comment_id for item in revision_items] == [accepted_alpha.id, accepted_gamma.id]

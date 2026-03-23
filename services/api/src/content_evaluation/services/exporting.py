@@ -26,6 +26,19 @@ class _TodoItem:
     sort_key: tuple[int, int, int, str, datetime, str]
 
 
+@dataclass(frozen=True)
+class RevisionPayloadItem:
+    """Store one accepted suggestion for revision payload generation."""
+
+    comment_id: str
+    quote: str
+    comment: str
+    suggestion: str
+    author_label: str
+    unmatched: bool
+    sort_key: tuple[int, int, int, str, datetime, str]
+
+
 def build_markdown_export(artifact: AnalysisArtifact) -> str:
     """Render one artifact as Markdown."""
 
@@ -54,7 +67,7 @@ def build_todo_export(artifact: AnalysisArtifact) -> str:
     if artifact.document is None:
         return "# Empty artifact\n"
 
-    items = _todo_items(artifact)
+    items = _revision_items(artifact)
     lines = [f"# {artifact.document.title} Revision Todo", ""]
     if not items:
         lines.extend(["## Revision Todo", "", "- No accepted agent suggestions yet.", ""])
@@ -75,6 +88,35 @@ def build_todo_export(artifact: AnalysisArtifact) -> str:
             lines.append("- Anchor: unmatched synthetic fallback")
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
+
+
+def build_revised_markdown_payload(artifact: AnalysisArtifact) -> dict[str, object]:
+    """Return deterministic accepted-suggestion payload data for revised markdown generation."""
+
+    if artifact.document is None:
+        return {"original_markdown": "", "accepted_suggestions": []}
+
+    items = _revision_items(artifact)
+    return {
+        "original_markdown": artifact.document.raw_content or artifact.document.text,
+        "accepted_suggestions": [
+            {
+                "comment_id": item.comment_id,
+                "quote": item.quote,
+                "comment": item.comment,
+                "suggestion": item.suggestion,
+                "author_label": item.author_label,
+                "unmatched": item.unmatched,
+            }
+            for item in items
+        ],
+    }
+
+
+def build_revision_suggestion_items(artifact: AnalysisArtifact) -> list[RevisionPayloadItem]:
+    """Return accepted revision items in article order for callers that need stable ordering."""
+
+    return _revision_items(artifact)
 
 
 def _render_thread(thread: ArtifactThread) -> list[str]:
@@ -100,13 +142,13 @@ def _render_comment(comment: ArtifactComment) -> list[str]:
     return lines
 
 
-def _todo_items(artifact: AnalysisArtifact) -> list[_TodoItem]:
+def _revision_items(artifact: AnalysisArtifact) -> list[RevisionPayloadItem]:
     """Return accepted agent suggestions in stable article order."""
 
     block_index_by_id = {
         block.id: block.index for block in (artifact.document.blocks if artifact.document is not None else [])
     }
-    items: list[_TodoItem] = []
+    items: list[RevisionPayloadItem] = []
     for thread in artifact.threads:
         for comment in thread.comments:
             if comment.author_type.value != "agent":
@@ -114,7 +156,8 @@ def _todo_items(artifact: AnalysisArtifact) -> list[_TodoItem]:
             if comment.review_state.value != "accepted" or not comment.suggestion:
                 continue
             items.append(
-                _TodoItem(
+                RevisionPayloadItem(
+                    comment_id=comment.id,
                     quote=_compact_text(thread.anchor.quote),
                     comment=_compact_text(comment.body),
                     suggestion=_compact_text(comment.suggestion),

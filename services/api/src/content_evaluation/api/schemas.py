@@ -6,7 +6,13 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from content_evaluation.domain.models import AnalysisArtifact, PersistenceMode, ReviewState, SourceType
+from content_evaluation.domain.models import (
+    AnalysisArtifact,
+    PersistenceMode,
+    RevisedMarkdownDiffDecision,
+    ReviewState,
+    SourceType,
+)
 
 
 class PreviewSourceRequest(BaseModel):
@@ -67,3 +73,16 @@ class UpdateReviewStateRequest(BaseModel):
     """Store a request to update review state."""
 
     review_state: ReviewState
+
+
+class DiffReviewDecisionItem(BaseModel):
+    """Store one diff-review decision."""
+
+    diff_id: str
+    decision: RevisedMarkdownDiffDecision
+
+
+class UpdateDiffReviewRequest(BaseModel):
+    """Store a request to update revised-markdown diff decisions."""
+
+    decisions: list[DiffReviewDecisionItem] = Field(default_factory=list)

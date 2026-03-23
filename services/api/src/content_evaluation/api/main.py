@@ -30,6 +30,7 @@ from content_evaluation.api.schemas import (
     ImportArtifactRequest,
     PreviewSourceRequest,
     UpdateCommentRequest,
+    UpdateDiffReviewRequest,
     UpdateReviewStateRequest,
 )
 from content_evaluation.config import get_settings
@@ -152,6 +153,32 @@ async def append_agents(
     artifact, input_data = await services.orchestrator.append_agents(run_id, request.selected_agents)
     await services.repository.enqueue_run_job(RunJob(artifact_id=artifact.artifact_id, input_data=input_data))
     return artifact
+
+
+@app.post("/api/v1/runs/{run_id}/revised-markdown")
+async def generate_revised_markdown(run_id: UUID, services: ServicesDependency) -> AnalysisArtifact:
+    """Generate a candidate revised markdown artifact from accepted suggestions."""
+
+    return await services.orchestrator.generate_revised_markdown(run_id)
+
+
+@app.patch("/api/v1/runs/{run_id}/revised-markdown/diff-review")
+async def update_revised_markdown_diff_review(
+    run_id: UUID,
+    request: UpdateDiffReviewRequest,
+    services: ServicesDependency,
+) -> AnalysisArtifact:
+    """Persist reviewer decisions for a candidate revised markdown diff."""
+
+    decisions = [(item.diff_id, item.decision) for item in request.decisions]
+    return await services.orchestrator.update_diff_review(run_id, decisions)
+
+
+@app.post("/api/v1/runs/{run_id}/revised-markdown/apply")
+async def apply_revised_markdown(run_id: UUID, services: ServicesDependency) -> AnalysisArtifact:
+    """Promote reviewed revised markdown to the working artifact."""
+
+    return await services.orchestrator.apply_diff_review(run_id)
 
 
 @app.post("/api/v1/runs/{run_id}/cancel")

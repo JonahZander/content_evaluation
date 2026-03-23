@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from content_evaluation.domain.models import ArtifactBlock, ContentFormat, ExtractedContent, ProviderRoute
 
 
@@ -146,52 +148,113 @@ class MockDeepResearchProvider:
         """Return synthetic fact-check findings."""
 
         del brief
-        excerpt = article_text[:80].strip() or "Article opening claim."
+        compact_article_text = " ".join(article_text.split())
+        word_count = len(compact_article_text.split())
+        reading_time_minutes = max(1, (word_count + 199) // 200)
+        primary_excerpt = compact_article_text[:96].strip() or "Article opening claim."
+        secondary_excerpt = compact_article_text[96:192].strip() or compact_article_text[:96].strip() or primary_excerpt
+        related_post_links = [
+            "https://example.com/agentic-evaluation",
+            "https://example.com/editorial-review",
+        ]
+        official_source_links = [
+            "https://example.com/official-source-1",
+            "https://example.com/official-source-2",
+        ]
         claim_findings = [
-            {
-                "claim_text": excerpt,
-                "verdict": "SUPPORTED",
-                "evidence_summary": "Supported by consistent reporting across the linked sources.",
-                "source_links": ["https://example.com/mock-1"],
-                "anchor_excerpt": excerpt,
-                "confidence": 0.75,
-                "suggestion": "Add an inline citation to the primary supporting source.",
-            }
+            _mock_claim_entry(
+                claim_text=primary_excerpt,
+                verdict="SUPPORTED",
+                evidence_summary="Supported by consistent reporting across the linked sources.",
+                source_links=[official_source_links[0]],
+                anchor_excerpt=primary_excerpt,
+                confidence=0.82,
+                suggestion="Add an inline citation to the primary supporting source.",
+                value_add="Useful because it ties the article to a concrete editorial workflow claim.",
+                official_source_links=[official_source_links[0]],
+                related_post_links=[related_post_links[0]],
+            ),
+            _mock_claim_entry(
+                claim_text=secondary_excerpt,
+                verdict="MIXED",
+                evidence_summary="The broader framing is plausible, but the article would benefit from a more specific source.",
+                source_links=[official_source_links[1]],
+                anchor_excerpt=secondary_excerpt,
+                confidence=0.68,
+                suggestion="Name the most relevant primary source directly in this section.",
+                value_add="Adds value by clarifying where the article should lean on original reporting versus interpretation.",
+                official_source_links=[official_source_links[1]],
+                related_post_links=[related_post_links[1]],
+            ),
         ]
         overlap_items = [
             {
                 "title": "Related framing on agentic evaluation",
-                "url": "https://example.com/agentic-evaluation",
+                "url": related_post_links[0],
                 "overlap_note": "Moderate overlap in framing, but the article still adds useful editorial workflow detail.",
                 "score": 0.58,
             },
             {
                 "title": "Editorial review systems for AI content",
-                "url": "https://example.com/editorial-review",
+                "url": related_post_links[1],
                 "overlap_note": "Low overlap. Similar topic area with a different angle and audience.",
                 "score": 0.24,
             },
         ]
+        main_claims = [
+            {
+                "claim_text": item["claim_text"],
+                "verdict": item["verdict"],
+                "evidence_summary": item["evidence_summary"],
+                "source_links": list(item["source_links"]),
+                "anchor_quote": item["anchor_excerpt"],
+                "value_add": item["value_add"],
+                "official_source_links": list(item["official_source_links"]),
+                "related_post_links": list(item["related_post_links"]),
+            }
+            for item in claim_findings
+        ]
         return {
             "claim_findings": claim_findings,
+            "main_claims": main_claims,
             "findings": [
                 {
                     "excerpt": item["anchor_excerpt"],
                     "rationale": item["evidence_summary"],
                     "confidence": item["confidence"],
                     "suggestion": item["suggestion"],
-                    "sources": item["source_links"],
+                    "sources": list(item["source_links"]),
+                    "metadata": {
+                        "claim_text": item["claim_text"],
+                        "verdict": item["verdict"],
+                        "evidence_summary": item["evidence_summary"],
+                        "value_add": item["value_add"],
+                        "official_source_links": list(item["official_source_links"]),
+                        "related_post_links": list(item["related_post_links"]),
+                    },
                 }
                 for item in claim_findings
             ],
             "overlap_items": overlap_items,
-            "research_summary": "Claims are broadly supported, and overlap research suggests the piece is differentiated enough to keep.",
-            "summary": "Claims are broadly supported. Article has moderate originality.",
+            "summary": "Claims are broadly supported and the article still brings a reasonably differentiated angle.",
+            "research_summary": "Claims are broadly supported, and overlap research suggests the piece still adds useful editorial workflow detail.",
+            "tl_dr": "The article is directionally sound, useful, and differentiated enough to keep with better source support.",
             "metadata": {
                 "sources": [
                     "https://example.com/mock-1",
                     "https://example.com/mock-2",
                 ],
+                "official_source_links": official_source_links,
+                "related_post_links": related_post_links,
+                "audience": "Editorial, content strategy, and AI operations teams",
+                "article_format": "analysis",
+                "word_count": word_count,
+                "estimated_reading_time_minutes": reading_time_minutes,
+                "structural_completeness": {
+                    "has_intro": True,
+                    "has_headings": "##" in article_text,
+                    "has_conclusion": compact_article_text.endswith("."),
+                },
                 "usage": {
                     "input_tokens": 500,
                     "output_tokens": 200,
@@ -199,3 +262,32 @@ class MockDeepResearchProvider:
                 },
             },
         }
+
+
+def _mock_claim_entry(
+    *,
+    claim_text: str,
+    verdict: str,
+    evidence_summary: str,
+    source_links: Iterable[str],
+    anchor_excerpt: str,
+    confidence: float,
+    suggestion: str,
+    value_add: str,
+    official_source_links: Iterable[str],
+    related_post_links: Iterable[str],
+) -> dict[str, object]:
+    """Build one deterministic mock claim entry."""
+
+    return {
+        "claim_text": claim_text,
+        "verdict": verdict,
+        "evidence_summary": evidence_summary,
+        "source_links": list(source_links),
+        "anchor_excerpt": anchor_excerpt,
+        "confidence": confidence,
+        "suggestion": suggestion,
+        "value_add": value_add,
+        "official_source_links": list(official_source_links),
+        "related_post_links": list(related_post_links),
+    }

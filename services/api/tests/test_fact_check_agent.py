@@ -63,9 +63,19 @@ def test_build_fact_check_brief_limits_blocks():
 async def test_mock_provider_returns_valid_findings():
     result = await MockDeepResearchProvider().fact_check("brief", "Some article text.")
     assert isinstance(result["claim_findings"], list)
+    assert isinstance(result["main_claims"], list)
     assert len(result["claim_findings"]) >= 1
     f = result["claim_findings"][0]
-    for key in ("claim_text", "verdict", "evidence_summary", "anchor_excerpt", "confidence"):
+    for key in (
+        "claim_text",
+        "verdict",
+        "evidence_summary",
+        "anchor_excerpt",
+        "confidence",
+        "value_add",
+        "official_source_links",
+        "related_post_links",
+    ):
         assert key in f
     assert 0.0 <= f["confidence"] <= 1.0
 
@@ -75,11 +85,16 @@ async def test_mock_provider_returns_summary_and_sources():
     result = await MockDeepResearchProvider().fact_check("brief", "text")
     assert isinstance(result["summary"], str)
     assert isinstance(result["research_summary"], str)
+    assert isinstance(result["tl_dr"], str)
     assert isinstance(result["overlap_items"], list)
     assert isinstance(result["metadata"]["sources"], list)
+    assert isinstance(result["metadata"]["official_source_links"], list)
+    assert isinstance(result["metadata"]["related_post_links"], list)
+    assert isinstance(result["main_claims"], list)
 
 
 from content_evaluation.agents.registry import get_agent_definition, load_instruction_text
+from content_evaluation.agents.registry import agent_catalog
 from content_evaluation.domain.models import AgentExecutionMode
 
 
@@ -98,14 +113,17 @@ def test_fact_check_instruction_file_loads():
 
 
 def test_fact_check_dependency_graph_is_current() -> None:
-    assert get_agent_definition("value").depends_on == ("fact_check",)
+    catalog_ids = {entry.agent_id for entry in agent_catalog()}
+    assert catalog_ids == {"fact_check", "ai_likelihood", "editorial"}
+    assert get_agent_definition("fact_check").depends_on == ()
+    assert get_agent_definition("ai_likelihood").depends_on == ()
     assert get_agent_definition("editorial").depends_on == ("fact_check", "ai_likelihood")
-    assert get_agent_definition("synthesis").depends_on == (
-        "fact_check",
-        "ai_likelihood",
-        "value",
-        "editorial",
-    )
+    with pytest.raises(KeyError):
+        get_agent_definition("value")
+    with pytest.raises(KeyError):
+        get_agent_definition("audience")
+    with pytest.raises(KeyError):
+        get_agent_definition("synthesis")
 
 
 @pytest.mark.asyncio

@@ -138,6 +138,23 @@ export interface ArtifactAgentResult {
   metadata: Record<string, unknown>;
 }
 
+export interface ArtifactStructuralCompleteness {
+  has_intro: boolean;
+  has_headings: boolean;
+  has_conclusion: boolean;
+}
+
+export interface ArtifactClaimSummary {
+  claim_text: string;
+  verdict: string;
+  evidence_summary: string;
+  source_links: string[];
+  anchor_quote?: string;
+  value_add?: string;
+  official_source_links?: string[];
+  related_post_links?: string[];
+}
+
 export interface ArtifactSummary {
   overall_score: number;
   verdict: string;
@@ -145,6 +162,9 @@ export interface ArtifactSummary {
   audience_summary: string;
   novelty_score: number;
   ai_likelihood: number;
+  tl_dr?: string;
+  word_count?: number;
+  estimated_reading_time_minutes?: number;
 }
 
 export interface ArtifactOverlapItem {
@@ -158,6 +178,39 @@ export interface ArtifactReviewSummary {
   research_summary: string;
   inferred_audience: string;
   overlap_items: ArtifactOverlapItem[];
+  tl_dr?: string;
+  word_count?: number;
+  estimated_reading_time_minutes?: number;
+  article_format?: string;
+  reading_difficulty?: string;
+  structural_completeness?: ArtifactStructuralCompleteness;
+  main_claims?: ArtifactClaimSummary[];
+}
+
+export type RevisedMarkdownDiffDecision = "pending" | "accepted" | "rejected";
+
+export interface ArtifactRevisedDocument {
+  markdown: string;
+  accepted_comment_ids: string[];
+  generated_at: string;
+}
+
+export interface ArtifactDiffItem {
+  id: string;
+  change_type: string;
+  original_start_line: number;
+  original_end_line: number;
+  candidate_start_line: number;
+  candidate_end_line: number;
+  before_text: string;
+  after_text: string;
+  decision: RevisedMarkdownDiffDecision;
+}
+
+export interface ArtifactDiffReview {
+  original_markdown: string;
+  candidate_markdown: string;
+  diff_items: ArtifactDiffItem[];
 }
 
 export interface ArtifactEvent {
@@ -207,6 +260,8 @@ export interface AnalysisArtifact {
   threads: ArtifactThread[];
   summary: ArtifactSummary | null;
   review_summary?: ArtifactReviewSummary | null;
+  revised_document?: ArtifactRevisedDocument | null;
+  diff_review?: ArtifactDiffReview | null;
   events: ArtifactEvent[];
   debug?: ArtifactDebug | null;
   error_message?: string | null;

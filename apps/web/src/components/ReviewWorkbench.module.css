@@ -386,6 +386,13 @@
   font-size: 1.6rem;
 }
 
+.metricValueCompact {
+  margin-top: 10px;
+  font-size: 1rem;
+  line-height: 1.65;
+  color: rgba(23, 19, 16, 0.9);
+}
+
 .workspace {
   position: relative;
   display: grid;

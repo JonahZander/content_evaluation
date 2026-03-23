@@ -24,6 +24,9 @@ interface ReviewToolbarProps {
   canPreviewUrl: boolean;
   canStopRun: boolean;
   canExport: boolean;
+  canGenerateRevision: boolean;
+  showGenerateRevision: boolean;
+  generatingRevision: boolean;
   showNewAnalysis: boolean;
   analyzeButtonLabel: string;
   disabledAgentIds: string[];
@@ -34,6 +37,7 @@ interface ReviewToolbarProps {
   onImportFileChange: (file: File | null) => void;
   onPreviewUrl: () => void;
   onSubmit: () => void;
+  onGenerateRevision: () => void;
   onStopRun: () => void;
   onStartNewAnalysis: () => void;
   onExport: (format: "md" | "json" | "todo") => void;
@@ -51,6 +55,9 @@ export function ReviewToolbar({
   canPreviewUrl,
   canStopRun,
   canExport,
+  canGenerateRevision,
+  showGenerateRevision,
+  generatingRevision,
   showNewAnalysis,
   analyzeButtonLabel,
   disabledAgentIds,
@@ -61,6 +68,7 @@ export function ReviewToolbar({
   onImportFileChange,
   onPreviewUrl,
   onSubmit,
+  onGenerateRevision,
   onStopRun,
   onStartNewAnalysis,
   onExport,
@@ -222,6 +230,17 @@ export function ReviewToolbar({
         >
           {submitting ? "Submitting..." : analyzeButtonLabel}
         </button>
+        {showGenerateRevision ? (
+          <button
+            className={styles.ghostButton}
+            data-testid="generate-revised-markdown-button"
+            type="button"
+            onClick={onGenerateRevision}
+            disabled={!canGenerateRevision || generatingRevision}
+          >
+            {generatingRevision ? "Generating revision..." : "Generate revised markdown"}
+          </button>
+        ) : null}
         <button
           className={styles.ghostButton}
           data-testid="stop-run-button"

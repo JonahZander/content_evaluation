@@ -25,6 +25,9 @@ vi.mock("@/lib/api", () => ({
   fetchArtifact: vi.fn(),
   appendAgents: vi.fn(),
   cancelRun: vi.fn(),
+  generateRevisedMarkdown: vi.fn(),
+  updateRevisedMarkdownDiffReview: vi.fn(),
+  applyRevisedMarkdown: vi.fn(),
   importArtifact: vi.fn(),
   createComment: vi.fn().mockResolvedValue(undefined),
   addReply: vi.fn().mockResolvedValue(undefined),
@@ -63,6 +66,9 @@ beforeEach(() => {
   vi.mocked(api.previewSource).mockResolvedValue(mockArtifact.document!);
   vi.mocked(api.appendAgents).mockResolvedValue(mockArtifact);
   vi.mocked(api.cancelRun).mockResolvedValue({ ...mockArtifact, status: "canceled" });
+  vi.mocked(api.generateRevisedMarkdown).mockResolvedValue(buildArtifactWithDiffReview());
+  vi.mocked(api.updateRevisedMarkdownDiffReview).mockResolvedValue(buildArtifactWithReviewedDiffs());
+  vi.mocked(api.applyRevisedMarkdown).mockResolvedValue(buildArtifactAfterAppliedRevision());
 });
 
 afterEach(() => {
@@ -371,6 +377,75 @@ describe("ReviewWorkbench", () => {
     fireEvent.click(screen.getByTestId("review-state-comment-2-accepted"));
 
     expect(api.updateReviewState).toHaveBeenCalledWith("comment-2", "unreviewed");
+  });
+
+  it("generates revised markdown only after accepted suggestions exist", () => {
+    const artifactWithoutAcceptedSuggestions = structuredClone(mockArtifact);
+    artifactWithoutAcceptedSuggestions.threads = artifactWithoutAcceptedSuggestions.threads.map((thread) => ({
+      ...thread,
+      comments: thread.comments.map((comment) => ({
+        ...comment,
+        review_state: "unreviewed",
+      })),
+    }));
+
+    const { unmount } = render(<ReviewWorkbench initialArtifact={artifactWithoutAcceptedSuggestions} />);
+
+    expect(screen.queryByTestId("generate-revised-markdown-button")).not.toBeInTheDocument();
+
+    unmount();
+    render(<ReviewWorkbench initialArtifact={mockArtifact} />);
+
+    expect(screen.getByTestId("generate-revised-markdown-button")).toBeInTheDocument();
+  });
+
+  it("generates a revised markdown candidate and shows the diff review panel", async () => {
+    const generatedArtifact = buildArtifactWithDiffReview();
+    vi.mocked(api.generateRevisedMarkdown).mockResolvedValueOnce(generatedArtifact);
+
+    render(<ReviewWorkbench initialArtifact={mockArtifact} />);
+
+    fireEvent.click(screen.getByTestId("generate-revised-markdown-button"));
+
+    await waitFor(() => expect(api.generateRevisedMarkdown).toHaveBeenCalledWith(mockArtifact.artifact_id));
+    expect(await screen.findByTestId("revised-markdown-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("diff-item-status-diff-1")).toHaveTextContent("pending");
+    expect(screen.getByRole("button", { name: "Apply reviewed markdown" })).toBeDisabled();
+  });
+
+  it("saves diff decisions and applies the reviewed revision", async () => {
+    const artifactWithDiff = buildArtifactWithDiffReview();
+    const reviewedArtifact = buildArtifactWithReviewedDiffs();
+    vi.mocked(api.updateRevisedMarkdownDiffReview).mockResolvedValueOnce(reviewedArtifact);
+    vi.mocked(api.applyRevisedMarkdown).mockResolvedValueOnce(buildArtifactAfterAppliedRevision());
+
+    render(<ReviewWorkbench initialArtifact={artifactWithDiff} />);
+
+    fireEvent.click(screen.getByTestId("diff-decision-diff-1-accepted"));
+
+    await waitFor(() =>
+      expect(api.updateRevisedMarkdownDiffReview).toHaveBeenCalledWith(artifactWithDiff.artifact_id, [
+        { diffId: "diff-1", decision: "accepted" },
+      ]),
+    );
+
+    const applyButton = await screen.findByRole("button", { name: "Apply reviewed markdown" });
+    expect(applyButton).toBeEnabled();
+
+    fireEvent.click(applyButton);
+
+    await waitFor(() => expect(api.applyRevisedMarkdown).toHaveBeenCalledWith(artifactWithDiff.artifact_id));
+    expect(await screen.findByRole("button", { name: "Revision applied" })).toBeDisabled();
+  });
+
+  it("blocks additive analysis while revised markdown review is pending", () => {
+    render(<ReviewWorkbench initialArtifact={buildArtifactWithDiffReview()} />);
+
+    const analyzeButton = screen.getByTestId("analyze-button");
+
+    expect(analyzeButton).toBeDisabled();
+    expect(analyzeButton).toHaveTextContent("Apply revised markdown first");
+    expect(api.appendAgents).not.toHaveBeenCalled();
   });
 
   it("queues additional analysis for a terminal artifact without replacing it", () => {
@@ -759,7 +834,110 @@ function buildSyntheticUnmatchedArtifact(): AnalysisArtifact {
   return artifact;
 }
 
-function buildUrlPreviewDocument(): AnalysisArtifact["document"] {
+function buildArtifactWithDiffReview(): AnalysisArtifact {
+  const artifact = structuredClone(mockArtifact) as AnalysisArtifact & Record<string, unknown>;
+  artifact.diff_review = {
+    original_markdown: artifact.document?.raw_content ?? "",
+    candidate_markdown: [
+      "Editorial teams need a fast way to decide whether a post is original, useful, and worth reader attention.",
+      "",
+      "Promote this framing into the introduction.",
+      "",
+      "## Inline Markdown Example",
+      "",
+      "This paragraph uses **bold** and *italic* emphasis.",
+      "",
+      "```ts",
+      "const verdict = 'worth revising';",
+      "```",
+    ].join("\n"),
+    diff_items: [
+      {
+        id: "diff-1",
+        change_type: "replace",
+        original_start_line: 3,
+        original_end_line: 5,
+        candidate_start_line: 3,
+        candidate_end_line: 5,
+        before_text:
+          "The strongest value of this draft is that it turns vague editorial instincts into a review workflow with concrete review signals.",
+        after_text: "Promote this framing into the introduction.",
+        decision: "pending",
+      },
+    ],
+  };
+  artifact.revised_document = {
+    markdown: artifact.diff_review!.candidate_markdown,
+    accepted_comment_ids: ["comment-2"],
+    generated_at: new Date().toISOString(),
+  };
+  return artifact;
+}
+
+function buildArtifactWithReviewedDiffs(): AnalysisArtifact {
+  const artifact = buildArtifactWithDiffReview();
+  artifact.diff_review = {
+    ...artifact.diff_review!,
+    diff_items: [
+      {
+        id: "diff-1",
+        change_type: "replace",
+        original_start_line: 3,
+        original_end_line: 5,
+        candidate_start_line: 3,
+        candidate_end_line: 5,
+        before_text:
+          "The strongest value of this draft is that it turns vague editorial instincts into a review workflow with concrete review signals.",
+        after_text: "Promote this framing into the introduction.",
+        decision: "accepted",
+      },
+    ],
+  };
+  return artifact;
+}
+
+function buildArtifactAfterAppliedRevision(): AnalysisArtifact {
+  const artifact = buildArtifactWithReviewedDiffs() as AnalysisArtifact & Record<string, unknown>;
+  artifact.document = {
+    ...artifact.document!,
+    raw_content: [
+      "Editorial teams need a fast way to decide whether a post is original, useful, and worth reader attention.",
+      "",
+      "Promote this framing into the introduction.",
+      "",
+      "## Inline Markdown Example",
+      "",
+      "This paragraph uses **bold** and *italic* emphasis.",
+      "",
+      "```ts",
+      "const verdict = 'worth revising';",
+      "```",
+    ].join("\n"),
+  };
+  artifact.agent_plan = [];
+  artifact.agent_results = [];
+  artifact.anchors = [];
+  artifact.threads = [];
+  artifact.summary = null;
+  artifact.review_summary = null;
+  artifact.events = [
+    ...artifact.events,
+    {
+      id: "event-revised-applied",
+      artifact_id: artifact.artifact_id,
+      event_type: "artifact",
+      stage: "revised_markdown",
+      status: "applied",
+      message: "Reviewed revised markdown promoted to the working document",
+      snapshot_available: true,
+      created_at: new Date().toISOString(),
+      metadata: {},
+    },
+  ];
+  return artifact;
+}
+
+function buildUrlPreviewDocument(): NonNullable<AnalysisArtifact["document"]> {
   return {
     id: "preview-doc",
     title: "Imported URL Preview",
@@ -868,7 +1046,6 @@ function buildLinkedHighlightArtifact(): AnalysisArtifact {
       start_offset: 0,
       end_offset: artifact.document!.blocks[0]!.text.length,
       quote: artifact.document!.blocks[0]!.text,
-      comment_ids: [],
     },
   ];
   return artifact;

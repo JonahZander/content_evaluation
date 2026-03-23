@@ -6,6 +6,7 @@ import styles from "@/components/ReviewWorkbench.module.css";
 import { AgentUsageSummary } from "@/components/review/AgentUsageSummary";
 import { CommentRail } from "@/components/review/CommentRail";
 import { DocumentPane } from "@/components/review/DocumentPane";
+import { RevisedMarkdownPanel } from "@/components/review/RevisedMarkdownPanel";
 import { ReviewHero } from "@/components/review/ReviewHero";
 import { ReviewSummaryPanel } from "@/components/review/ReviewSummaryPanel";
 import { ReviewToolbar, type ReviewFormState } from "@/components/review/ReviewToolbar";
@@ -19,6 +20,7 @@ import {
 } from "@/components/review/workbench-state";
 import {
   addReply,
+  applyRevisedMarkdown,
   appendAgents,
   API_BASE_URL,
   cancelRun,
@@ -29,8 +31,10 @@ import {
   fetchAgents,
   fetchArtifact,
   getExportUrl,
+  generateRevisedMarkdown,
   importArtifact,
   previewSource,
+  updateRevisedMarkdownDiffReview,
   updateHumanComment,
   updateReviewState,
 } from "@/lib/api";
@@ -88,6 +92,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     editingBody,
     isSubmitting,
     isPreviewing,
+    isGeneratingRevision,
+    isSavingDiffReview,
+    isApplyingRevision,
     selectedFile,
     fileInputKey,
     importInputKey,
@@ -401,6 +408,10 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   }, [artifact]);
 
   const displayDocument = artifact?.document ?? previewDocument;
+  const diffReview = useMemo(() => getArtifactDiffReview(artifact), [artifact]);
+  const revisedMarkdownApplied = useMemo(() => isRevisedMarkdownApplied(artifact), [artifact]);
+  const hasAcceptedSuggestions = useMemo(() => hasAcceptedRevisionSuggestions(artifact), [artifact]);
+  const revisionWorkflowPending = diffReview !== null && !revisedMarkdownApplied;
   const visiblePreviewBlockIds = useMemo(
     () => new Set((previewDocument?.blocks ?? []).filter((block) => !hiddenPreviewBlockIds.includes(block.id)).map((block) => block.id)),
     [hiddenPreviewBlockIds, previewDocument?.blocks],
@@ -436,11 +447,27 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     && hiddenPreviewBlockIds.length === 0;
   const canAnalyze =
     !isSubmitting &&
+    !isGeneratingRevision &&
+    !isSavingDiffReview &&
+    !isApplyingRevision &&
+    !revisionWorkflowPending &&
     ((isTerminalArtifact && !canStopRun && appendableSelectedAgents.length > 0) ||
       ((formState.sourceType === "url" && canAnalyzePreviewDocument) ||
         (formState.sourceType === "text" && formState.text.trim().length > 0) ||
         (formState.sourceType === "file" && selectedFile !== null)));
-  const analyzeButtonLabel = isTerminalArtifact ? "Add selected analysis" : "Analyze content";
+  const canGenerateRevision =
+    artifact !== null
+    && isTerminalArtifact
+    && !canStopRun
+    && hasAcceptedSuggestions
+    && diffReview === null
+    && !isGeneratingRevision
+    && !isApplyingRevision;
+  const analyzeButtonLabel = revisionWorkflowPending
+    ? "Apply revised markdown first"
+    : isTerminalArtifact
+      ? "Add selected analysis"
+      : "Analyze content";
   const latestResumeEvent = useMemo(
     () =>
       [...(artifact?.events ?? [])]
@@ -482,6 +509,14 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   }
 
   async function handleSubmit() {
+    if (revisionWorkflowPending) {
+      dispatch({
+        type: "SET_STATUS_MESSAGE",
+        message: "Apply the reviewed revised markdown before queueing another analysis pass.",
+      });
+      return;
+    }
+
     if (isTerminalArtifact && artifact !== null) {
       dispatch({ type: "SET_STATUS_MESSAGE", message: "Queueing additional analysis..." });
       dispatch({ type: "SET_IS_SUBMITTING", value: true });
@@ -801,6 +836,74 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     window.open(getExportUrl(artifact.artifact_id, format), "_blank", "noopener,noreferrer");
   }
 
+  async function handleGenerateRevision() {
+    if (artifact === null || !canGenerateRevision) {
+      return;
+    }
+    dispatch({ type: "SET_IS_GENERATING_REVISION", value: true });
+    dispatch({ type: "SET_STATUS_MESSAGE", message: "Generating revised markdown..." });
+    try {
+      const updatedArtifact = await generateRevisedMarkdown(artifact.artifact_id);
+      dispatch({ type: "SET_ARTIFACT", artifact: updatedArtifact });
+      dispatch({ type: "SET_STATUS_MESSAGE", message: "Candidate revised markdown ready for diff review." });
+    } catch (error) {
+      dispatch({
+        type: "SET_STATUS_MESSAGE",
+        message: error instanceof Error ? error.message : "Could not generate revised markdown.",
+      });
+    } finally {
+      dispatch({ type: "SET_IS_GENERATING_REVISION", value: false });
+    }
+  }
+
+  async function handleDiffDecision(diffId: string, decision: "accepted" | "rejected") {
+    if (artifact === null) {
+      return;
+    }
+    dispatch({ type: "SET_IS_SAVING_DIFF_REVIEW", value: true });
+    try {
+      const updatedArtifact = await updateRevisedMarkdownDiffReview(artifact.artifact_id, [
+        { diffId, decision },
+      ]);
+      dispatch({ type: "SET_ARTIFACT", artifact: updatedArtifact });
+      dispatch({ type: "SET_STATUS_MESSAGE", message: "Saved revised markdown diff decision." });
+    } catch (error) {
+      dispatch({
+        type: "SET_STATUS_MESSAGE",
+        message: error instanceof Error ? error.message : "Could not save the diff review decision.",
+      });
+    } finally {
+      dispatch({ type: "SET_IS_SAVING_DIFF_REVIEW", value: false });
+    }
+  }
+
+  async function handleApplyRevision() {
+    if (artifact === null || diffReview === null || isRevisedMarkdownPending(diffReview)) {
+      return;
+    }
+    dispatch({ type: "SET_IS_APPLYING_REVISION", value: true });
+    dispatch({ type: "SET_STATUS_MESSAGE", message: "Applying reviewed revised markdown..." });
+    try {
+      const updatedArtifact = await applyRevisedMarkdown(artifact.artifact_id);
+      dispatch({ type: "SET_ARTIFACT", artifact: updatedArtifact });
+      dispatch({
+        type: "SET_FORM_STATE",
+        formState: hydrateFormStateAfterRevision(formState, updatedArtifact, agents),
+      });
+      dispatch({
+        type: "SET_STATUS_MESSAGE",
+        message: "Reviewed revised markdown promoted to the working draft.",
+      });
+    } catch (error) {
+      dispatch({
+        type: "SET_STATUS_MESSAGE",
+        message: error instanceof Error ? error.message : "Could not apply the revised markdown.",
+      });
+    } finally {
+      dispatch({ type: "SET_IS_APPLYING_REVISION", value: false });
+    }
+  }
+
   return (
     <main className={styles.page}>
       <div className={styles.shell}>
@@ -821,6 +924,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
           canPreviewUrl={canPreviewUrl}
           canStopRun={canStopRun}
           canExport={canExport}
+          canGenerateRevision={canGenerateRevision}
+          showGenerateRevision={artifact !== null && isTerminalArtifact && hasAcceptedSuggestions && diffReview === null}
+          generatingRevision={isGeneratingRevision}
           showNewAnalysis={showNewAnalysis}
           analyzeButtonLabel={analyzeButtonLabel}
           disabledAgentIds={[...completedAgentIds]}
@@ -856,6 +962,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
           onImportFileChange={handleImportFile}
           onPreviewUrl={handlePreviewUrl}
           onSubmit={handleSubmit}
+          onGenerateRevision={handleGenerateRevision}
           onStopRun={handleStopRun}
           onStartNewAnalysis={handleStartNewAnalysis}
           onExport={handleExport}
@@ -916,6 +1023,18 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
 
         <section className={styles.workspace} ref={workspaceRef}>
           <ReviewSummaryPanel reviewSummary={artifact?.review_summary ?? null} />
+          {diffReview !== null ? (
+            <RevisedMarkdownPanel
+              originalMarkdown={diffReview.originalMarkdown}
+              candidateMarkdown={diffReview.candidateMarkdown}
+              diffItems={diffReview.diffItems}
+              applied={revisedMarkdownApplied}
+              savingDecision={isSavingDiffReview}
+              applyingRevision={isApplyingRevision}
+              onDecisionChange={handleDiffDecision}
+              onApply={handleApplyRevision}
+            />
+          ) : null}
           <DocumentPane
             document={displayDocument}
             anchors={artifact?.anchors ?? []}
@@ -980,6 +1099,94 @@ function resolveSelectedAgents(selectedAgents: string[], agents: AgentCatalogEnt
 
   selectedAgents.forEach(visit);
   return [...visited];
+}
+
+type DiffDecision = "pending" | "accepted" | "rejected";
+
+interface ArtifactDiffItemView {
+  id: string;
+  changeType: string;
+  beforeText: string;
+  afterText: string;
+  decision: DiffDecision;
+  originalStartLine: number;
+  originalEndLine: number;
+  candidateStartLine: number;
+  candidateEndLine: number;
+}
+
+interface ArtifactDiffReviewView {
+  originalMarkdown: string;
+  candidateMarkdown: string;
+  diffItems: ArtifactDiffItemView[];
+}
+
+function hasAcceptedRevisionSuggestions(artifact: AnalysisArtifact | null): boolean {
+  if (artifact === null) {
+    return false;
+  }
+  return artifact.threads.some((thread) =>
+    thread.comments.some(
+      (comment) =>
+        comment.author_type === "agent"
+        && comment.review_state === "accepted"
+        && typeof comment.suggestion === "string"
+        && comment.suggestion.trim().length > 0,
+    ),
+  );
+}
+
+function getArtifactDiffReview(artifact: AnalysisArtifact | null): ArtifactDiffReviewView | null {
+  if (artifact === null) {
+    return null;
+  }
+  const diffReview = artifact.diff_review;
+  if (diffReview === null || diffReview === undefined) {
+    return null;
+  }
+
+  return {
+    originalMarkdown: diffReview.original_markdown,
+    candidateMarkdown: diffReview.candidate_markdown,
+    diffItems: diffReview.diff_items.flatMap((item) => toDiffItemView(item)),
+  };
+}
+
+function toDiffItemView(value: unknown): ArtifactDiffItemView[] {
+  if (typeof value !== "object" || value === null) {
+    return [];
+  }
+  const record = value as Record<string, unknown>;
+  return [
+    {
+      id: typeof record.id === "string" ? record.id : "diff-item",
+      changeType: typeof record.change_type === "string" ? record.change_type : "replace",
+      beforeText: typeof record.before_text === "string" ? record.before_text : "",
+      afterText: typeof record.after_text === "string" ? record.after_text : "",
+      decision: isDiffDecision(record.decision) ? record.decision : "pending",
+      originalStartLine: typeof record.original_start_line === "number" ? record.original_start_line : 0,
+      originalEndLine: typeof record.original_end_line === "number" ? record.original_end_line : 0,
+      candidateStartLine: typeof record.candidate_start_line === "number" ? record.candidate_start_line : 0,
+      candidateEndLine: typeof record.candidate_end_line === "number" ? record.candidate_end_line : 0,
+    },
+  ];
+}
+
+function isDiffDecision(value: unknown): value is DiffDecision {
+  return value === "pending" || value === "accepted" || value === "rejected";
+}
+
+function isRevisedMarkdownPending(diffReview: ArtifactDiffReviewView): boolean {
+  return diffReview.diffItems.some((item) => item.decision === "pending");
+}
+
+function isRevisedMarkdownApplied(artifact: AnalysisArtifact | null): boolean {
+  if (artifact === null) {
+    return false;
+  }
+  return [...artifact.events]
+    .reverse()
+    .some((event) => event.stage === "revised_markdown" && event.status === "applied");
 }
 
 function isStoredWorkbenchState(value: unknown): value is StoredWorkbenchState {
@@ -1056,6 +1263,24 @@ function hydrateFormStateFromArtifact(current: ReviewFormState, artifact: Analys
     selectedAgents: artifact.run_config.selected_agents,
     persistenceMode: artifact.run_config.persistence_mode,
     includeDebugTrace: artifact.run_config.include_debug_trace,
+  };
+}
+
+function hydrateFormStateAfterRevision(
+  current: ReviewFormState,
+  artifact: AnalysisArtifact,
+  agents: AgentCatalogEntry[],
+): ReviewFormState {
+  const next = hydrateFormStateFromArtifact(current, artifact);
+  const rerunDefaults = ["ai_likelihood", "editorial"].filter((agentId) =>
+    agents.some((agent) => agent.agent_id === agentId),
+  );
+  if (!rerunDefaults.length) {
+    return next;
+  }
+  return {
+    ...next,
+    selectedAgents: resolveSelectedAgents(rerunDefaults, agents),
   };
 }
 

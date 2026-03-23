@@ -1,4 +1,11 @@
-import { AgentCatalogEntry, AnalysisArtifact, ArtifactDocument, PersistenceMode, ReviewState } from "@/lib/types";
+import {
+  AgentCatalogEntry,
+  AnalysisArtifact,
+  ArtifactDocument,
+  PersistenceMode,
+  RevisedMarkdownDiffDecision,
+  ReviewState,
+} from "@/lib/types";
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
@@ -26,6 +33,11 @@ export interface CreateCommentPayload {
 export interface AppendAgentsPayload {
   artifactId: string;
   selectedAgents: string[];
+}
+
+export interface UpdateRevisedMarkdownDiffReviewDecision {
+  diffId: string;
+  decision: RevisedMarkdownDiffDecision;
 }
 
 async function parseJson<T>(response: Response): Promise<T> {
@@ -141,6 +153,42 @@ export async function appendAgents(payload: AppendAgentsPayload): Promise<Analys
 export async function cancelRun(artifactId: string): Promise<AnalysisArtifact> {
   return parseJson(
     await fetch(`${API_BASE_URL}/api/v1/runs/${artifactId}/cancel`, {
+      method: "POST",
+    }),
+  );
+}
+
+export async function generateRevisedMarkdown(artifactId: string): Promise<AnalysisArtifact> {
+  return parseJson(
+    await fetch(`${API_BASE_URL}/api/v1/runs/${artifactId}/revised-markdown`, {
+      method: "POST",
+    }),
+  );
+}
+
+export async function updateRevisedMarkdownDiffReview(
+  artifactId: string,
+  decisions: UpdateRevisedMarkdownDiffReviewDecision[],
+): Promise<AnalysisArtifact> {
+  return parseJson(
+    await fetch(`${API_BASE_URL}/api/v1/runs/${artifactId}/revised-markdown/diff-review`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        decisions: decisions.map((item) => ({
+          diff_id: item.diffId,
+          decision: item.decision,
+        })),
+      }),
+    }),
+  );
+}
+
+export async function applyRevisedMarkdown(artifactId: string): Promise<AnalysisArtifact> {
+  return parseJson(
+    await fetch(`${API_BASE_URL}/api/v1/runs/${artifactId}/revised-markdown/apply`, {
       method: "POST",
     }),
   );

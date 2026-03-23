@@ -13,10 +13,13 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Run log
   - Full-width activity list directly below the progress panel so users can inspect retries, resumptions, and failures without leaving the main flow
 - Analysis summary
-  - Overall score, originality, value, audience fit, AI-likelihood
+  - Overall score, novelty, AI-likelihood, TL;DR, and article-length overview metrics
 - Review summary panel
   - Lives above the source text pane
-  - Shows content summary, research summary, inferred audience, and overlap links from fact-check-backed artifact data
+  - Shows TL;DR, article profile, structural completeness, main claims, inferred audience, research summary, and overlap links from fact-check-backed artifact data
+- Revised markdown panel
+  - Lives between the review summary and source text once a candidate revision exists
+  - Shows original cleaner-output markdown, candidate revised markdown, deterministic diff items, and per-diff reviewer decisions before the working draft is replaced
 - Source text pane
   - Selectable text with highlighted spans in paragraph rows
   - Supports lightweight markdown presentation for headings, inline emphasis, inline links, and fenced code blocks
@@ -54,6 +57,9 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Agent comments expose immediate `Accept`, `Reject`, and `Uncertain` actions, and clicking the active state again should clear it back to `unreviewed`.
 - Agent comments should expose an `Add comment` action in the same compact action row as `Accept`, `Reject`, and `Uncertain`, revealing the reply field only on demand.
 - Completed, failed, or canceled artifacts should support additive follow-up analysis on the same artifact instead of forcing a new run.
+- Terminal artifacts with accepted agent suggestions should expose a `Generate revised markdown` action.
+- Once revised markdown exists, the reviewer must accept or reject every diff item before the reviewed markdown can be applied.
+- Follow-up analysis should stay blocked while revised-markdown diff review is pending or waiting to be applied.
 - Human standalone comments can be edited or deleted inline.
 - Human replies should expose a compact trash delete affordance in the thread UI.
 - Partial findings should appear as each agent finishes instead of waiting for the full run.
@@ -68,6 +74,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Paragraphs with comments should reserve the vertical space needed for those comments before the next paragraph begins.
 - Export and import actions should be visible from the main toolbar.
 - The toolbar should expose JSON, Markdown, and compact Markdown todo exports from the main action row.
+- The toolbar should expose revised-markdown generation only when accepted agent suggestions exist and no diff review is already active.
 - The toolbar should expose a stop-run action for queued/running work and a new-analysis reset action.
 - The toolbar should keep the pasted-text composer in its own full-width source row beneath source selection controls.
 - Invalid review actions should be disabled when no real artifact is loaded.
@@ -90,6 +97,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Unsupported markdown should stay readable as text rather than render rich embeds or media.
 - Agent comments are immutable in content; reviewer input happens through replies and review-state actions.
 - Audience analysis is summary-first in the current UI and should not create new inline annotation-heavy threads for newly generated artifacts.
+- The review summary panel should be fact-check-backed and compact rather than recreating old standalone value or audience agent surfaces.
 - Reviewer comments use the `human` category and are attached to an existing or newly created anchor.
 - Reviewer replies can be deleted inline, but agent-authored content remains immutable.
 - Run status is visible in the toolbar and progress panel.
@@ -99,6 +107,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Starting a new analysis should warn before discarding a not-yet-downloaded JSON artifact.
 - The `New analysis` button should only appear once a real artifact exists.
 - Todo export should include only accepted agent suggestions, ordered by where they appear in the article, with a compact checklist followed by short context that includes both the original agent comment and the suggested change.
+- Revised markdown should remain a post-run, reviewer-triggered workflow; the canonical draft changes only after reviewed diff decisions are applied.
 - Debug visibility should be toggleable when the artifact includes debug trace data.
 - Empty states are shown when no artifact or no comment threads are present.
 - Synthetic unmatched-reference blocks should render with visibly distinct fallback styling so reviewers can tell they are not original article text.

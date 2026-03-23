@@ -22,6 +22,9 @@ export interface WorkbenchState {
   // Submission
   isSubmitting: boolean;
   isPreviewing: boolean;
+  isGeneratingRevision: boolean;
+  isSavingDiffReview: boolean;
+  isApplyingRevision: boolean;
   formState: ReviewFormState;
   hiddenPreviewBlockIds: string[];
   selectedFile: File | null;
@@ -61,6 +64,9 @@ export const initialWorkbenchState: WorkbenchState = {
 
   isSubmitting: false,
   isPreviewing: false,
+  isGeneratingRevision: false,
+  isSavingDiffReview: false,
+  isApplyingRevision: false,
   formState: DEFAULT_FORM_STATE,
   hiddenPreviewBlockIds: [],
   selectedFile: null,
@@ -90,6 +96,9 @@ export type WorkbenchAction =
   | { type: "SET_AGENTS"; agents: AgentCatalogEntry[] }
   | { type: "SET_IS_SUBMITTING"; value: boolean }
   | { type: "SET_IS_PREVIEWING"; value: boolean }
+  | { type: "SET_IS_GENERATING_REVISION"; value: boolean }
+  | { type: "SET_IS_SAVING_DIFF_REVIEW"; value: boolean }
+  | { type: "SET_IS_APPLYING_REVISION"; value: boolean }
   | { type: "SET_FORM_STATE"; formState: ReviewFormState }
   | { type: "UPDATE_FORM_STATE"; updater: (current: ReviewFormState) => ReviewFormState }
   | { type: "HIDE_PREVIEW_BLOCK"; blockId: string }
@@ -137,6 +146,12 @@ export function workbenchReducer(state: WorkbenchState, action: WorkbenchAction)
       return { ...state, isSubmitting: action.value };
     case "SET_IS_PREVIEWING":
       return { ...state, isPreviewing: action.value };
+    case "SET_IS_GENERATING_REVISION":
+      return { ...state, isGeneratingRevision: action.value };
+    case "SET_IS_SAVING_DIFF_REVIEW":
+      return { ...state, isSavingDiffReview: action.value };
+    case "SET_IS_APPLYING_REVISION":
+      return { ...state, isApplyingRevision: action.value };
     case "SET_FORM_STATE":
       return { ...state, formState: action.formState };
     case "UPDATE_FORM_STATE":
@@ -188,6 +203,11 @@ export function workbenchReducer(state: WorkbenchState, action: WorkbenchAction)
         artifact: null,
         previewDocument: null,
         activeArtifactId: null,
+        isSubmitting: false,
+        isPreviewing: false,
+        isGeneratingRevision: false,
+        isSavingDiffReview: false,
+        isApplyingRevision: false,
         selectionDraft: null,
         commentDraft: "",
         replyDrafts: {},
@@ -207,6 +227,11 @@ export function workbenchReducer(state: WorkbenchState, action: WorkbenchAction)
         artifact: action.artifact,
         previewDocument: action.previewDocument,
         hiddenPreviewBlockIds: [],
+        isSubmitting: false,
+        isPreviewing: false,
+        isGeneratingRevision: false,
+        isSavingDiffReview: false,
+        isApplyingRevision: false,
         formState: action.formState,
         hasDownloadedJson: action.hasDownloadedJson,
         activeArtifactId: action.activeArtifactId,

@@ -79,7 +79,8 @@ What weak findings look like:
 - Polishing sentences when the real issue is section order or missing reader payoff
 
 Return JSON with a top-level "findings" array.
-Each finding must include excerpt, rationale, confidence, and suggestion.
+Each finding must include excerpt, block_id, rationale, confidence, and suggestion.
+Use the exact `block_id` of the paragraph or heading that contains the excerpt whenever possible.
 Ground the reasoning in quoted source text rather than abstract commentary alone.
 The excerpt must copy the article text exactly, word for word.
 Do not paraphrase, summarize, or fuse distant passages into one quote.

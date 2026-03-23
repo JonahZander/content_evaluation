@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-
 from content_evaluation.domain.models import ArtifactBlock, ContentFormat, ExtractedContent, ProviderRoute
 
 
@@ -68,9 +66,12 @@ class MockAnalysisProvider:
         """Return deterministic JSON for one analysis agent."""
 
         del instruction
+        del context
         del route
         primary = blocks[0].text if blocks else title
         secondary = blocks[min(1, len(blocks) - 1)].text if blocks else title
+        primary_block_id = blocks[0].id if blocks else None
+        secondary_block_id = blocks[min(1, len(blocks) - 1)].id if blocks else primary_block_id
         result: dict[str, object] = {"findings": []}
         findings = result["findings"]
         assert isinstance(findings, list)
@@ -78,6 +79,7 @@ class MockAnalysisProvider:
             findings.append(
                 {
                     "excerpt": primary[:120],
+                    "block_id": primary_block_id,
                     "rationale": (
                         "The phrasing is polished and structurally repetitive, which may indicate AI assistance."
                     ),
@@ -85,50 +87,16 @@ class MockAnalysisProvider:
                     "suggestion": "Add concrete anecdotes or original evidence to reduce generic phrasing.",
                 }
             )
-        elif agent_id == "value":
-            findings.append(
-                {
-                    "excerpt": primary[:120],
-                    "rationale": (
-                        "The strongest value is practical guidance for editors "
-                        "evaluating whether a post is worth reading."
-                    ),
-                    "confidence": 0.79,
-                    "suggestion": "Surface the main takeaway earlier in the introduction.",
-                }
-            )
-        elif agent_id == "audience":
-            findings.append(
-                {
-                    "excerpt": secondary[:120],
-                    "rationale": "The content appears aimed at editorial, marketing, and AI-operations teams.",
-                    "confidence": 0.76,
-                    "suggestion": "Name the intended audience directly in the first two paragraphs.",
-                }
-            )
         elif agent_id == "editorial":
             findings.append(
                 {
                     "excerpt": secondary[:120],
+                    "block_id": secondary_block_id,
                     "rationale": "This section restates ideas from the introduction without adding new support.",
                     "confidence": 0.67,
                     "suggestion": "Condense or merge this section to tighten the argument.",
                 }
             )
-        elif agent_id == "synthesis":
-            context_summary = ", ".join(sorted((context or {}).keys()))
-            findings.append(
-                {
-                    "excerpt": primary[:120],
-                    "rationale": (
-                        "The post feels useful and coherent, but should include "
-                        "sharper evidence and less repetition."
-                    ),
-                    "confidence": 0.83,
-                    "suggestion": "Keep the core thesis and trim sections that restate prior points.",
-                }
-            )
-            result["summary"] = f"Synthesized from: {context_summary}" if context_summary else "Synthesis complete"
         result["usage"] = {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
         return result
 

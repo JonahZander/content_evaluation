@@ -179,6 +179,17 @@ class ArtifactBlockOrigin(StrEnum):
     SYNTHETIC_UNMATCHED = "synthetic_unmatched"
 
 
+class CleanerRemovalReason(StrEnum):
+    """Enumerate conservative cleaner removal reasons."""
+
+    SITE_CHROME = "site_chrome"
+    ADVERTISEMENT = "advertisement"
+    DUPLICATE = "duplicate"
+    EXTRACTION_JUNK = "extraction_junk"
+    PROMPT_INJECTION = "prompt_injection"
+    SUSPICIOUS_NON_ARTICLE = "suspicious_non_article"
+
+
 class ArtifactAnchorMatchKind(StrEnum):
     """Enumerate whether one anchor resolves to source or fallback content."""
 
@@ -218,6 +229,29 @@ class ArtifactBlock(BaseModel):
     marks: list[ArtifactInlineMark] = Field(default_factory=list)
 
 
+class ArtifactCleanerRemovedBlock(BaseModel):
+    """Store one block removed by the pre-analysis cleaner."""
+
+    original_index: int
+    text: str
+    removal_reason: CleanerRemovalReason
+
+
+class ArtifactCleanerFlaggedBlock(BaseModel):
+    """Store one kept block flagged as suspicious by the cleaner."""
+
+    original_index: int
+    text: str
+    reason: CleanerRemovalReason = CleanerRemovalReason.SUSPICIOUS_NON_ARTICLE
+
+
+class ArtifactCleanerAudit(BaseModel):
+    """Store cleaner audit data alongside the normalized document."""
+
+    removed_blocks: list[ArtifactCleanerRemovedBlock] = Field(default_factory=list)
+    suspicious_blocks: list[ArtifactCleanerFlaggedBlock] = Field(default_factory=list)
+
+
 class ArtifactDocument(BaseModel):
     """Store normalized reviewable content."""
 
@@ -229,6 +263,7 @@ class ArtifactDocument(BaseModel):
     raw_content: str = ""
     text: str
     blocks: list[ArtifactBlock]
+    cleaner_audit: ArtifactCleanerAudit | None = None
 
 
 class ExtractedContent(BaseModel):
@@ -364,10 +399,13 @@ class ArtifactSummary(BaseModel):
 
     overall_score: int
     verdict: str
-    value_summary: str
-    audience_summary: str
+    value_summary: str = ""
+    audience_summary: str = ""
     novelty_score: float
     ai_likelihood: float
+    tl_dr: str = ""
+    word_count: int = 0
+    estimated_reading_time_minutes: int = 0
 
 
 class ArtifactOverlapItem(BaseModel):
@@ -378,13 +416,75 @@ class ArtifactOverlapItem(BaseModel):
     note: str
 
 
+class ArtifactClaimSummary(BaseModel):
+    """Store one fact-check-backed claim summary item."""
+
+    claim_text: str
+    verdict: str
+    evidence_summary: str
+    source_links: list[str] = Field(default_factory=list)
+    anchor_quote: str = ""
+    value_add: str = ""
+    official_source_links: list[str] = Field(default_factory=list)
+    related_post_links: list[str] = Field(default_factory=list)
+
+
+class ArtifactStructuralCompleteness(BaseModel):
+    """Store lightweight structural completeness signals."""
+
+    has_intro: bool = False
+    has_headings: bool = False
+    has_conclusion: bool = False
+
+
 class ArtifactReviewSummary(BaseModel):
     """Store the narrative summary content shown above the document."""
 
-    content_summary: str
-    research_summary: str
-    inferred_audience: str
+    content_summary: str = ""
+    research_summary: str = ""
+    tl_dr: str = ""
+    inferred_audience: str = ""
+    word_count: int = 0
+    estimated_reading_time_minutes: int = 0
+    article_format: str = ""
+    reading_difficulty: str = ""
+    structural_completeness: ArtifactStructuralCompleteness = Field(default_factory=ArtifactStructuralCompleteness)
+    main_claims: list[ArtifactClaimSummary] = Field(default_factory=list)
     overlap_items: list[ArtifactOverlapItem] = Field(default_factory=list)
+
+
+class RevisedMarkdownDiffDecision(StrEnum):
+    """Enumerate reviewer decisions for a revised-markdown diff item."""
+
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+
+
+class ArtifactDiffItem(BaseModel):
+    """Store one structured diff item between markdown versions."""
+
+    id: str = Field(default_factory=lambda: f"diff-{uuid4()}")
+    change_type: str
+    before_text: str = ""
+    after_text: str = ""
+    decision: RevisedMarkdownDiffDecision = RevisedMarkdownDiffDecision.PENDING
+
+
+class ArtifactDiffReview(BaseModel):
+    """Store one diff-review payload for revised markdown."""
+
+    original_markdown: str
+    candidate_markdown: str
+    diff_items: list[ArtifactDiffItem] = Field(default_factory=list)
+
+
+class ArtifactRevisedDocument(BaseModel):
+    """Store one generated revised-markdown candidate."""
+
+    markdown: str
+    accepted_comment_ids: list[str] = Field(default_factory=list)
+    generated_at: datetime = Field(default_factory=now_utc)
 
 
 class ArtifactEvent(BaseModel):
@@ -440,7 +540,7 @@ class RunConfig(BaseModel):
 class AnalysisArtifact(BaseModel):
     """Store the complete artifact consumed by the UI and exports."""
 
-    schema_version: str = "1.2"
+    schema_version: str = "1.3"
     artifact_id: UUID = Field(default_factory=uuid4)
     status: RunStatus = RunStatus.QUEUED
     created_at: datetime = Field(default_factory=now_utc)
@@ -454,6 +554,8 @@ class AnalysisArtifact(BaseModel):
     threads: list[ArtifactThread] = Field(default_factory=list)
     summary: ArtifactSummary | None = None
     review_summary: ArtifactReviewSummary | None = None
+    revised_document: ArtifactRevisedDocument | None = None
+    diff_review: ArtifactDiffReview | None = None
     events: list[ArtifactEvent] = Field(default_factory=list)
     debug: ArtifactDebug | None = None
     error_message: str | None = None

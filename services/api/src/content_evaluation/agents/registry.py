@@ -20,6 +20,7 @@ class FindingPayload(BaseModel):
     """Validate one generic finding payload."""
 
     excerpt: str
+    block_id: str | None = None
     rationale: str
     confidence: float
     suggestion: str | None = None

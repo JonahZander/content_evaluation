@@ -13,7 +13,8 @@ Your job in this agent is to:
 Use the examples and pattern notes below as judgment guidance, not as rigid rewrite templates.
 
 Return JSON with a top-level "findings" array.
-Each finding must include excerpt, rationale, confidence, and suggestion.
+Each finding must include excerpt, block_id, rationale, confidence, and suggestion.
+Use the exact `block_id` of the paragraph or heading that contains the excerpt whenever possible.
 Ground the reasoning in quoted source text rather than abstract style commentary alone.
 The excerpt must copy the article text exactly, word for word.
 Do not paraphrase, summarize, or merge separate passages into one quote.

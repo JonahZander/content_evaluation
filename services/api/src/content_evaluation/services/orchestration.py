@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import operator
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -34,12 +36,14 @@ from content_evaluation.domain.models import (
     ArtifactBlock,
     ArtifactBlockKind,
     ArtifactBlockOrigin,
+    ArtifactClaimSummary,
     ArtifactComment,
     ArtifactDocument,
     ArtifactDebug,
     ArtifactEvent,
     ArtifactOverlapItem,
     ArtifactReviewSummary,
+    ArtifactStructuralCompleteness,
     ContentFormat,
     ExtractedContent,
     ArtifactSource,
@@ -124,6 +128,9 @@ class FactCheckClaim(TypedDict):
     anchor_excerpt: str
     confidence: float
     suggestion: str | None
+    value_add: str
+    official_source_links: list[str]
+    related_post_links: list[str]
 
 
 class FactCheckOverlap(TypedDict):
@@ -983,6 +990,8 @@ class RunOrchestrator:
             dr_usage = _extract_usage_from_metadata(metadata)
             overlap_items = _normalize_fact_check_overlap_items(raw_output)
             research_summary = _fact_check_research_summary(raw_output)
+            tl_dr = _coerce_str(raw_output.get("tl_dr")) or _coerce_str(raw_output.get("tldr"))
+            main_claims = _coerce_dict_list(raw_output.get("main_claims"))
             findings = [
                 FindingPayload(
                     excerpt=item["anchor_excerpt"],
@@ -996,6 +1005,9 @@ class RunOrchestrator:
                         "evidence_summary": item["evidence_summary"],
                         "source_links": list(item["source_links"]),
                         "anchor_excerpt": item["anchor_excerpt"],
+                        "value_add": item["value_add"],
+                        "official_source_links": list(item["official_source_links"]),
+                        "related_post_links": list(item["related_post_links"]),
                     },
                 )
                 for item in claim_findings
@@ -1009,6 +1021,10 @@ class RunOrchestrator:
                     **metadata,
                     "research_summary": research_summary,
                     "overlap_items": overlap_items,
+                    "tl_dr": tl_dr,
+                    "main_claims": main_claims,
+                    "inferred_audience": _coerce_str(metadata.get("audience"))
+                    or _coerce_str(raw_output.get("inferred_audience")),
                 },
                 model_name=self._deep_research_provider.model_name,
                 usage=dr_usage,
@@ -1089,7 +1105,11 @@ class RunOrchestrator:
         resolved_findings: list[AgentFinding] = []
         for finding in result.findings:
             cleaned_excerpt = sanitize_excerpt(finding.excerpt) or finding.excerpt.strip().strip('"')
-            anchor = _resolve_anchor(artifact, cleaned_excerpt)
+            anchor = _resolve_anchor(
+                artifact,
+                cleaned_excerpt,
+                block_id=getattr(finding, "block_id", None),
+            )
             resolved = AgentFinding(
                 category=result.definition.category,
                 agent_name=result.definition.agent_id,
@@ -1530,7 +1550,7 @@ def _append_agent_comment(
 def _should_create_thread_for_agent(definition: AgentDefinition) -> bool:
     """Return whether one agent should appear in the comment rail."""
 
-    return definition.category not in {AgentCategory.AUDIENCE, AgentCategory.FACT_CHECK}
+    return definition.category in {AgentCategory.AI_LIKELIHOOD, AgentCategory.EDITORIAL}
 
 
 def _progress_for_artifact(artifact: AnalysisArtifact) -> float:
@@ -1550,27 +1570,21 @@ def _build_summary(artifact: AnalysisArtifact) -> ArtifactSummary:
     fact_check_result = next((item for item in artifact.agent_results if item.agent_id == "fact_check"), None)
     overlap_items = _result_overlap_items(fact_check_result)
     overlap_scores = _result_overlap_scores(fact_check_result, overlap_items)
+    overview = _build_overview_data(artifact, fact_check_result)
 
     ai_result = next((item for item in artifact.agent_results if item.agent_id == "ai_likelihood"), None)
     ai_likelihood = 0.0
     if ai_result is not None:
         ai_likelihood = max((finding.confidence for finding in ai_result.findings), default=0.0)
 
-    value_result = next((item for item in artifact.agent_results if item.agent_id == "value"), None)
-    audience_result = next((item for item in artifact.agent_results if item.agent_id == "audience"), None)
-    synthesis_result = next((item for item in artifact.agent_results if item.agent_id == "synthesis"), None)
-
     novelty_score = max(0.0, 1.0 - max(overlap_scores or [0.0]))
-    value_summary = _first_rationale(value_result)
-    audience_summary = _first_rationale(audience_result)
-    verdict = _first_rationale(synthesis_result) or "Analysis completed"
+    value_summary = _fact_check_value_summary(fact_check_result) or overview["tl_dr"]
+    audience_summary = overview["inferred_audience"]
+    verdict = (
+        _coerce_str(fact_check_result.metadata.get("research_summary")) if fact_check_result is not None else None
+    ) or overview["tl_dr"] or "Analysis completed"
 
-    confidence_bonus = sum(
-        finding.confidence
-        for result in artifact.agent_results
-        if result.category in {AgentCategory.VALUE, AgentCategory.AUDIENCE}
-        for finding in result.findings
-    )
+    confidence_bonus = sum(finding.confidence for finding in (fact_check_result.findings if fact_check_result else []))
     raw_score = (
         config.base_score
         + (confidence_bonus * config.confidence_multiplier)
@@ -1584,36 +1598,38 @@ def _build_summary(artifact: AnalysisArtifact) -> ArtifactSummary:
         audience_summary=audience_summary,
         novelty_score=novelty_score,
         ai_likelihood=ai_likelihood,
+        tl_dr=overview["tl_dr"],
+        word_count=overview["word_count"],
+        estimated_reading_time_minutes=overview["estimated_reading_time_minutes"],
     )
 
 
 def _build_review_summary(artifact: AnalysisArtifact) -> ArtifactReviewSummary | None:
     """Build the narrative summary shown above the document."""
 
-    value_result = next((item for item in artifact.agent_results if item.agent_id == "value"), None)
-    audience_result = next((item for item in artifact.agent_results if item.agent_id == "audience"), None)
     fact_check_result = next((item for item in artifact.agent_results if item.agent_id == "fact_check"), None)
-
-    content_summary = _first_rationale(value_result)
+    overview = _build_overview_data(artifact, fact_check_result)
     research_summary = ""
     overlap_items = _result_overlap_items(fact_check_result)
     if fact_check_result is not None:
         research_summary = _coerce_str(fact_check_result.metadata.get("research_summary")) or (
             fact_check_result.summary or ""
         )
-    inferred_audience = (
-        audience_result.summary or _first_rationale(audience_result)
-        if audience_result is not None
-        else ""
-    )
 
-    if not any([content_summary, research_summary, inferred_audience, overlap_items]):
+    if artifact.document is None and not any([research_summary, overlap_items]):
         return None
 
     return ArtifactReviewSummary(
-        content_summary=content_summary,
+        content_summary=overview["tl_dr"],
         research_summary=research_summary,
-        inferred_audience=inferred_audience,
+        tl_dr=overview["tl_dr"],
+        inferred_audience=overview["inferred_audience"],
+        word_count=overview["word_count"],
+        estimated_reading_time_minutes=overview["estimated_reading_time_minutes"],
+        article_format=overview["article_format"],
+        reading_difficulty=overview["reading_difficulty"],
+        structural_completeness=overview["structural_completeness"],
+        main_claims=_build_main_claim_summaries(fact_check_result),
         overlap_items=overlap_items,
     )
 
@@ -1631,6 +1647,9 @@ def _normalize_fact_check_claims(raw_output: dict[str, object]) -> list[FactChec
         source_links = _coerce_str_list(item.get("source_links") or item.get("sources"))
         confidence = _coerce_float(item.get("confidence")) or 0.0
         suggestion = _coerce_str(item.get("suggestion"))
+        value_add = _coerce_str(item.get("value_add")) or ""
+        official_source_links = _coerce_str_list(item.get("official_source_links"))
+        related_post_links = _coerce_str_list(item.get("related_post_links"))
         if not anchor_excerpt:
             continue
         normalized.append(
@@ -1642,6 +1661,9 @@ def _normalize_fact_check_claims(raw_output: dict[str, object]) -> list[FactChec
                 "anchor_excerpt": anchor_excerpt,
                 "confidence": confidence,
                 "suggestion": suggestion,
+                "value_add": value_add,
+                "official_source_links": official_source_links or source_links,
+                "related_post_links": related_post_links,
             }
         )
     return normalized
@@ -1667,6 +1689,9 @@ def _fallback_fact_check_claims(raw_findings: list[object]) -> list[FactCheckCla
                 "anchor_excerpt": excerpt,
                 "confidence": _coerce_float(item.get("confidence")) or 0.0,
                 "suggestion": _coerce_str(item.get("suggestion")),
+                "value_add": "",
+                "official_source_links": _coerce_str_list(item.get("official_source_links") or item.get("sources")),
+                "related_post_links": _coerce_str_list(item.get("related_post_links")),
             }
         )
     return normalized
@@ -1771,6 +1796,117 @@ def _first_rationale(result: ArtifactAgentResult | None) -> str:
     return result.findings[0].rationale
 
 
+def _build_main_claim_summaries(result: ArtifactAgentResult | None) -> list[ArtifactClaimSummary]:
+    """Return structured main-claim entries from fact-check output."""
+
+    if result is None:
+        return []
+
+    raw_main_claims = _coerce_dict_list(result.metadata.get("main_claims"))
+    if raw_main_claims:
+        return [
+            ArtifactClaimSummary(
+                claim_text=_coerce_str(item.get("claim_text")) or "",
+                verdict=_coerce_str(item.get("verdict")) or "UNVERIFIABLE",
+                evidence_summary=_coerce_str(item.get("evidence_summary")) or "",
+                source_links=_coerce_str_list(item.get("source_links")),
+                anchor_quote=_coerce_str(item.get("anchor_quote")) or "",
+                value_add=_coerce_str(item.get("value_add")) or "",
+                official_source_links=_coerce_str_list(item.get("official_source_links")),
+                related_post_links=_coerce_str_list(item.get("related_post_links")),
+            )
+            for item in raw_main_claims
+        ]
+
+    claim_summaries: list[ArtifactClaimSummary] = []
+    for finding in result.findings:
+        metadata = finding.metadata
+        claim_text = _coerce_str(metadata.get("claim_text")) or finding.rationale
+        evidence_summary = _coerce_str(metadata.get("evidence_summary")) or finding.rationale
+        source_links = _coerce_str_list(metadata.get("source_links") or finding.sources)
+        official_source_links = _coerce_str_list(metadata.get("official_source_links"))
+        related_post_links = _coerce_str_list(metadata.get("related_post_links"))
+        claim_summaries.append(
+            ArtifactClaimSummary(
+                claim_text=claim_text or finding.rationale,
+                verdict=_coerce_str(metadata.get("verdict")) or "UNVERIFIABLE",
+                evidence_summary=evidence_summary,
+                source_links=source_links,
+                anchor_quote=_coerce_str(metadata.get("anchor_excerpt")) or _coerce_str(metadata.get("excerpt")) or "",
+                value_add=_coerce_str(metadata.get("value_add")) or "",
+                official_source_links=official_source_links or source_links,
+                related_post_links=related_post_links,
+            )
+        )
+    return claim_summaries
+
+
+def _fact_check_value_summary(result: ArtifactAgentResult | None) -> str:
+    """Return the value-oriented summary now supplied by fact-check."""
+
+    if result is None:
+        return ""
+    return (
+        _coerce_str(result.metadata.get("value_summary"))
+        or _coerce_str(result.metadata.get("differentiation_summary"))
+        or _first_rationale(result)
+    )
+
+
+def _build_overview_data(
+    artifact: AnalysisArtifact,
+    fact_check_result: ArtifactAgentResult | None,
+) -> dict[str, object]:
+    """Build overview-only summary data directly from the article and artifact."""
+
+    document = artifact.document
+    if document is None:
+        return {
+            "tl_dr": "",
+            "inferred_audience": "",
+            "word_count": 0,
+            "estimated_reading_time_minutes": 0,
+            "article_format": "",
+            "reading_difficulty": "",
+            "structural_completeness": ArtifactStructuralCompleteness(),
+        }
+
+    source_blocks = [block for block in document.blocks if block.origin is ArtifactBlockOrigin.SOURCE and block.text.strip()]
+    word_count = sum(len(block.text.split()) for block in source_blocks)
+    estimated_reading_time_minutes = max(1, math.ceil(word_count / 220)) if word_count else 0
+    fact_check_metadata = fact_check_result.metadata if fact_check_result is not None else {}
+    tl_dr = (
+        _coerce_str(fact_check_metadata.get("tl_dr"))
+        or _coerce_str(fact_check_metadata.get("tldr"))
+        or _summarize_lead_blocks(source_blocks)
+    )
+    inferred_audience = (
+        _coerce_str(fact_check_metadata.get("inferred_audience"))
+        or _coerce_str(fact_check_metadata.get("audience_overview"))
+        or _infer_audience_from_text(document.text)
+    )
+    article_format = (
+        _coerce_str(fact_check_metadata.get("article_format"))
+        or _guess_article_format(document)
+    )
+    reading_difficulty = (
+        _coerce_str(fact_check_metadata.get("reading_difficulty"))
+        or _estimate_reading_difficulty(source_blocks)
+    )
+    structural_completeness = _structural_completeness_from_metadata(fact_check_metadata) or _structural_completeness(
+        document
+    )
+    return {
+        "tl_dr": tl_dr,
+        "inferred_audience": inferred_audience,
+        "word_count": word_count,
+        "estimated_reading_time_minutes": estimated_reading_time_minutes,
+        "article_format": article_format,
+        "reading_difficulty": reading_difficulty,
+        "structural_completeness": structural_completeness,
+    }
+
+
 def _extract_usage_from_metadata(payload: dict[str, object]) -> dict[str, int] | None:
     """Pop normalized token-usage metadata from one provider payload."""
 
@@ -1862,7 +1998,7 @@ def _score_from_result(item: object) -> float:
     return 0.0
 
 
-def _resolve_anchor(artifact: AnalysisArtifact, excerpt: str) -> ArtifactAnchor:
+def _resolve_anchor(artifact: AnalysisArtifact, excerpt: str, *, block_id: str | None = None) -> ArtifactAnchor:
     """Return an existing matching anchor or create a new one."""
 
     if artifact.document is None:
@@ -1870,7 +2006,7 @@ def _resolve_anchor(artifact: AnalysisArtifact, excerpt: str) -> ArtifactAnchor:
 
     cleaned_excerpt = sanitize_excerpt(excerpt)
     candidate_excerpt = cleaned_excerpt or excerpt.strip().strip('"')
-    anchor = create_anchor_from_excerpt(artifact.document.blocks, candidate_excerpt)
+    anchor = create_anchor_from_excerpt(artifact.document.blocks, candidate_excerpt, block_id=block_id)
     if anchor is None:
         anchor = _create_unmatched_anchor(artifact, candidate_excerpt)
     existing = next(
@@ -1996,6 +2132,9 @@ def _result_context_payload(artifact: AnalysisArtifact, result: ArtifactAgentRes
         metadata["anchor_match_kind"] = (
             linked_anchors[0].match_kind.value if linked_anchors else ArtifactAnchorMatchKind.SYNTHETIC_UNMATCHED.value
         )
+        if linked_anchors:
+            metadata["block_id"] = linked_anchors[0].segments[0].block_id
+            metadata["quote"] = linked_anchors[0].quote
         if matched_to_source:
             item["metadata"] = metadata
         else:
@@ -2006,3 +2145,89 @@ def _result_context_payload(artifact: AnalysisArtifact, result: ArtifactAgentRes
         serialized_findings.append(item)
     payload["findings"] = serialized_findings
     return payload
+
+
+_SENTENCE_SPLIT_PATTERN = re.compile(r"(?<=[.!?])\s+")
+
+
+def _summarize_lead_blocks(blocks: list[ArtifactBlock]) -> str:
+    """Return a compact TL;DR from the opening source blocks."""
+
+    text = " ".join(block.text.strip() for block in blocks[:2] if block.text.strip())
+    if not text:
+        return ""
+    sentences = [sentence.strip() for sentence in _SENTENCE_SPLIT_PATTERN.split(text) if sentence.strip()]
+    summary = " ".join(sentences[:2]) if sentences else text
+    return summary[:240].rstrip()
+
+
+def _infer_audience_from_text(text: str) -> str:
+    """Guess a broad audience label from the article text."""
+
+    lowered = text.lower()
+    if any(keyword in lowered for keyword in ("editor", "editorial", "content strategy", "blog")):
+        return "Editorial and content teams"
+    if any(keyword in lowered for keyword in ("developer", "engineering", "code", "api")):
+        return "Technical practitioners and builders"
+    if any(keyword in lowered for keyword in ("founder", "growth", "marketing", "sales")):
+        return "Operators, founders, and go-to-market teams"
+    return "General readers interested in the topic"
+
+
+def _guess_article_format(document: ArtifactDocument) -> str:
+    """Guess the article format from the title and block structure."""
+
+    title = document.title.lower()
+    text = document.text.lower()
+    if "how to" in title or "tutorial" in title or any(block.kind is ArtifactBlockKind.CODE for block in document.blocks):
+        return "tutorial"
+    if "announcing" in title or "launch" in title or "release" in title:
+        return "announcement"
+    if "case study" in title or "we " in text[:400] or "i " in text[:400]:
+        return "case_study"
+    if len([block for block in document.blocks if block.kind is ArtifactBlockKind.HEADING]) >= 4:
+        return "roundup"
+    return "article"
+
+
+def _estimate_reading_difficulty(blocks: list[ArtifactBlock]) -> str:
+    """Return a coarse density indicator for the article."""
+
+    if not blocks:
+        return ""
+    total_words = sum(len(block.text.split()) for block in blocks)
+    average_words = total_words / max(len(blocks), 1)
+    if average_words >= 90:
+        return "dense"
+    if average_words >= 45:
+        return "moderate"
+    return "accessible"
+
+
+def _structural_completeness(document: ArtifactDocument) -> ArtifactStructuralCompleteness:
+    """Return lightweight structural completeness signals."""
+
+    source_blocks = [block for block in document.blocks if block.origin is ArtifactBlockOrigin.SOURCE and block.text.strip()]
+    headings = [block for block in source_blocks if block.kind is ArtifactBlockKind.HEADING]
+    intro_text = source_blocks[0].text.lower() if source_blocks else ""
+    closing_text = source_blocks[-1].text.lower() if source_blocks else ""
+    return ArtifactStructuralCompleteness(
+        has_intro=bool(intro_text),
+        has_headings=bool(headings),
+        has_conclusion=any(
+            phrase in closing_text for phrase in ("in summary", "overall", "bottom line", "in conclusion", "to sum up")
+        ),
+    )
+
+
+def _structural_completeness_from_metadata(metadata: dict[str, object]) -> ArtifactStructuralCompleteness | None:
+    """Parse structural completeness from fact-check metadata when present."""
+
+    raw = metadata.get("structural_completeness")
+    if not isinstance(raw, dict):
+        return None
+    return ArtifactStructuralCompleteness(
+        has_intro=bool(raw.get("has_intro")),
+        has_headings=bool(raw.get("has_headings")),
+        has_conclusion=bool(raw.get("has_conclusion")),
+    )

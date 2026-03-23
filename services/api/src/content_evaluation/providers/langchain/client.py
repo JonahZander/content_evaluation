@@ -26,6 +26,7 @@ class _StructuredFinding(BaseModel):
     """Validate one structured finding returned by a chat model."""
 
     excerpt: str
+    block_id: str | None = None
     rationale: str
     confidence: float
     suggestion: str | None = None

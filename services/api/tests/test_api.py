@@ -60,6 +60,11 @@ def test_api_run_flow_and_exports(monkeypatch: pytest.MonkeyPatch) -> None:
 
         run_payload = _wait_for_run_completion(client, run_id)
         assert run_payload["status"] == "completed"
+        assert {item["agent_id"] for item in run_payload["agent_plan"]} == {
+            "fact_check",
+            "ai_likelihood",
+            "editorial",
+        }
         threads = run_payload["threads"]
         assert threads
 
@@ -183,15 +188,19 @@ def test_append_agents_queues_additional_analysis(monkeypatch: pytest.MonkeyPatc
 
         append_response = client.post(
             f"/api/v1/runs/{run_id}/agents",
-            json={"selected_agents": ["value"]},
+            json={"selected_agents": ["editorial"]},
         )
         assert append_response.status_code == 200
         assert append_response.json()["status"] == "queued"
 
         run_payload = _wait_for_run_completion(client, run_id)
         assert run_payload["status"] == "completed"
-        assert {item["agent_id"] for item in run_payload["agent_results"]} >= {"ai_likelihood", "fact_check", "value"}
-        assert run_payload["run_config"]["selected_agents"] == ["ai_likelihood", "value"]
+        assert {item["agent_id"] for item in run_payload["agent_results"]} >= {
+            "ai_likelihood",
+            "fact_check",
+            "editorial",
+        }
+        assert run_payload["run_config"]["selected_agents"] == ["ai_likelihood", "editorial"]
 
 
 def test_append_agents_rejects_active_run(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -223,7 +232,7 @@ def test_append_agents_rejects_active_run(monkeypatch: pytest.MonkeyPatch) -> No
 
         append_response = client.post(
             f"/api/v1/runs/{run_id}/agents",
-            json={"selected_agents": ["value"]},
+            json={"selected_agents": ["editorial"]},
         )
 
     assert append_response.status_code == 400

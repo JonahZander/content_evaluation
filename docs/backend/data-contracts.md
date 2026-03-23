@@ -9,7 +9,7 @@ The top-level output produced by the backend and rendered by the UI.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `schema_version` | `str` | Currently `"1.2"`. Bump when breaking changes are made to the export schema. |
+| `schema_version` | `str` | Currently `"1.3"`. Bump when breaking changes are made to the export schema. |
 | `artifact_id` | `UUID` | Stable identifier for the artifact. Used in all API routes and exports. |
 | `status` | `RunStatus` | Current lifecycle state. See RunStatus transitions below. |
 | `created_at` | `datetime` | UTC timestamp of artifact creation. |
@@ -21,8 +21,10 @@ The top-level output produced by the backend and rendered by the UI.
 | `agent_results` | `list[ArtifactAgentResult]` | Structured output per agent. |
 | `anchors` | `list[ArtifactAnchor]` | All text-range references produced by agents or humans. |
 | `threads` | `list[ArtifactThread]` | Anchor → comments grouping. |
-| `summary` | `ArtifactSummary \| None` | Aggregate scores. `None` until synthesis completes. |
+| `summary` | `ArtifactSummary \| None` | Aggregate overview and score data. `None` until assembly completes. |
 | `review_summary` | `ArtifactReviewSummary \| None` | Narrative review context for the panel above the text pane. Optional and backward-compatible. |
+| `revised_document` | `ArtifactRevisedDocument \| None` | Candidate revised markdown generated after review-state acceptance. |
+| `diff_review` | `ArtifactDiffReview \| None` | Structured diff-review payload between canonical cleaner output and candidate revised markdown. |
 | `events` | `list[ArtifactEvent]` | Chronological run log for the SSE stream and UI timeline. |
 | `debug` | `ArtifactDebug \| None` | Verbose trace data. Present only when `include_debug_trace` is true. |
 | `error_message` | `str \| None` | Human-readable error description for failed runs. |
@@ -60,6 +62,33 @@ One normalized paragraph, heading, or code block in the document.
 | `language` | `str \| None` | Language hint when `kind` is `code`. |
 | `marks` | `list[ArtifactInlineMark]` | Inline formatting spans (strong, emphasis, code). |
 
+## ArtifactDocument
+
+The canonical normalized article after conservative pre-analysis cleaning.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `raw_content` | `str` | Cleaner-output markdown/plain text used as canonical analysis input. |
+| `text` | `str` | Joined plain-text view of the normalized source blocks. |
+| `blocks` | `list[ArtifactBlock]` | Reviewable source blocks after normalization and oversized-block splitting. |
+| `cleaner_audit` | `ArtifactCleanerAudit \| None` | Removed and suspicious blocks preserved for audit/debug review. |
+
+### ArtifactCleanerAudit
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `removed_blocks` | `list[ArtifactCleanerRemovedBlock]` | Blocks removed before analysis with original order and removal reason preserved. |
+| `suspicious_blocks` | `list[ArtifactCleanerFlaggedBlock]` | Kept blocks flagged as suspicious or uncertain. |
+
+### Cleaner removal reasons
+
+- `site_chrome`
+- `advertisement`
+- `duplicate`
+- `extraction_junk`
+- `prompt_injection`
+- `suspicious_non_article`
+
 ### ArtifactBlockOrigin values
 
 | Value | Meaning |
@@ -90,6 +119,13 @@ One block-local slice within a multi-block anchor.
 | `block_id` | `str` | Block containing this slice. |
 | `start_offset` | `int` | Char offset start within that block's `text`. |
 | `end_offset` | `int` | Char offset end within that block's `text`. |
+
+### Anchor resolution rules
+
+- Comment-producing agents should prefer a stable `block_id` plus an exact quoted excerpt.
+- Backend resolution first searches the referenced block for an exact or ellipsis-normalized match.
+- If exact matching fails, the backend may use a very small within-block fuzzy fallback before giving up on inline highlighting.
+- When no source match is found, the anchor falls back to `synthetic_unmatched`.
 
 ### Why the legacy fields exist
 
@@ -128,9 +164,16 @@ Narrative review context shown above the source text pane.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `content_summary` | `str` | Short summary of the article's main value. |
+| `content_summary` | `str` | Backward-compatible content summary; now usually mirrors `tl_dr`. |
 | `research_summary` | `str` | Fact-check-backed research summary. |
+| `tl_dr` | `str` | Top-level concise article summary. |
 | `inferred_audience` | `str` | Audience inference shown as summary text. |
+| `word_count` | `int` | Word count based on source blocks. |
+| `estimated_reading_time_minutes` | `int` | Estimated reading time from the canonical cleaner output. |
+| `article_format` | `str` | Heuristic article-type guess such as `tutorial`, `announcement`, or `case_study`. |
+| `reading_difficulty` | `str` | Coarse density indicator such as `accessible`, `moderate`, or `dense`. |
+| `structural_completeness` | `ArtifactStructuralCompleteness` | Lightweight intro/headings/conclusion signals. |
+| `main_claims` | `list[ArtifactClaimSummary]` | Key fact-check-backed claims surfaced for summary review. |
 | `overlap_items` | `list[ArtifactOverlapItem]` | Linked overlapping articles with short notes. |
 
 ### ArtifactOverlapItem
@@ -141,12 +184,33 @@ Narrative review context shown above the source text pane.
 | `url` | `str` | URL for the overlapping article. |
 | `note` | `str` | Short explanation of why the article overlaps. |
 
+### ArtifactClaimSummary
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `claim_text` | `str` | Main claim or fact being assessed. |
+| `verdict` | `str` | Fact-check verdict such as `SUPPORTED` or `MIXED`. |
+| `evidence_summary` | `str` | Short explanation of what the research found. |
+| `source_links` | `list[str]` | Links relevant to the claim. |
+| `anchor_quote` | `str` | Quoted article text tied to the claim. |
+| `value_add` | `str` | How the article still adds value or differentiation on this claim. |
+| `official_source_links` | `list[str]` | Preferred primary or official supporting links. |
+| `related_post_links` | `list[str]` | Related-post links tied to the claim/topic. |
+
+## Revised Markdown Contracts
+
+- `ArtifactRevisedDocument` stores the generated candidate markdown plus the accepted comment ids that informed it.
+- `ArtifactDiffReview` stores `original_markdown`, `candidate_markdown`, and `diff_items`.
+- Each `ArtifactDiffItem` carries a `change_type`, `before_text`, `after_text`, and reviewer `decision`.
+
 ## Export Schema Stability
 
-- `schema_version` is `"1.2"`. Code that reads exported JSON should handle missing optional fields gracefully.
+- `schema_version` is `"1.3"`. Code that reads exported JSON should handle missing optional fields gracefully.
 - `review_summary` is optional. Older exports may omit it entirely.
+- `document.cleaner_audit` is optional. Older exports may omit it entirely.
+- `revised_document` and `diff_review` are optional. Older exports may omit them entirely.
 - `anchors[*].segments` is the canonical multi-block shape. `block_id`, `start_offset`, and `end_offset` at the anchor level are kept for backward compatibility and always mirror `segments[0]`.
 - `ArtifactBlockOrigin.synthetic_unmatched` blocks are not original article text. Export consumers should exclude them or render them differently.
 - `agent_results[*].raw_output` contains the unvalidated provider response. Do not rely on its shape externally.
-- Fact-check evidence used by the UI lives on `agent_results[*].findings[*].metadata`, especially `claim_text`, `verdict`, `evidence_summary`, and `source_links`.
+- Fact-check evidence used by the UI lives on `agent_results[*].findings[*].metadata`, especially `claim_text`, `verdict`, `evidence_summary`, `source_links`, `official_source_links`, and `related_post_links`.
 - `debug` is always `null` unless `include_debug_trace: true` was set on the run.

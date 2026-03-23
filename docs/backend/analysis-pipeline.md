@@ -28,6 +28,10 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 4. Normalization
    - Extract text and metadata into a shared document schema
    - Use direct fetch + Trafilatura markdown extraction first for URLs, then Tavily extract fallback for blocked or unreadable pages
+   - Run a conservative pre-analysis cleaner before the document becomes canonical analysis input
+   - Remove obvious site chrome, ad/promotional blocks, extraction junk, prompt-injection text, and exact duplicate remnants
+   - Keep uncertain blocks by default and record both removed and suspicious blocks in `ArtifactDocument.cleaner_audit`
+   - Treat the cleaner output as the canonical `raw_content` used by downstream analysis
    - Normalize markdown-aware content into ordered document blocks with render metadata, inline link marks, and plain-text anchor offsets
    - Conservatively split oversized plain-text paragraph blocks so collapsed imports do not become one giant review span
    - Save the normalized document into the artifact
@@ -40,26 +44,27 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
   - Run independent agents in parallel through LangGraph nodes
   - Run dependent agents after prerequisites complete
   - Default graph now uses fact-check as the research backbone:
-    - `value` depends on `fact_check`
+    - `fact_check` and `ai_likelihood` can start independently
     - `editorial` depends on `fact_check` and `ai_likelihood`
-    - `synthesis` depends on `fact_check`, `ai_likelihood`, `value`, and `editorial`
+  - `value`, `audience`, and first-pass `synthesis` are no longer scheduled in the main run
   - Retry transient provider timeouts and network failures inside the individual agent execution loop before failing the run
    - Emit progress events and partial artifact updates as each agent completes
    - Capture token usage (`input_tokens`, `output_tokens`) in `AgentExecutionResult.usage` after each LLM call; populated by the LangChain, deep research, and mock providers
    - Use LangChain chat-model adapters for analysis nodes
-   - Require finding-producing agents to quote source text word-for-word, use ellipses only for real omissions, and split evidence that would span more than 3 paragraphs into multiple findings
+   - Require comment-producing agents to return exact quoted excerpts, prefer stable `block_id` references, use ellipses only for real omissions, and split evidence that would span more than 3 paragraphs into multiple findings
 7. Artifact assembly
   - Convert agent outputs into anchors, comments, results, summary data, debug traces, and usage metadata
   - Build both score-oriented `summary` data and narrative `review_summary` data
   - Thread `AgentExecutionResult.usage` into `ArtifactAgentResult.metadata` so token counts are available to the frontend without re-querying backend state
-   - Resolve anchors against normalized block text, including whitespace-normalized and ellipsis-truncated excerpts when possible
+   - Resolve comment anchors against normalized block text, preferring exact matches inside the referenced `block_id` and using a bounded within-block fuzzy fallback only for near-miss quotes
    - Treat ellipsis excerpts as ordered fragments across one source block or a bounded window of adjacent source blocks instead of collapsing them into one normalized string
    - Represent resolved anchors as ordered block-local segments so one finding can span multiple adjacent paragraphs
    - Exclude synthetic unmatched fallback blocks from later anchor matching and downstream agent context
    - When an excerpt still cannot be mapped into adjacent visible blocks, append a bottom-of-document unmatched-reference block instead of falling back to the first paragraph
   - Keep human comment/reply/review-state data in the same artifact structure
   - Keep fact-check claim evidence on structured finding metadata so the frontend can render nearby evidence links without parsing prose
-  - Audience and fact-check outputs are summary-first in new runs and do not create top-level comment threads by default
+  - Fact-check is now summary-first and also supplies TL;DR, audience overview, main-claim summaries, official-source links, and differentiation/value context
+  - AI-likelihood and editorial remain the only default comment-producing agents in new runs
   - Keep artifact assembly outside the graph-state model
 8. Export and import
    - Export the artifact as JSON

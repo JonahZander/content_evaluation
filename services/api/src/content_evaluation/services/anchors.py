@@ -19,6 +19,7 @@ ELLIPSIS_PATTERN = re.compile(r"(?:\.\.\.|…)+")
 UNMATCHED_SECTION_MARKERS = ("## Unmatched references", "Unmatched references")
 WINDOW_SEPARATOR = "\n\n"
 MAX_BLOCK_WINDOW = 3
+MAX_FUZZY_EDIT_DISTANCE = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,13 +97,23 @@ def _find_normalized_span(text: str, excerpt: str) -> tuple[int, int] | None:
     return matches[0]
 
 
-def _find_normalized_spans(text: str, excerpt: str) -> list[tuple[int, int]]:
-    """Locate all normalized matches for one excerpt within a source string."""
+def _normalized_search_payload(text: str, excerpt: str) -> tuple[str, list[int], str] | None:
+    """Return normalized text state used by exact and fuzzy matching."""
 
     normalized_text, text_map = _normalize_with_map(text)
     normalized_excerpt, excerpt_map = _normalize_with_map(excerpt)
     if not normalized_text or not normalized_excerpt or not excerpt_map:
+        return None
+    return normalized_text, text_map, normalized_excerpt
+
+
+def _find_normalized_spans(text: str, excerpt: str) -> list[tuple[int, int]]:
+    """Locate all normalized matches for one excerpt within a source string."""
+
+    payload = _normalized_search_payload(text, excerpt)
+    if payload is None:
         return []
+    normalized_text, text_map, normalized_excerpt = payload
 
     matches: list[tuple[int, int]] = []
     search_start = 0
@@ -116,6 +127,76 @@ def _find_normalized_spans(text: str, excerpt: str) -> list[tuple[int, int]]:
         matches.append((start_offset, end_offset))
         search_start = position + 1
     return matches
+
+
+def _levenshtein_distance_with_cap(left: str, right: str, max_distance: int) -> int | None:
+    """Return edit distance when it is within the requested cap."""
+
+    if abs(len(left) - len(right)) > max_distance:
+        return None
+
+    previous = list(range(len(right) + 1))
+    for left_index, left_char in enumerate(left, start=1):
+        current = [left_index]
+        row_min = current[0]
+        for right_index, right_char in enumerate(right, start=1):
+            insert_cost = current[right_index - 1] + 1
+            delete_cost = previous[right_index] + 1
+            replace_cost = previous[right_index - 1] + (0 if left_char == right_char else 1)
+            value = min(insert_cost, delete_cost, replace_cost)
+            current.append(value)
+            row_min = min(row_min, value)
+        if row_min > max_distance:
+            return None
+        previous = current
+
+    distance = previous[-1]
+    if distance > max_distance:
+        return None
+    return distance
+
+
+def _find_fuzzy_normalized_span(
+    text: str,
+    excerpt: str,
+    *,
+    max_distance: int = MAX_FUZZY_EDIT_DISTANCE,
+) -> tuple[int, int] | None:
+    """Locate a near-match excerpt within one block using bounded edit distance."""
+
+    payload = _normalized_search_payload(text, excerpt)
+    if payload is None:
+        return None
+    normalized_text, text_map, normalized_excerpt = payload
+    if len(normalized_excerpt) > len(normalized_text) + max_distance:
+        return None
+
+    best: tuple[int, int, int] | None = None
+    min_length = max(1, len(normalized_excerpt) - max_distance)
+    max_length = min(len(normalized_text), len(normalized_excerpt) + max_distance)
+
+    for start in range(0, len(normalized_text)):
+        remaining = len(normalized_text) - start
+        if remaining < min_length:
+            break
+        candidate_max_length = min(max_length, remaining)
+        for length in range(min_length, candidate_max_length + 1):
+            candidate = normalized_text[start : start + length]
+            distance = _levenshtein_distance_with_cap(candidate, normalized_excerpt, max_distance)
+            if distance is None:
+                continue
+            if best is None or distance < best[0]:
+                best = (distance, start, start + length)
+                if distance == 1:
+                    break
+        if best is not None and best[0] == 0:
+            break
+
+    if best is None:
+        return None
+
+    _, start, end = best
+    return text_map[start], text_map[end - 1] + 1
 
 
 def _find_ellipsis_span(text: str, excerpt: str) -> tuple[int, int] | None:
@@ -214,7 +295,37 @@ def _anchor_from_segments(segments: list[ArtifactAnchorSegment], quote: str) -> 
     )
 
 
-def create_anchor_from_excerpt(blocks: Iterable[ArtifactBlock], excerpt: str) -> ArtifactAnchor | None:
+def _find_anchor_in_single_block(block: ArtifactBlock, excerpt: str) -> ArtifactAnchor | None:
+    """Return an anchor when one excerpt matches a specific block."""
+
+    position = _find_normalized_span(block.text, excerpt)
+    if position is None:
+        position = _find_ellipsis_span(block.text, excerpt)
+    if position is None:
+        position = _find_fuzzy_normalized_span(block.text, excerpt)
+    if position is None:
+        return None
+
+    start_offset, end_offset = position
+    return ArtifactAnchor(
+        quote=excerpt,
+        match_kind=ArtifactAnchorMatchKind.SOURCE,
+        segments=[
+            ArtifactAnchorSegment(
+                block_id=block.id,
+                start_offset=start_offset,
+                end_offset=end_offset,
+            )
+        ],
+    )
+
+
+def create_anchor_from_excerpt(
+    blocks: Iterable[ArtifactBlock],
+    excerpt: str,
+    *,
+    block_id: str | None = None,
+) -> ArtifactAnchor | None:
     """Create one anchor by locating an excerpt in source blocks."""
 
     cleaned_excerpt = sanitize_excerpt(excerpt)
@@ -225,36 +336,19 @@ def create_anchor_from_excerpt(blocks: Iterable[ArtifactBlock], excerpt: str) ->
     if not source_blocks:
         return None
 
-    for block in source_blocks:
-        position = _find_normalized_span(block.text, cleaned_excerpt)
-        if position is not None:
-            start_offset, end_offset = position
-            return ArtifactAnchor(
-                quote=cleaned_excerpt,
-                match_kind=ArtifactAnchorMatchKind.SOURCE,
-                segments=[
-                    ArtifactAnchorSegment(
-                        block_id=block.id,
-                        start_offset=start_offset,
-                        end_offset=end_offset,
-                    )
-                ],
-            )
+    if block_id is not None:
+        preferred_block = next((block for block in source_blocks if block.id == block_id), None)
+        if preferred_block is not None:
+            anchor = _find_anchor_in_single_block(preferred_block, cleaned_excerpt)
+            if anchor is not None:
+                return anchor
 
-        ellipsis_position = _find_ellipsis_span(block.text, cleaned_excerpt)
-        if ellipsis_position is not None:
-            start_offset, end_offset = ellipsis_position
-            return ArtifactAnchor(
-                quote=cleaned_excerpt,
-                match_kind=ArtifactAnchorMatchKind.SOURCE,
-                segments=[
-                    ArtifactAnchorSegment(
-                        block_id=block.id,
-                        start_offset=start_offset,
-                        end_offset=end_offset,
-                    )
-                ],
-            )
+    for block in source_blocks:
+        if block.id == block_id:
+            continue
+        anchor = _find_anchor_in_single_block(block, cleaned_excerpt)
+        if anchor is not None:
+            return anchor
 
     for window_size in range(2, min(MAX_BLOCK_WINDOW, len(source_blocks)) + 1):
         for window in _build_windows(source_blocks, window_size):

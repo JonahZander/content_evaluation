@@ -27,6 +27,32 @@ def test_create_anchor_from_excerpt_collapses_whitespace() -> None:
     assert anchor.end_offset == len(block.text)
 
 
+def test_create_anchor_from_excerpt_prefers_the_referenced_block() -> None:
+    """Prefer an exact match inside the referenced block before global fallback."""
+
+    blocks = [
+        ArtifactBlock(index=0, text="Repeated excerpt appears here."),
+        ArtifactBlock(index=1, text="Repeated excerpt appears here."),
+    ]
+
+    anchor = create_anchor_from_excerpt(blocks, "Repeated excerpt appears here.", block_id=blocks[1].id)
+
+    assert anchor is not None
+    assert anchor.block_id == blocks[1].id
+
+
+def test_create_anchor_from_excerpt_recovers_small_quote_mistakes_within_block() -> None:
+    """Recover near-miss quotes with a conservative within-block fuzzy match."""
+
+    block = ArtifactBlock(index=0, text="Editors should trim repeated paragraphs.")
+
+    anchor = create_anchor_from_excerpt([block], "Editors should trim repeted paragraphs.", block_id=block.id)
+
+    assert anchor is not None
+    assert anchor.block_id == block.id
+    assert block.text[anchor.start_offset : anchor.end_offset] == "Editors should trim repeated paragraphs."
+
+
 def test_create_anchor_from_excerpt_handles_ellipses() -> None:
     """Match excerpts that were truncated in the middle."""
 

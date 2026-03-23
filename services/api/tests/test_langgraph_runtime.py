@@ -41,14 +41,14 @@ class CrossParagraphAnalysisProvider(MockAnalysisProvider):
     ) -> dict[str, object]:
         del instruction
         del title
-        del blocks
         del context
         del route
-        if agent_id == "value":
+        if agent_id == "editorial":
             return {
                 "findings": [
                     {
                         "excerpt": "Alpha paragraph.\n\nBeta paragraph.",
+                        "block_id": blocks[0].id if blocks else None,
                         "rationale": "This issue spans adjacent paragraphs.",
                         "confidence": 0.81,
                         "suggestion": "Keep the linked review span across both paragraphs.",
@@ -72,61 +72,19 @@ class DistantCrossParagraphAnalysisProvider(MockAnalysisProvider):
     ) -> dict[str, object]:
         del instruction
         del title
-        del blocks
         del context
         del route
-        if agent_id == "value":
+        if agent_id == "editorial":
             return {
                 "findings": [
                     {
                         "excerpt": "Alpha paragraph.\n\nGamma paragraph.",
+                        "block_id": blocks[0].id if blocks else None,
                         "rationale": "This issue can only be described across distant sections.",
                         "confidence": 0.62,
                     }
                 ]
             }
-        return {"findings": []}
-
-
-class ContaminatedContextAnalysisProvider(MockAnalysisProvider):
-    """Assert that unmatched fallback excerpts are not replayed as article context."""
-
-    async def analyze(
-        self,
-        agent_id: str,
-        instruction: str,
-        title: str,
-        blocks: list[ArtifactBlock],
-        context: dict[str, object] | None = None,
-        route: ProviderRoute | None = None,
-    ) -> dict[str, object]:
-        del instruction
-        del title
-        del blocks
-        del route
-        if agent_id == "value":
-            return {
-                "findings": [
-                    {
-                        "excerpt": "Alpha paragraph.\n\nGamma paragraph.",
-                        "rationale": "This still should be unmatched.",
-                        "confidence": 0.62,
-                    }
-                ]
-            }
-        if agent_id == "synthesis":
-            assert context is not None
-            value_context = context.get("value") or next(iter(context.values()))
-            assert "raw_output" not in value_context
-            finding_context = next(
-                item
-                for item in value_context["findings"]
-                if item.get("metadata", {}).get("matched_to_source") is False
-                or "unmatched_excerpt" in item
-            )
-            assert finding_context["metadata"]["matched_to_source"] is False
-            assert "excerpt" not in finding_context["metadata"]
-            assert finding_context["unmatched_excerpt"] == "Alpha paragraph.\n\nGamma paragraph."
         return {"findings": []}
 
 
@@ -264,7 +222,7 @@ async def test_retriable_agent_timeout_retries_without_run_resume() -> None:
         source_label="Draft",
         title="Draft",
         text="Alpha paragraph.\n\nBeta paragraph.",
-        selected_agents=["value"],
+        selected_agents=["ai_likelihood"],
     )
     artifact = await orchestrator.create_run(input_data)
 
@@ -297,7 +255,7 @@ async def test_adjacent_cross_paragraph_excerpts_anchor_to_source_blocks() -> No
         source_label="Draft",
         title="Draft",
         text="Alpha paragraph.\n\nBeta paragraph.",
-        selected_agents=["value"],
+        selected_agents=["editorial"],
     )
     artifact = await orchestrator.create_run(input_data)
 
@@ -334,7 +292,7 @@ async def test_distant_cross_paragraph_excerpts_stay_unmatched() -> None:
         source_label="Draft",
         title="Draft",
         text="Alpha paragraph.\n\nBeta paragraph.\n\nGamma paragraph.",
-        selected_agents=["value"],
+        selected_agents=["editorial"],
     )
     artifact = await orchestrator.create_run(input_data)
 
@@ -356,7 +314,7 @@ async def test_downstream_context_excludes_synthetic_unmatched_excerpt_metadata(
     repository = InMemoryRunRepository()
     orchestrator = RunOrchestrator(
         repository,
-        ContaminatedContextAnalysisProvider(),
+        DistantCrossParagraphAnalysisProvider(),
         MockSimilaritySearchProvider(),
         MockContentExtractionProvider(),
         RuntimeMode.MOCK,
@@ -369,7 +327,7 @@ async def test_downstream_context_excludes_synthetic_unmatched_excerpt_metadata(
         source_label="Draft",
         title="Draft",
         text="Alpha paragraph.\n\nBeta paragraph.\n\nGamma paragraph.",
-        selected_agents=["value"],
+        selected_agents=["editorial"],
     )
     artifact = await orchestrator.create_run(input_data)
 
@@ -377,8 +335,8 @@ async def test_downstream_context_excludes_synthetic_unmatched_excerpt_metadata(
 
     updated = await repository.get_artifact(artifact.artifact_id)
     assert updated is not None
-    value_result = next(result for result in updated.agent_results if result.agent_id == "value")
-    payload = _result_context_payload(updated, value_result)
+    editorial_result = next(result for result in updated.agent_results if result.agent_id == "editorial")
+    payload = _result_context_payload(updated, editorial_result)
     assert "raw_output" not in payload
     finding_context = payload["findings"][0]
     assert finding_context["metadata"]["matched_to_source"] is False
@@ -460,15 +418,14 @@ async def test_completed_run_builds_review_summary_and_keeps_fact_check_out_of_t
     updated = await repository.get_artifact(artifact.artifact_id)
     assert updated is not None
     assert updated.review_summary is not None
+    assert updated.review_summary.tl_dr
     assert updated.review_summary.research_summary
+    assert updated.review_summary.word_count > 0
+    assert updated.review_summary.estimated_reading_time_minutes >= 1
+    assert updated.review_summary.main_claims
     assert updated.review_summary.overlap_items
     assert not any(
         comment.category.value == "fact_check"
-        for thread in updated.threads
-        for comment in thread.comments
-    )
-    assert not any(
-        comment.category.value == "audience"
         for thread in updated.threads
         for comment in thread.comments
     )
@@ -499,7 +456,7 @@ async def test_append_agents_reuses_existing_artifact_and_runs_only_missing_depe
     artifact = await orchestrator.create_run(input_data)
     await orchestrator.process_run(artifact.artifact_id, input_data)
 
-    queued_artifact, append_input = await orchestrator.append_agents(artifact.artifact_id, ["value"])
+    queued_artifact, append_input = await orchestrator.append_agents(artifact.artifact_id, ["editorial"])
     assert queued_artifact.status.value == "queued"
     assert append_input.mode is RunMode.APPEND_AGENTS
 
@@ -510,9 +467,9 @@ async def test_append_agents_reuses_existing_artifact_and_runs_only_missing_depe
     assert updated.status.value == "completed"
     assert updated.document is not None
     assert [result.agent_id for result in updated.agent_results].count("ai_likelihood") == 1
-    assert {result.agent_id for result in updated.agent_results} >= {"ai_likelihood", "fact_check", "value"}
-    assert updated.run_config.selected_agents == ["ai_likelihood", "value"]
-    assert updated.run_config.resolved_agents == ["ai_likelihood", "fact_check", "value"]
+    assert {result.agent_id for result in updated.agent_results} >= {"ai_likelihood", "fact_check", "editorial"}
+    assert updated.run_config.selected_agents == ["ai_likelihood", "editorial"]
+    assert updated.run_config.resolved_agents == ["ai_likelihood", "fact_check", "editorial"]
     assert any(event.message == "Additional analysis queued" for event in updated.events)
     assert any(event.message == "Additional analysis completed" for event in updated.events)
 
@@ -537,14 +494,14 @@ async def test_append_agents_can_schedule_new_agents_after_dependencies_already_
         source_label="Draft",
         title="Draft",
         text="Alpha paragraph.\n\nBeta paragraph.",
-        selected_agents=["ai_likelihood", "value"],
+        selected_agents=["fact_check"],
     )
     artifact = await orchestrator.create_run(input_data)
     await orchestrator.process_run(artifact.artifact_id, input_data)
 
     queued_artifact, append_input = await orchestrator.append_agents(
         artifact.artifact_id,
-        ["editorial", "synthesis"],
+        ["editorial"],
     )
     assert queued_artifact.status.value == "queued"
     assert append_input.mode is RunMode.APPEND_AGENTS
@@ -556,10 +513,8 @@ async def test_append_agents_can_schedule_new_agents_after_dependencies_already_
     assert updated.status.value == "completed"
     assert updated.document is not None
     assert {result.agent_id for result in updated.agent_results} >= {
-        "ai_likelihood",
         "fact_check",
-        "value",
+        "ai_likelihood",
         "editorial",
-        "synthesis",
     }
-    assert updated.run_config.selected_agents == ["ai_likelihood", "value", "editorial", "synthesis"]
+    assert updated.run_config.selected_agents == ["fact_check", "editorial"]

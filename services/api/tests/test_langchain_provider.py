@@ -51,8 +51,8 @@ async def test_langchain_provider_parses_structured_findings(monkeypatch: pytest
     monkeypatch.setattr(provider, "_build_runnable", lambda route: RunnableLambda(lambda _: _StructuredResponse()))
 
     findings = await provider.analyze(
-        "value",
-        "Analyze value",
+        "editorial",
+        "Analyze editorial issues",
         "Title",
         [ArtifactBlock(index=0, text="Alpha text")],
     )
@@ -99,8 +99,8 @@ async def test_langchain_provider_normalizes_parsed_wrapper_without_warnings(
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("error")
         payload = await provider.analyze(
-            "value",
-            "Analyze value",
+            "editorial",
+            "Analyze editorial issues",
             "Title",
             [ArtifactBlock(index=0, text="Alpha text")],
         )
@@ -141,8 +141,9 @@ def test_extract_usage_handles_missing_fields_in_model_entry() -> None:
 def test_agent_instructions_define_exact_excerpt_and_ellipsis_rules() -> None:
     """Keep excerpt and ellipsis guidance explicit in finding-producing agent prompts."""
 
-    for agent_id in ("editorial", "value", "audience", "ai_likelihood", "synthesis"):
+    for agent_id in ("editorial", "ai_likelihood"):
         instruction = load_instruction_text(get_agent_definition(agent_id))
+        assert "block_id" in instruction
         assert "word for word" in instruction
         assert "Use ellipses only" in instruction
         assert "more than 3 paragraphs" in instruction

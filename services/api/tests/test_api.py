@@ -322,6 +322,35 @@ def test_append_agents_queues_additional_analysis(monkeypatch: pytest.MonkeyPatc
         assert run_payload["run_config"]["selected_agents"] == ["ai_likelihood", "editorial"]
 
 
+def test_append_agents_rejects_completed_fact_check(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Refuse to rerun fact-check once it has already completed."""
+
+    monkeypatch.setattr("content_evaluation.api.main.build_services", lambda: AppServices(_mock_settings()))
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/runs",
+            json={
+                "source_type": "text",
+                "source_label": "Draft",
+                "title": "Draft",
+                "text": "This draft helps editors assess content.\n\nIt repeats itself in places.",
+                "selected_agents": ["fact_check"],
+            },
+        )
+        assert response.status_code == 200
+        run_id = response.json()["artifact_id"]
+        run_payload = _wait_for_run_completion(client, run_id)
+        assert {item["agent_id"] for item in run_payload["agent_results"]} >= {"fact_check"}
+
+        append_response = client.post(
+            f"/api/v1/runs/{run_id}/agents",
+            json={"selected_agents": ["fact_check"]},
+        )
+
+    assert append_response.status_code == 400
+    assert "No additional agents are available to run for this artifact." in append_response.text
+
+
 def test_append_agents_rejects_active_run(monkeypatch: pytest.MonkeyPatch) -> None:
     """Reject additive analysis while the artifact is still active."""
 

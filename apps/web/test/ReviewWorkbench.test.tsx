@@ -99,6 +99,13 @@ describe("ReviewWorkbench", () => {
     expect(screen.queryByTestId("review-summary-panel")).not.toBeInTheDocument();
   });
 
+  it("marks completed fact-check as already run in the agent selector", async () => {
+    render(<ReviewWorkbench initialArtifact={mockArtifact} />);
+
+    await waitFor(() => expect(screen.getByTestId("agent-toggle-fact_check")).toBeDisabled());
+    expect(screen.getByTestId("agent-lock-fact_check")).toHaveTextContent("Already run");
+  });
+
   it("cycles through partial findings in the running preview card", () => {
     vi.useFakeTimers();
     try {

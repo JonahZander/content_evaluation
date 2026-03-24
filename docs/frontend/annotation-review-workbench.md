@@ -93,6 +93,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Connector lines should stay subtle by default and bring forward the linked agent color on hover or focus.
 - When multiple agents or anchor ranges overlap on the same visible text, render one neutral highlight fill rather than layered color overlays.
 - Fact-check evidence should stay lightweight: one compact chip row or small stacked evidence block beside the paragraph, capped to a few links.
+- Completed fact-check should stay visible in the selector but show a clear `Already run` lock state instead of behaving like a generic disabled option.
 - Supported markdown rendering is intentionally narrow in v1:
   - headings
   - `strong`

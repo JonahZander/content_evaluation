@@ -30,6 +30,7 @@ interface ReviewToolbarProps {
   showNewAnalysis: boolean;
   analyzeButtonLabel: string;
   disabledAgentIds: string[];
+  lockedAgentIds: string[];
   importInputKey: number;
   showUrlImportGuidance: boolean;
   hasLoadedContent: boolean;
@@ -62,6 +63,7 @@ export function ReviewToolbar({
   showNewAnalysis,
   analyzeButtonLabel,
   disabledAgentIds,
+  lockedAgentIds,
   importInputKey,
   showUrlImportGuidance,
   hasLoadedContent,
@@ -135,6 +137,7 @@ export function ReviewToolbar({
       <div className={styles.agentSelector}>
         {agents.map((agent) => {
           const checked = formState.selectedAgents.includes(agent.agent_id);
+          const isLocked = lockedAgentIds.includes(agent.agent_id);
           return (
             <label key={agent.agent_id} className={styles.agentChip}>
               <input
@@ -152,6 +155,11 @@ export function ReviewToolbar({
                 }
               />
               <span>{agent.display_name}</span>
+              {isLocked ? (
+                <span className={styles.agentChipBadge} data-testid={`agent-lock-${agent.agent_id}`}>
+                  Already run
+                </span>
+              ) : null}
             </label>
           );
         })}

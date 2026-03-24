@@ -951,6 +951,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
               showNewAnalysis={false}
               analyzeButtonLabel={analyzeButtonLabel}
               disabledAgentIds={[...completedAgentIds]}
+              lockedAgentIds={completedAgentIds.has("fact_check") ? ["fact_check"] : []}
               importInputKey={importInputKey}
               showUrlImportGuidance={showUrlImportGuidance}
               hasLoadedContent={false}
@@ -1073,6 +1074,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
               showNewAnalysis={showNewAnalysis}
               analyzeButtonLabel={analyzeButtonLabel}
               disabledAgentIds={[...completedAgentIds]}
+              lockedAgentIds={completedAgentIds.has("fact_check") ? ["fact_check"] : []}
               importInputKey={importInputKey}
               showUrlImportGuidance={false}
               hasLoadedContent={true}

@@ -40,6 +40,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
    - Expand required dependencies
    - Topologically sort the dependency graph
    - Record agent plan items with execution status
+   - Completed fact-check stays visible in the UI as a locked option, but append-agents still filters it out so it cannot be rerun once an artifact has fact-check results
 6. Agent execution
   - Run independent agents in parallel through LangGraph nodes
   - Run dependent agents after prerequisites complete

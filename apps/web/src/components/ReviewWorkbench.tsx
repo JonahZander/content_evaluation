@@ -34,6 +34,7 @@ import {
   generateRevisedMarkdown,
   importArtifact,
   previewSource,
+  queueResearch,
   updateRevisedMarkdownDiffReview,
   updateHumanComment,
   updateReviewState,
@@ -43,6 +44,7 @@ import type {
   AnalysisArtifact,
   ArtifactEvent,
   ArtifactDocument,
+  ArtifactComment,
   ArtifactThread,
   ReviewState,
   RunStatus,
@@ -112,6 +114,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   const refreshInFlightRef = useRef<Promise<AnalysisArtifact> | null>(null);
   const queuedRefreshArtifactIdRef = useRef<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const [isQueuingResearch, setIsQueuingResearch] = useState(false);
 
   useEffect(() => {
     return () => {
@@ -365,6 +368,10 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     () => getWorkbenchPhase(artifact),
     [artifact],
   );
+  const followUpRunMode = useMemo(
+    () => getFollowUpRunMode(artifact),
+    [artifact],
+  );
   const isIntakePhase = workbenchPhase === "intake";
   const isRunningPhase = workbenchPhase === "running";
   const isReviewPhase = workbenchPhase === "review";
@@ -399,7 +406,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   const canExport = artifact !== null;
   const isTerminalArtifact = artifact !== null && TERMINAL_RUN_STATUSES.has(artifact.status);
   const showNewAnalysis = artifact !== null && isReviewPhase;
-  const isFollowUpRunInProgress = artifact !== null && isReviewPhase && canStopRun;
+  const isFollowUpRunInProgress = artifact !== null && isReviewPhase && canStopRun && followUpRunMode !== null;
+  const followUpRunLabel = followUpRunMode === "research" ? "Targeted research running" : "Additional analysis running";
+  const researchPromptSeed = useMemo(() => getSuggestedResearchPrompt(artifact), [artifact]);
   const completedAgentIds = useMemo(() => {
     if (artifact === null) {
       return new Set<string>();
@@ -452,7 +461,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     ? "Apply revised markdown first"
     : isReviewPhase
       ? isFollowUpRunInProgress
-        ? "Additional analysis running"
+        ? followUpRunLabel
         : "Add selected analysis"
       : "Analyze content";
   const latestResumeEvent = useMemo(
@@ -740,21 +749,71 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     }
   }
 
-  async function handleReply(commentId: string) {
+  async function handleReply(comment: ArtifactComment) {
     if (artifact === null) {
       return;
     }
-    const body = replyDrafts[commentId]?.trim();
+    const body = replyDrafts[comment.id]?.trim();
     if (!body) {
       return;
     }
+
+    dispatch({ type: "SET_IS_SUBMITTING", value: true });
     try {
-      await addReply(commentId, body);
-      await refreshArtifact(artifact.artifact_id);
-      dispatch({ type: "SET_REPLY_DRAFT", commentId, body: "" });
+      if (comment.category === "research") {
+        const updatedArtifact = await queueResearch({
+          artifactId: artifact.artifact_id,
+          prompt: body,
+          anchorId: comment.anchor_id,
+          commentId: comment.id,
+        });
+        dispatch({ type: "SET_ARTIFACT", artifact: updatedArtifact });
+        dispatch({ type: "SET_ACTIVE_ARTIFACT_ID", id: updatedArtifact.artifact_id });
+      } else {
+        await addReply(comment.id, body);
+        await refreshArtifact(artifact.artifact_id);
+      }
+      dispatch({ type: "SET_REPLY_DRAFT", commentId: comment.id, body: "" });
       dispatch({ type: "SET_ACTIVE_REPLY_COMPOSER", commentId: null });
+      dispatch({
+        type: "SET_STATUS_MESSAGE",
+        message: comment.category === "research" ? "Follow-up research queued" : "Comment saved",
+      });
     } catch (error) {
-      dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not save reply." });
+      dispatch({
+        type: "SET_STATUS_MESSAGE",
+        message: error instanceof Error ? error.message : "Could not save reply.",
+      });
+    } finally {
+      dispatch({ type: "SET_IS_SUBMITTING", value: false });
+    }
+  }
+
+  async function handleQueueResearch(prompt: string) {
+    if (artifact === null) {
+      return;
+    }
+    const trimmedPrompt = prompt.trim();
+    if (!trimmedPrompt) {
+      return;
+    }
+
+    setIsQueuingResearch(true);
+    try {
+      const updatedArtifact = await queueResearch({
+        artifactId: artifact.artifact_id,
+        prompt: trimmedPrompt,
+      });
+      dispatch({ type: "SET_ARTIFACT", artifact: updatedArtifact });
+      dispatch({ type: "SET_ACTIVE_ARTIFACT_ID", id: updatedArtifact.artifact_id });
+      dispatch({ type: "SET_STATUS_MESSAGE", message: "Targeted research queued" });
+    } catch (error) {
+      dispatch({
+        type: "SET_STATUS_MESSAGE",
+        message: error instanceof Error ? error.message : "Could not queue targeted research.",
+      });
+    } finally {
+      setIsQueuingResearch(false);
     }
   }
 
@@ -1096,7 +1155,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
             {artifact !== null && isFollowUpRunInProgress ? (
               <section className={styles.reviewInlineProgress} data-testid="follow-up-progress">
                 <div className={styles.reviewInlineProgressMeta}>
-                  <span className={styles.pill}>Additional analysis running</span>
+                  <span className={styles.pill}>{followUpRunLabel}</span>
                   <span className={styles.reviewInlineProgressStatus}>{artifact.status}</span>
                 </div>
                 <div
@@ -1123,6 +1182,15 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
               <RunMetrics summary={artifact.summary} />
             ) : null}
             <ReviewSummaryPanel reviewSummary={artifact?.review_summary ?? null} />
+            {artifact !== null ? (
+              <ResearchPanel
+                key={artifact.artifact_id}
+                initialPrompt={researchPromptSeed}
+                disabled={isSubmitting || isQueuingResearch || isFollowUpRunInProgress}
+                submitting={isSubmitting || isQueuingResearch}
+                onSubmit={handleQueueResearch}
+              />
+            ) : null}
             <section className={styles.analysisContextPanel}>
               <AgentUsageSummary
                 agentResults={artifact?.agent_results ?? []}
@@ -1214,6 +1282,61 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         ) : null}
       </div>
     </main>
+  );
+}
+
+function ResearchPanel({
+  initialPrompt,
+  disabled,
+  submitting,
+  onSubmit,
+}: {
+  initialPrompt: string;
+  disabled: boolean;
+  submitting: boolean;
+  onSubmit: (prompt: string) => void;
+}) {
+  const [prompt, setPrompt] = useState(initialPrompt);
+  const canSubmit = prompt.trim().length > 0 && !disabled && !submitting;
+
+  return (
+    <section className={styles.researchPanel} data-testid="research-panel">
+      <div className={styles.researchPanelHeader}>
+        <div className={styles.researchPanelHeaderText}>
+          <span className={styles.metricLabel}>Research</span>
+          <p className={styles.researchPanelCopy}>
+            Ask for a targeted follow-up while staying in the review shell.
+          </p>
+        </div>
+        <span className={styles.pill}>{initialPrompt ? "Suggested prompt loaded" : "Empty prompt"}</span>
+      </div>
+      <div className={styles.researchPanelBody}>
+        <textarea
+          className={styles.researchPromptInput}
+          aria-label="Research prompt"
+          rows={2}
+          value={prompt}
+          placeholder="Ask a targeted research question"
+          onChange={(event) => setPrompt(event.target.value)}
+        />
+        <div className={styles.researchPanelActions}>
+          <button
+            className={styles.button}
+            type="button"
+            onClick={() => onSubmit(prompt)}
+            disabled={!canSubmit}
+            data-testid="research-submit-button"
+          >
+            {submitting ? "Researching..." : "Research"}
+          </button>
+          <span className={styles.researchPanelHint}>
+            {initialPrompt
+              ? "Loaded from fact-check metadata when available."
+              : "Start from an empty prompt if no fact-check suggestion exists."}
+          </span>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -1583,22 +1706,51 @@ function getWorkbenchPhase(artifact: AnalysisArtifact | null): WorkbenchPhase {
   if (artifact.diff_review != null && !isRevisedMarkdownApplied(artifact)) {
     return "diff_review";
   }
-  if ((artifact.status === "queued" || artifact.status === "running") && !isAppendRun(artifact)) {
+  if ((artifact.status === "queued" || artifact.status === "running") && getFollowUpRunMode(artifact) === null) {
     return "running";
   }
   return "review";
 }
 
-function isAppendRun(artifact: AnalysisArtifact): boolean {
-  return artifact.events.some(
-    (event) => {
-      const metadata = event.metadata as { mode?: unknown };
-      return (
-        event.event_type === "run"
-        && (metadata.mode === "append_agents" || event.message.includes("Additional analysis"))
-      );
-    },
-  );
+type FollowUpRunMode = "append_agents" | "research";
+
+function getFollowUpRunMode(artifact: AnalysisArtifact | null): FollowUpRunMode | null {
+  if (artifact === null) {
+    return null;
+  }
+
+  for (const event of [...artifact.events].reverse()) {
+    if (event.event_type !== "run") {
+      continue;
+    }
+    const metadata = event.metadata as { mode?: unknown };
+    if (metadata.mode === "research") {
+      return "research";
+    }
+    if (metadata.mode === "append_agents" || event.message.includes("Additional analysis")) {
+      return "append_agents";
+    }
+  }
+
+  return null;
+}
+
+function getSuggestedResearchPrompt(artifact: AnalysisArtifact | null): string {
+  if (artifact === null) {
+    return "";
+  }
+
+  for (const result of artifact.agent_results) {
+    if (result.category !== "fact_check") {
+      continue;
+    }
+    const prompt = result.metadata?.suggested_research_prompt;
+    if (typeof prompt === "string" && prompt.trim().length > 0) {
+      return prompt.trim();
+    }
+  }
+
+  return "";
 }
 
 function hasFormDraft(formState: ReviewFormState): boolean {

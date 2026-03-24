@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from content_evaluation.api.dependencies import AppServices
 from content_evaluation.api.main import app
 from content_evaluation.config import Settings
+from content_evaluation.domain.models import RunMode
 
 
 def _mock_settings() -> Settings:
@@ -385,6 +386,70 @@ def test_append_agents_rejects_active_run(monkeypatch: pytest.MonkeyPatch) -> No
 
     assert append_response.status_code == 400
     assert "only available after a run has finished" in append_response.text
+
+
+def test_research_endpoint_queues_targeted_follow_up(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Queue targeted research and persist the prompt as a comment reply."""
+
+    services = AppServices(_mock_settings())
+    original_process_run = services.orchestrator.process_run
+
+    async def wrapped_process_run(artifact_id: object, input_data: object, **kwargs: object) -> None:
+        if getattr(input_data, "mode", None) is RunMode.RESEARCH:
+            await asyncio.sleep(0.2)
+        await original_process_run(artifact_id, input_data, **kwargs)
+
+    monkeypatch.setattr("content_evaluation.api.main.build_services", lambda: services)
+    monkeypatch.setattr(services.orchestrator, "process_run", wrapped_process_run)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/runs",
+            json={
+                "source_type": "text",
+                "source_label": "Draft",
+                "title": "Draft",
+                "text": "This draft helps editors assess content.\n\nIt repeats itself in places.",
+            },
+        )
+        assert response.status_code == 200
+        run_id = response.json()["artifact_id"]
+        run_payload = _wait_for_run_completion(client, run_id)
+        fact_check_comment = next(
+            comment
+            for thread in run_payload["threads"]
+            for comment in thread["comments"]
+            if comment["category"] == "fact_check"
+        )
+
+        research_response = client.post(
+            f"/api/v1/runs/{run_id}/research",
+            json={
+                "prompt": "Verify the primary claim in this section.",
+                "comment_id": fact_check_comment["id"],
+            },
+        )
+
+        assert research_response.status_code == 200
+        assert research_response.json()["status"] == "queued"
+
+        final_payload = _wait_for_run_completion(client, run_id)
+        research_comments = [
+            comment
+            for thread in final_payload["threads"]
+            for comment in thread["comments"]
+            if comment["category"] == "research"
+        ]
+        assert research_comments
+        assert any(result["agent_id"] == "research" for result in final_payload["agent_results"])
+        updated_fact_check_comment = next(
+            comment
+            for thread in final_payload["threads"]
+            for comment in thread["comments"]
+            if comment["id"] == fact_check_comment["id"]
+        )
+        assert updated_fact_check_comment["replies"]
+        assert updated_fact_check_comment["replies"][0]["body"] == "Verify the primary claim in this section."
 
 
 def test_api_returns_422_for_non_json_non_file_request(monkeypatch: pytest.MonkeyPatch) -> None:

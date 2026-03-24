@@ -76,7 +76,7 @@ interface DocumentPaneProps {
   editingBody: string;
   onReplyDraftChange: (commentId: string, value: string) => void;
   onToggleReplyComposer: (commentId: string) => void;
-  onAddReply: (commentId: string) => void;
+  onAddReply: (comment: ArtifactComment) => void;
   onDeleteReply: (replyId: string) => void;
   onReviewState: (commentId: string, state: ReviewState) => void;
   onStartEditing: (commentId: string, body: string) => void;
@@ -407,7 +407,7 @@ function ThreadCards({
   onHoverAnchor: (anchorId: string | null) => void;
   onReplyDraftChange: (commentId: string, value: string) => void;
   onToggleReplyComposer: (commentId: string) => void;
-  onAddReply: (commentId: string) => void;
+  onAddReply: (comment: ArtifactComment) => void;
   onDeleteReply: (replyId: string) => void;
   onReviewState: (commentId: string, state: ReviewState) => void;
   onStartEditing: (commentId: string, body: string) => void;
@@ -428,6 +428,7 @@ function ThreadCards({
           const isEditing = editingCommentId === comment.id;
           const isReplyComposerOpen = activeReplyComposerId === comment.id;
           const isAgentComment = comment.author_type === "agent";
+          const isResearchComment = comment.category === "research";
           const factCheckDetails = comment.category === "fact_check" ? getFactCheckDetails(comment.metadata) : null;
           return (
             <article
@@ -525,7 +526,7 @@ function ThreadCards({
                     type="button"
                     onClick={() => onToggleReplyComposer(comment.id)}
                   >
-                    {isReplyComposerOpen ? "Cancel comment" : "Add comment"}
+                    {isReplyComposerOpen ? (isResearchComment ? "Cancel follow-up" : "Cancel comment") : (isResearchComment ? "Ask follow-up" : "Add comment")}
                   </button>
                 </div>
               ) : !isEditing ? (
@@ -580,15 +581,15 @@ function ThreadCards({
                       data-testid={`reply-input-${comment.id}`}
                       value={replyDrafts[comment.id] ?? ""}
                       onChange={(event) => onReplyDraftChange(comment.id, event.target.value)}
-                      placeholder="Add a comment on this note"
+                      placeholder={isResearchComment ? "Ask a follow-up question about this finding" : "Add a comment on this note"}
                     />
                     <button
                       className={styles.button}
                       data-testid={`reply-submit-${comment.id}`}
                       type="button"
-                      onClick={() => onAddReply(comment.id)}
+                      onClick={() => onAddReply(comment)}
                     >
-                      Save comment
+                      {isResearchComment ? "Save follow-up" : "Save comment"}
                     </button>
                   </div>
                 ) : null}

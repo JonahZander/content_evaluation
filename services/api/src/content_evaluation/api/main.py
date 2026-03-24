@@ -29,6 +29,7 @@ from content_evaluation.api.schemas import (
     CreateRunRequest,
     ImportArtifactRequest,
     PreviewSourceRequest,
+    ResearchRequest,
     UpdateCommentRequest,
     UpdateDiffReviewRequest,
     UpdateReviewStateRequest,
@@ -151,6 +152,27 @@ async def append_agents(
     """Queue additional agent analysis for one existing artifact."""
 
     artifact, input_data = await services.orchestrator.append_agents(run_id, request.selected_agents)
+    await services.repository.enqueue_run_job(RunJob(artifact_id=artifact.artifact_id, input_data=input_data))
+    return artifact
+
+
+@app.post("/api/v1/runs/{run_id}/research")
+async def queue_targeted_research(
+    run_id: UUID,
+    request: ResearchRequest,
+    services: ServicesDependency,
+    comments: CommentServiceDependency,
+) -> AnalysisArtifact:
+    """Queue targeted research for one existing artifact."""
+
+    artifact, input_data = await services.orchestrator.research(
+        run_id,
+        request.prompt,
+        anchor_id=request.anchor_id,
+        comment_id=request.comment_id,
+    )
+    if request.comment_id is not None:
+        await comments.add_reply(request.comment_id, request.prompt)
     await services.repository.enqueue_run_job(RunJob(artifact_id=artifact.artifact_id, input_data=input_data))
     return artifact
 

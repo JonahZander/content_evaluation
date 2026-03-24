@@ -31,6 +31,7 @@ vi.mock("@/lib/api", () => ({
   importArtifact: vi.fn(),
   createComment: vi.fn().mockResolvedValue(undefined),
   addReply: vi.fn().mockResolvedValue(undefined),
+  queueResearch: vi.fn().mockResolvedValue(undefined),
   deleteReply: vi.fn().mockResolvedValue(undefined),
   updateReviewState: vi.fn().mockResolvedValue(undefined),
   updateHumanComment: vi.fn().mockResolvedValue(undefined),
@@ -65,6 +66,7 @@ beforeEach(() => {
   vi.mocked(api.fetchArtifact).mockResolvedValue(mockArtifact);
   vi.mocked(api.previewSource).mockResolvedValue(mockArtifact.document!);
   vi.mocked(api.appendAgents).mockResolvedValue(mockArtifact);
+  vi.mocked(api.queueResearch).mockResolvedValue(mockArtifact);
   vi.mocked(api.cancelRun).mockResolvedValue({ ...mockArtifact, status: "canceled" });
   vi.mocked(api.generateRevisedMarkdown).mockResolvedValue(buildArtifactWithDiffReview());
   vi.mocked(api.updateRevisedMarkdownDiffReview).mockResolvedValue(buildArtifactWithReviewedDiffs());
@@ -130,6 +132,34 @@ describe("ReviewWorkbench", () => {
     expect(screen.getByTestId("follow-up-progress")).toBeInTheDocument();
     expect(screen.queryByTestId("running-stage-panel")).not.toBeInTheDocument();
     expect(screen.queryByTestId("review-summary-panel")).not.toBeInTheDocument();
+  });
+
+  it("renders the research panel with a suggested prompt fallback", () => {
+    const { unmount } = render(<ReviewWorkbench initialArtifact={mockArtifact} />);
+
+    expect(screen.getByTestId("research-panel")).toBeInTheDocument();
+    expect(screen.getByLabelText("Research prompt")).toHaveValue(
+      "Research recent statistics on editorial review workflows to strengthen the opening claim.",
+    );
+
+    unmount();
+
+    const artifactWithoutPrompt = structuredClone(mockArtifact);
+    artifactWithoutPrompt.agent_results = artifactWithoutPrompt.agent_results.filter(
+      (result) => result.category !== "fact_check",
+    );
+    render(<ReviewWorkbench initialArtifact={artifactWithoutPrompt} />);
+
+    expect(screen.getByLabelText("Research prompt")).toHaveValue("");
+  });
+
+  it("keeps research mode in the review shell with inline progress", () => {
+    render(<ReviewWorkbench initialArtifact={buildResearchRunningArtifact()} />);
+
+    expect(screen.getByTestId("review-workbench")).toBeInTheDocument();
+    expect(screen.getByTestId("follow-up-progress")).toBeInTheDocument();
+    expect(within(screen.getByTestId("follow-up-progress")).getByText("Targeted research running")).toBeInTheDocument();
+    expect(screen.queryByTestId("running-stage-panel")).not.toBeInTheDocument();
   });
 
   it("isolates diff review from the rest of the workbench", () => {
@@ -711,6 +741,37 @@ describe("ReviewWorkbench", () => {
     expect(screen.getByRole("button", { name: "Save comment" })).toBeInTheDocument();
   });
 
+  it("uses the follow-up action path for research comments", async () => {
+    const artifact = buildResearchCommentArtifact();
+    vi.mocked(api.queueResearch).mockResolvedValueOnce(mockArtifact);
+
+    render(<ReviewWorkbench initialArtifact={artifact} />);
+
+    expect(screen.getByTestId("reply-toggle-comment-research-1")).toHaveTextContent("Ask follow-up");
+    fireEvent.click(screen.getByTestId("reply-toggle-comment-research-1"));
+
+    expect(screen.getByTestId("reply-input-comment-research-1")).toHaveAttribute(
+      "placeholder",
+      "Ask a follow-up question about this finding",
+    );
+    expect(screen.getByRole("button", { name: "Save follow-up" })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId("reply-input-comment-research-1"), {
+      target: { value: "What recent data supports this?" },
+    });
+    fireEvent.click(screen.getByTestId("reply-submit-comment-research-1"));
+
+    await waitFor(() =>
+      expect(api.queueResearch).toHaveBeenCalledWith({
+        artifactId: artifact.artifact_id,
+        prompt: "What recent data supports this?",
+        anchorId: "anchor-research-1",
+        commentId: "comment-research-1",
+      }),
+    );
+    expect(api.addReply).not.toHaveBeenCalled();
+  });
+
   it("renders one thread across adjacent source blocks with continuation highlights", () => {
     const artifact = buildMultiBlockArtifact();
 
@@ -1115,6 +1176,59 @@ function buildFollowUpRunningArtifact(): AnalysisArtifact {
         mode: "append_agents",
         append_agent_ids: ["editorial"],
       },
+    },
+  ];
+  return artifact;
+}
+
+function buildResearchRunningArtifact(): AnalysisArtifact {
+  const artifact = buildFollowUpRunningArtifact();
+  artifact.events = artifact.events.map((event) =>
+    event.id === "event-follow-up-queued"
+      ? {
+          ...event,
+          metadata: {
+            mode: "research",
+            anchor_id: "anchor-research-1",
+          },
+        }
+      : event,
+  );
+  return artifact;
+}
+
+function buildResearchCommentArtifact(): AnalysisArtifact {
+  const artifact = structuredClone(mockArtifact);
+  const anchor: ArtifactThread["anchor"] = {
+    id: "anchor-research-1",
+    block_id: "block-2",
+    start_offset: 4,
+    end_offset: 89,
+    quote: "strongest value of this draft is that it turns vague editorial instincts into a review workflow",
+    match_kind: "source",
+    segments: [{ block_id: "block-2", start_offset: 4, end_offset: 89 }],
+  };
+  artifact.anchors = [...artifact.anchors, anchor];
+  artifact.threads = [
+    ...artifact.threads,
+    {
+      anchor,
+      comments: [
+        {
+          id: "comment-research-1",
+          artifact_id: artifact.artifact_id,
+          anchor_id: "anchor-research-1",
+          author_type: "agent",
+          author_label: "research agent",
+          category: "research",
+          body: "This finding could use a sharper follow-up question.",
+          suggestion: null,
+          review_state: "unreviewed",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          replies: [],
+        },
+      ],
     },
   ];
   return artifact;

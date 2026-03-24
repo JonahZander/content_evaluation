@@ -199,6 +199,21 @@ Legacy claim summary shape retained for compatibility with older exports and imp
 | `official_source_links` | `list[str]` | Preferred primary or official supporting links. |
 | `related_post_links` | `list[str]` | Related-post links tied to the claim/topic. |
 
+## RunInput
+
+The queued request payload used by the worker and API routes.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `mode` | `RunMode` | `create`, `append_agents`, or `research`. |
+| `prompt` | `str \| None` | Targeted research prompt used by `POST /api/v1/runs/{run_id}/research`. |
+| `anchor_id` | `str \| None` | Optional anchor identifier for scoping targeted research. |
+| `comment_id` | `str \| None` | Optional comment identifier; when present, the follow-up prompt is stored as a reply before the research job is queued. |
+| `selected_agents` | `list[str]` | Agent ids for the queued run. Research uses the dedicated non-selectable `research` agent. |
+
+- `AgentCategory.research` is used for threaded targeted-research findings.
+- Research runs append to the existing artifact and do not replace previous fact-check findings.
+
 ## Revised Markdown Contracts
 
 - `ArtifactRevisedDocument` stores the generated candidate markdown plus the accepted comment ids that informed it.

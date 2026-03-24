@@ -78,14 +78,28 @@ class LiveDeepResearchProvider:
         }
 
     async def fact_check(self, brief: str, article_text: str) -> dict[str, object]:
-        """Run multi-step research and return structured findings.
-
-        brief + article_text are combined into the research brief and injected
-        directly into state, bypassing the write_research_brief LLM node.
-        The graph's final_report_generation_prompt outputs structured JSON directly.
-        """
+        """Run multi-step research and return structured findings."""
 
         full_brief = f"{brief}\n\nORIGINAL ARTICLE:\n{article_text[:4000]}"
+        return await self._invoke_graph(full_brief, article_text)
+
+    async def research(self, prompt: str, article_text: str) -> dict[str, object]:
+        """Run prompt-scoped targeted research and return structured findings."""
+
+        full_brief = (
+            f"TARGETED FOLLOW-UP RESEARCH\n"
+            f"User prompt: {prompt}\n\n"
+            f"{article_text[:4000]}"
+        )
+        parsed = await self._invoke_graph(full_brief, article_text)
+        metadata = parsed.get("metadata")
+        if isinstance(metadata, dict) and "suggested_research_prompt" not in metadata:
+            metadata["suggested_research_prompt"] = prompt
+        return parsed
+
+    async def _invoke_graph(self, full_brief: str, article_text: str) -> dict[str, object]:
+        """Run the vendored graph and coerce its response into JSON."""
+
         graph = deep_researcher_builder.compile(checkpointer=MemorySaver())
         usage_handler = UsageMetadataCallbackHandler()
         config: dict[str, object] = {

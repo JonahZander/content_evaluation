@@ -23,6 +23,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
    - Cancels queued or active jobs when the user stops a run
    - Routes each job through one of three execution paths:
      - append-agent runs reuse the existing normalized document and only execute newly requested agents
+     - targeted research runs reuse the existing normalized document, keep the artifact in the review phase, and append a new `research` thread category
      - `langgraph` runs start or resume LangGraph execution from the latest stored checkpoint
      - `legacy` runs execute the older batch loop without LangGraph checkpoints
 4. Normalization
@@ -58,6 +59,8 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
   - Build both score-oriented `summary` data and narrative `review_summary` data
   - Thread `AgentExecutionResult.usage` into `ArtifactAgentResult.metadata` so token counts are available to the frontend without re-querying backend state
   - Fact-check findings become normal comment-rail threads and carry structured claim metadata (`claim_text`, `verdict`, `evidence_summary`, source links, and related research links) on each comment
+  - Targeted research findings also become normal comment-rail threads, but use the distinct `research` category and append to any prior fact-check findings instead of replacing them
+  - Fact-check metadata exposes a suggested research prompt so the research panel can seed follow-up work without a separate suggestion-only pass
   - Resolve comment anchors against normalized block text, preferring exact matches inside the referenced `block_id` and using a bounded within-block fuzzy fallback only for near-miss quotes
   - Treat ellipsis excerpts as ordered fragments across one source block or a bounded window of adjacent source blocks instead of collapsing them into one normalized string
   - Represent resolved anchors as ordered block-local segments so one finding can span multiple adjacent paragraphs
@@ -146,6 +149,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 - `GET /api/v1/runs/{run_id}`
 - `POST /api/v1/runs/{run_id}/cancel`
 - `POST /api/v1/runs/{run_id}/revised-markdown`
+- `POST /api/v1/runs/{run_id}/research`
 - `PATCH /api/v1/runs/{run_id}/revised-markdown/diff-review`
 - `POST /api/v1/runs/{run_id}/revised-markdown/apply`
 - `GET /api/v1/runs/{run_id}/events`

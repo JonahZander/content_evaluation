@@ -20,6 +20,7 @@ from content_evaluation.services.normalization import build_fact_check_brief
 
 def test_fact_check_category_exists():
     assert AgentCategory.FACT_CHECK == "fact_check"
+    assert AgentCategory.RESEARCH == "research"
 
 
 def test_deep_research_provider_kind_exists():
@@ -91,6 +92,16 @@ async def test_mock_provider_returns_summary_and_sources():
     assert isinstance(result["metadata"]["official_source_links"], list)
     assert isinstance(result["metadata"]["related_post_links"], list)
     assert isinstance(result["main_claims"], list)
+    assert isinstance(result["metadata"]["suggested_research_prompt"], str)
+
+
+@pytest.mark.asyncio
+async def test_mock_provider_targeted_research_returns_valid_findings():
+    result = await MockDeepResearchProvider().research("Check the lead claim.", "Some article text.")
+    assert isinstance(result["claim_findings"], list)
+    assert isinstance(result["findings"], list)
+    assert result["metadata"]["targeted_prompt"] == "Check the lead claim."
+    assert isinstance(result["metadata"]["suggested_research_prompt"], str)
 
 
 from content_evaluation.agents.registry import get_agent_definition, load_instruction_text
@@ -124,6 +135,10 @@ def test_fact_check_dependency_graph_is_current() -> None:
         get_agent_definition("audience")
     with pytest.raises(KeyError):
         get_agent_definition("synthesis")
+    research_defn = get_agent_definition("research")
+    assert research_defn.selectable is False
+    assert research_defn.default_enabled is False
+    assert research_defn.category is AgentCategory.RESEARCH
 
 
 @pytest.mark.asyncio
@@ -164,6 +179,39 @@ async def test_live_deep_research_provider_attaches_usage_handler(monkeypatch: p
 
     prov = LiveDeepResearchProvider(Settings(openai_api_key="key", tavily_api_key="key"))
     await prov.fact_check("brief", "text")
+
+    assert len(captured) == 1, "ainvoke was not called"
+    callbacks = captured[0].get("callbacks", [])
+    assert any(
+        isinstance(cb, UsageMetadataCallbackHandler) for cb in callbacks
+    ), "UsageMetadataCallbackHandler not found in config['callbacks']"
+
+
+@pytest.mark.asyncio
+async def test_live_deep_research_provider_research_attaches_usage_handler(monkeypatch: pytest.MonkeyPatch) -> None:
+    """LiveDeepResearchProvider.research must also attach a UsageMetadataCallbackHandler."""
+
+    from langchain_core.callbacks import UsageMetadataCallbackHandler
+
+    import content_evaluation.providers.deep_research.provider as dr_module
+    from content_evaluation.config import Settings
+    from content_evaluation.providers.deep_research.provider import LiveDeepResearchProvider
+
+    captured: list[dict] = []
+
+    class FakeGraph:
+        async def ainvoke(self, input_: object, config: dict) -> dict:
+            captured.append(config)
+            return {"final_report": '{"findings": [], "summary": "ok", "metadata": {}}'}
+
+    class FakeBuilder:
+        def compile(self, **_: object) -> FakeGraph:
+            return FakeGraph()
+
+    monkeypatch.setattr(dr_module, "deep_researcher_builder", FakeBuilder())
+
+    prov = LiveDeepResearchProvider(Settings(openai_api_key="key", tavily_api_key="key"))
+    await prov.research("brief", "text")
 
     assert len(captured) == 1, "ainvoke was not called"
     callbacks = captured[0].get("callbacks", [])

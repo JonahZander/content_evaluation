@@ -292,6 +292,72 @@ class RunOrchestrator:
             )
             return artifact, input_data
 
+    async def research(
+        self,
+        artifact_id: UUID,
+        prompt: str,
+        *,
+        anchor_id: str | None = None,
+        comment_id: str | None = None,
+    ) -> tuple[AnalysisArtifact, RunInput]:
+        """Queue targeted follow-up research on an existing artifact."""
+
+        clean_prompt = prompt.strip()
+        if not clean_prompt:
+            raise ValidationError("Provide a research prompt.")
+
+        async with self._artifact_lock(artifact_id):
+            artifact = await self._require_artifact(artifact_id)
+            if artifact.status not in {RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELED}:
+                raise ValidationError("Targeted research is only available after a run has finished.")
+            if artifact.document is None:
+                raise ValidationError("Artifact must include a normalized document before adding research.")
+
+            research_definition = get_agent_definition("research")
+            resolved_anchor_id = _resolve_research_target_anchor_id(
+                artifact,
+                anchor_id=anchor_id,
+                comment_id=comment_id,
+            )
+            plan_item = _ensure_research_plan_item(artifact, research_definition)
+            plan_item.status = AgentPlanStatus.PENDING
+            plan_item.started_at = None
+            plan_item.completed_at = None
+            plan_item.model_name = None
+            plan_item.message = "Queued for targeted research"
+            artifact.status = RunStatus.QUEUED
+            artifact.error_message = None
+            await self._append_event(
+                artifact,
+                EventType.RUN,
+                "run",
+                "queued",
+                "Targeted research queued",
+                progress=_progress_for_artifact(artifact),
+                snapshot_available=True,
+                metadata={
+                    "mode": RunMode.RESEARCH.value,
+                    "prompt": clean_prompt,
+                    "anchor_id": resolved_anchor_id,
+                    "comment_id": comment_id,
+                },
+            )
+
+            input_data = RunInput(
+                mode=RunMode.RESEARCH,
+                source_type=artifact.source.source_type,
+                source_label=artifact.source.source_label,
+                title=artifact.document.title if artifact.document is not None else artifact.source.title,
+                url=artifact.source.url,
+                prompt=clean_prompt,
+                anchor_id=resolved_anchor_id,
+                comment_id=comment_id,
+                selected_agents=[research_definition.agent_id],
+                persistence_mode=artifact.run_config.persistence_mode,
+                include_debug_trace=artifact.run_config.include_debug_trace,
+            )
+            return artifact, input_data
+
     async def import_artifact(self, artifact: AnalysisArtifact) -> AnalysisArtifact:
         """Persist one imported artifact."""
 
@@ -470,6 +536,11 @@ class RunOrchestrator:
                     artifact_id, input_data, attempt=attempt, max_attempts=max_attempts
                 )
                 return
+            if input_data.mode is RunMode.RESEARCH:
+                await self._process_research(
+                    artifact_id, input_data, attempt=attempt, max_attempts=max_attempts
+                )
+                return
             if self._orchestrator_backend is OrchestratorBackend.LANGGRAPH:
                 await self._process_run_with_langgraph(
                     artifact_id, input_data, attempt=attempt, max_attempts=max_attempts
@@ -560,6 +631,163 @@ class RunOrchestrator:
                 error,
                 progress=1.0,
                 mode=RunMode.APPEND_AGENTS,
+            )
+            raise
+
+    async def _process_research(
+        self,
+        artifact_id: UUID,
+        input_data: RunInput,
+        *,
+        attempt: int,
+        max_attempts: int | None,
+    ) -> None:
+        """Process one queued targeted-research job without re-extracting the source."""
+
+        artifact = await self._require_artifact(artifact_id)
+        if artifact.document is None:
+            raise ValidationError("Artifact document is missing")
+        if self._deep_research_provider is None:
+            raise ValidationError(
+                "Targeted research requires a deep research provider. "
+                "Ensure CONTENT_EVAL_OPENAI_API_KEY and CONTENT_EVAL_TAVILY_API_KEY are set for live mode."
+            )
+
+        research_definition = get_agent_definition("research")
+        plan_item = _ensure_research_plan_item(artifact, research_definition)
+        target_anchor_id = _resolve_research_target_anchor_id(
+            artifact,
+            anchor_id=input_data.anchor_id,
+            comment_id=input_data.comment_id,
+        )
+
+        artifact.status = RunStatus.RUNNING
+        artifact.error_message = None
+        if attempt > 1:
+            await self._append_event(
+                artifact,
+                EventType.RUN,
+                "run",
+                "resumed",
+                "Targeted research resumed after worker retry",
+                progress=_progress_for_artifact(artifact),
+                snapshot_available=True,
+                attempt=attempt,
+                max_attempts=max_attempts,
+                metadata={"mode": RunMode.RESEARCH.value},
+            )
+        await self._append_event(
+            artifact,
+            EventType.RUN,
+            "run",
+            "started",
+            "Targeted research started",
+            snapshot_available=True,
+            attempt=attempt,
+            max_attempts=max_attempts,
+            metadata={
+                "mode": RunMode.RESEARCH.value,
+                "prompt": input_data.prompt,
+                "anchor_id": target_anchor_id,
+                "comment_id": input_data.comment_id,
+            },
+        )
+
+        try:
+            await self._ensure_run_active(artifact_id)
+            article_text = "\n\n".join(block.text for block in artifact.document.blocks if block.text)
+            brief = _build_targeted_research_brief(
+                load_instruction_text(research_definition),
+                artifact.document,
+                input_data.prompt or "",
+                target_anchor_id=target_anchor_id,
+            )
+            raw_output = await self._deep_research_provider.research(brief, article_text)
+            claim_findings = _normalize_fact_check_claims(raw_output)
+            if not claim_findings:
+                raw_findings = raw_output.get("findings", [])
+                if isinstance(raw_findings, list):
+                    claim_findings = _fallback_fact_check_claims(raw_findings)
+            if not claim_findings:
+                raise ValidationError("Agent research returned an invalid findings payload")
+
+            meta = raw_output.get("metadata")
+            metadata = meta if isinstance(meta, dict) else {}
+            dr_usage = _extract_usage_from_metadata(metadata)
+            research_summary = _fact_check_research_summary(raw_output)
+            result = AgentExecutionResult(
+                definition=research_definition,
+                raw_output=raw_output,
+                findings=[
+                    FindingPayload(
+                        excerpt=item["anchor_excerpt"],
+                        rationale=item["evidence_summary"],
+                        confidence=item["confidence"],
+                        suggestion=item["suggestion"],
+                        sources=list(item["source_links"]),
+                        metadata={
+                            "claim_text": item["claim_text"],
+                            "verdict": item["verdict"],
+                            "evidence_summary": item["evidence_summary"],
+                            "source_links": list(item["source_links"]),
+                            "anchor_excerpt": item["anchor_excerpt"],
+                            "value_add": item["value_add"],
+                            "official_source_links": list(item["official_source_links"]),
+                            "related_post_links": list(item["related_post_links"]),
+                        },
+                    )
+                    for item in claim_findings
+                ],
+                summary=research_summary,
+                metadata={
+                    **metadata,
+                    "research_summary": research_summary,
+                    "target_anchor_id": target_anchor_id,
+                    "target_comment_id": input_data.comment_id,
+                    "prompt": input_data.prompt,
+                },
+                model_name=self._deep_research_provider.model_name,
+                usage=dr_usage,
+            )
+            await self._merge_agent_result(
+                artifact,
+                result,
+                replace_existing_results=False,
+                anchor_override_id=target_anchor_id,
+            )
+
+            await self._ensure_run_active(artifact_id)
+            artifact.summary = _build_summary(artifact)
+            artifact.review_summary = _build_review_summary(artifact)
+            artifact.status = RunStatus.COMPLETED
+            plan_item.message = "Agent completed"
+            await self._append_event(
+                artifact,
+                EventType.RUN,
+                "run",
+                "completed",
+                "Targeted research completed",
+                progress=1.0,
+                snapshot_available=True,
+                metadata={
+                    "mode": RunMode.RESEARCH.value,
+                    "prompt": input_data.prompt,
+                    "anchor_id": target_anchor_id,
+                    "comment_id": input_data.comment_id,
+                },
+            )
+        except RunCancelledError:
+            artifact = await self._require_artifact(artifact_id)
+            artifact.status = RunStatus.CANCELED
+            await self._repository.update_artifact(artifact)
+        except Exception as error:
+            artifact.status = RunStatus.FAILED
+            artifact.error_message = str(error)
+            await self._append_run_failed_event(
+                artifact,
+                error,
+                progress=1.0,
+                mode=RunMode.RESEARCH,
             )
             raise
 
@@ -1123,6 +1351,9 @@ class RunOrchestrator:
             research_summary = _fact_check_research_summary(raw_output)
             tl_dr = _coerce_str(raw_output.get("tl_dr")) or _coerce_str(raw_output.get("tldr"))
             main_claims = _coerce_dict_list(raw_output.get("main_claims"))
+            suggested_research_prompt = _coerce_str(metadata.get("suggested_research_prompt")) or _suggest_research_prompt(
+                claim_findings[0]["claim_text"] if claim_findings else ""
+            )
             findings = [
                 FindingPayload(
                     excerpt=item["anchor_excerpt"],
@@ -1154,6 +1385,7 @@ class RunOrchestrator:
                     "overlap_items": overlap_items,
                     "tl_dr": tl_dr,
                     "main_claims": main_claims,
+                    "suggested_research_prompt": suggested_research_prompt,
                     "inferred_audience": _coerce_str(metadata.get("audience"))
                     or _coerce_str(raw_output.get("inferred_audience")),
                 },
@@ -1222,7 +1454,14 @@ class RunOrchestrator:
 
         raise ProviderError("Agent retry loop exited unexpectedly", kind="provider_error")
 
-    async def _merge_agent_result(self, artifact: AnalysisArtifact, result: AgentExecutionResult) -> None:
+    async def _merge_agent_result(
+        self,
+        artifact: AnalysisArtifact,
+        result: AgentExecutionResult,
+        *,
+        replace_existing_results: bool = True,
+        anchor_override_id: str | None = None,
+    ) -> None:
         """Merge one completed agent result into the artifact snapshot."""
 
         if artifact.document is None:
@@ -1236,11 +1475,16 @@ class RunOrchestrator:
         resolved_findings: list[AgentFinding] = []
         for finding in result.findings:
             cleaned_excerpt = sanitize_excerpt(finding.excerpt) or finding.excerpt.strip().strip('"')
-            anchor = _resolve_anchor(
-                artifact,
-                cleaned_excerpt,
-                block_id=getattr(finding, "block_id", None),
-            )
+            if anchor_override_id is not None:
+                anchor = next((item for item in artifact.anchors if item.id == anchor_override_id), None)
+                if anchor is None:
+                    raise ValidationError(f"Anchor {anchor_override_id} not found")
+            else:
+                anchor = _resolve_anchor(
+                    artifact,
+                    cleaned_excerpt,
+                    block_id=getattr(finding, "block_id", None),
+                )
             resolved = AgentFinding(
                 category=result.definition.category,
                 agent_name=result.definition.agent_id,
@@ -1262,9 +1506,10 @@ class RunOrchestrator:
             if _should_create_thread_for_agent(result.definition):
                 _append_agent_comment(artifact, resolved, artifact.artifact_id, result.definition.display_name)
 
-        artifact.agent_results = [
-            item for item in artifact.agent_results if item.agent_id != result.definition.agent_id
-        ]
+        if replace_existing_results:
+            artifact.agent_results = [
+                item for item in artifact.agent_results if item.agent_id != result.definition.agent_id
+            ]
         agent_metadata = dict(result.metadata)
         if result.usage is not None:
             agent_metadata["usage"] = result.usage
@@ -1549,6 +1794,28 @@ def _build_deep_research_brief(instruction: str, document: ArtifactDocument) -> 
     return f"{instruction}\n\n{brief}"
 
 
+def _build_targeted_research_brief(
+    instruction: str,
+    document: ArtifactDocument,
+    prompt: str,
+    *,
+    target_anchor_id: str | None = None,
+) -> str:
+    """Combine a targeted prompt with the article context for follow-up research."""
+
+    prompt_line = prompt.strip() or "Investigate the article's strongest factual claim."
+    lines = [
+        instruction,
+        "",
+        "TARGETED RESEARCH REQUEST:",
+        prompt_line,
+    ]
+    if target_anchor_id is not None:
+        lines.extend(["Target anchor id:", target_anchor_id])
+    lines.extend(["", build_fact_check_brief(document.title, document.blocks)])
+    return "\n".join(lines)
+
+
 def _source_message(extracted: ExtractedContent) -> str:
     """Describe how source content was resolved."""
 
@@ -1686,6 +1953,7 @@ def _should_create_thread_for_agent(definition: AgentDefinition) -> bool:
         AgentCategory.AI_LIKELIHOOD,
         AgentCategory.EDITORIAL,
         AgentCategory.FACT_CHECK,
+        AgentCategory.RESEARCH,
     }
 
 
@@ -2306,7 +2574,15 @@ def _result_context_payload(artifact: AnalysisArtifact, result: ArtifactAgentRes
         "metadata": {
             key: value
             for key, value in result.metadata.items()
-            if key in {"research_summary", "overlap_items", "usage", "instruction_file", "context_keys"}
+            if key
+            in {
+                "research_summary",
+                "overlap_items",
+                "usage",
+                "instruction_file",
+                "context_keys",
+                "suggested_research_prompt",
+            }
         },
     }
     serialized_findings: list[dict[str, object]] = []
@@ -2424,3 +2700,58 @@ def _structural_completeness_from_metadata(metadata: dict[str, object]) -> Artif
         has_headings=bool(raw.get("has_headings")),
         has_conclusion=bool(raw.get("has_conclusion")),
     )
+
+
+def _ensure_research_plan_item(
+    artifact: AnalysisArtifact,
+    definition: AgentDefinition,
+) -> ArtifactAgentPlanItem:
+    """Create or reset the targeted research plan item."""
+
+    existing = next((item for item in artifact.agent_plan if item.agent_id == definition.agent_id), None)
+    if existing is not None:
+        return existing
+    plan_item = _build_plan_item(definition)
+    artifact.agent_plan.append(plan_item)
+    return plan_item
+
+
+def _resolve_research_target_anchor_id(
+    artifact: AnalysisArtifact,
+    *,
+    anchor_id: str | None,
+    comment_id: str | None,
+) -> str | None:
+    """Resolve the target anchor for one targeted research request."""
+
+    resolved_anchor_id = anchor_id
+    if comment_id is not None:
+        comment = _find_comment_in_artifact(artifact, comment_id)
+        if comment is None:
+            raise ValidationError(f"Comment {comment_id} not found")
+        if resolved_anchor_id is not None and resolved_anchor_id != comment.anchor_id:
+            raise ValidationError("comment_id and anchor_id must reference the same thread")
+        resolved_anchor_id = comment.anchor_id
+
+    if resolved_anchor_id is not None and not any(anchor.id == resolved_anchor_id for anchor in artifact.anchors):
+        raise ValidationError(f"Anchor {resolved_anchor_id} not found")
+    return resolved_anchor_id
+
+
+def _find_comment_in_artifact(artifact: AnalysisArtifact, comment_id: str) -> ArtifactComment | None:
+    """Return one comment from an artifact when present."""
+
+    for thread in artifact.threads:
+        for comment in thread.comments:
+            if comment.id == comment_id:
+                return comment
+    return None
+
+
+def _suggest_research_prompt(seed: str) -> str:
+    """Build a concise prompt for targeted research follow-ups."""
+
+    compact = " ".join(seed.split()).strip()
+    if not compact:
+        compact = "the article's strongest factual claim"
+    return f"Investigate whether {compact[:120]} is supported by primary sources."

@@ -252,10 +252,85 @@ class MockDeepResearchProvider:
                     "has_headings": "##" in article_text,
                     "has_conclusion": compact_article_text.endswith("."),
                 },
+                "suggested_research_prompt": _suggest_research_prompt(primary_excerpt),
                 "usage": {
                     "input_tokens": 500,
                     "output_tokens": 200,
                     "total_tokens": 700,
+                },
+            },
+        }
+
+    async def research(self, prompt: str, article_text: str) -> dict[str, object]:
+        """Return deterministic targeted research findings."""
+
+        compact_article_text = " ".join(article_text.split())
+        focus_excerpt = compact_article_text[:96].strip() or "Targeted research excerpt."
+        source_links = [
+            "https://example.com/targeted-research-source-1",
+            "https://example.com/targeted-research-source-2",
+        ]
+        claim_findings = [
+            _mock_claim_entry(
+                claim_text=f"Targeted follow-up: {prompt[:96].strip() or 'review the prompt'}",
+                verdict="SUPPORTED",
+                evidence_summary=(
+                    "The targeted research request is answered with a concrete source-backed note tied to the article."
+                ),
+                source_links=[source_links[0]],
+                anchor_excerpt=focus_excerpt,
+                confidence=0.76,
+                suggestion="Add a short citation or editor note that references the targeted research source.",
+                value_add="Useful because it closes the specific follow-up question without disturbing prior findings.",
+                official_source_links=[source_links[0]],
+                related_post_links=[source_links[1]],
+            )
+        ]
+        return {
+            "claim_findings": claim_findings,
+            "main_claims": [
+                {
+                    "claim_text": item["claim_text"],
+                    "verdict": item["verdict"],
+                    "evidence_summary": item["evidence_summary"],
+                    "source_links": list(item["source_links"]),
+                    "anchor_quote": item["anchor_excerpt"],
+                    "value_add": item["value_add"],
+                    "official_source_links": list(item["official_source_links"]),
+                    "related_post_links": list(item["related_post_links"]),
+                }
+                for item in claim_findings
+            ],
+            "findings": [
+                {
+                    "excerpt": item["anchor_excerpt"],
+                    "rationale": item["evidence_summary"],
+                    "confidence": item["confidence"],
+                    "suggestion": item["suggestion"],
+                    "sources": list(item["source_links"]),
+                    "metadata": {
+                        "claim_text": item["claim_text"],
+                        "verdict": item["verdict"],
+                        "evidence_summary": item["evidence_summary"],
+                        "value_add": item["value_add"],
+                        "official_source_links": list(item["official_source_links"]),
+                        "related_post_links": list(item["related_post_links"]),
+                        "targeted_prompt": prompt,
+                    },
+                }
+                for item in claim_findings
+            ],
+            "summary": "Targeted research returned one source-backed follow-up note.",
+            "research_summary": "Targeted follow-up research confirms the prompt-scoped issue is worth a small inline note.",
+            "tl_dr": "A scoped follow-up question was answered with one anchored research note.",
+            "metadata": {
+                "sources": source_links,
+                "targeted_prompt": prompt,
+                "suggested_research_prompt": _suggest_research_prompt(prompt),
+                "usage": {
+                    "input_tokens": 220,
+                    "output_tokens": 90,
+                    "total_tokens": 310,
                 },
             },
         }
@@ -288,3 +363,12 @@ def _mock_claim_entry(
         "official_source_links": list(official_source_links),
         "related_post_links": list(related_post_links),
     }
+
+
+def _suggest_research_prompt(seed: str) -> str:
+    """Build a deterministic research follow-up prompt."""
+
+    compact = " ".join(seed.split()).strip()
+    if not compact:
+        compact = "the article's strongest factual claim"
+    return f"Investigate whether {compact[:120]} is supported by primary sources."

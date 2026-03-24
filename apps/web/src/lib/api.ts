@@ -35,6 +35,13 @@ export interface AppendAgentsPayload {
   selectedAgents: string[];
 }
 
+export interface QueueResearchPayload {
+  artifactId: string;
+  prompt: string;
+  anchorId?: string;
+  commentId?: string;
+}
+
 export interface UpdateRevisedMarkdownDiffReviewDecision {
   diffId: string;
   decision: RevisedMarkdownDiffDecision;
@@ -145,6 +152,22 @@ export async function appendAgents(payload: AppendAgentsPayload): Promise<Analys
       },
       body: JSON.stringify({
         selected_agents: payload.selectedAgents,
+      }),
+    }),
+  );
+}
+
+export async function queueResearch(payload: QueueResearchPayload): Promise<AnalysisArtifact> {
+  return parseJson(
+    await fetch(`${API_BASE_URL}/api/v1/runs/${payload.artifactId}/research`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        prompt: payload.prompt,
+        anchor_id: payload.anchorId,
+        comment_id: payload.commentId,
       }),
     }),
   );

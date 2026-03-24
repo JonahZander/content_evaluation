@@ -6,6 +6,7 @@ export const categoryColors: Record<string, string> = {
   audience: "var(--cobalt)",
   editorial: "var(--olive)",
   synthesis: "var(--ink)",
+  research: "var(--cobalt)",
   human: "var(--human)",
 };
 

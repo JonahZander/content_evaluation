@@ -39,6 +39,14 @@ class AppendAgentsRequest(BaseModel):
     selected_agents: list[str] = Field(default_factory=list)
 
 
+class ResearchRequest(BaseModel):
+    """Store a request to queue targeted research."""
+
+    prompt: str = Field(min_length=1)
+    anchor_id: str | None = None
+    comment_id: str | None = None
+
+
 class ImportArtifactRequest(BaseModel):
     """Store a request to import an artifact."""
 

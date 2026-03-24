@@ -38,3 +38,11 @@ class DeepResearchProvider(Protocol):
             }
         """
         ...
+
+    async def research(
+        self,
+        prompt: str,
+        article_text: str,
+    ) -> dict[str, object]:
+        """Run targeted follow-up research for one prompt-scoped question."""
+        ...

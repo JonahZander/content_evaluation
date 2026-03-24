@@ -528,3 +528,66 @@ async def test_append_agents_can_schedule_new_agents_after_dependencies_already_
         "editorial",
     }
     assert updated.run_config.selected_agents == ["fact_check", "editorial"]
+
+
+@pytest.mark.asyncio
+async def test_targeted_research_appends_without_replacing_prior_research_findings() -> None:
+    """Targeted research should add new research comments instead of overwriting old ones."""
+
+    repository = InMemoryRunRepository()
+    orchestrator = RunOrchestrator(
+        repository,
+        MockAnalysisProvider(),
+        MockSimilaritySearchProvider(),
+        MockContentExtractionProvider(),
+        RuntimeMode.MOCK,
+        False,
+        OrchestratorBackend.LANGGRAPH,
+        deep_research_provider=MockDeepResearchProvider(),
+    )
+    input_data = RunInput(
+        source_type=SourceType.TEXT,
+        source_label="Draft",
+        title="Draft",
+        text="Alpha paragraph.\n\nBeta paragraph.",
+    )
+    artifact = await orchestrator.create_run(input_data)
+    await orchestrator.process_run(artifact.artifact_id, input_data)
+
+    updated = await repository.get_artifact(artifact.artifact_id)
+    assert updated is not None
+    target_comment = next(
+        comment
+        for thread in updated.threads
+        for comment in thread.comments
+        if comment.category.value == "fact_check"
+    )
+
+    queued_artifact, research_input = await orchestrator.research(
+        artifact.artifact_id,
+        "Verify the primary claim in this section.",
+        comment_id=target_comment.id,
+    )
+    assert queued_artifact.status.value == "queued"
+    assert research_input.mode is RunMode.RESEARCH
+
+    await orchestrator.process_run(artifact.artifact_id, research_input)
+
+    _, second_research_input = await orchestrator.research(
+        artifact.artifact_id,
+        "Check whether the supporting example is current.",
+        comment_id=target_comment.id,
+    )
+    await orchestrator.process_run(artifact.artifact_id, second_research_input)
+
+    final_artifact = await repository.get_artifact(artifact.artifact_id)
+    assert final_artifact is not None
+    research_results = [result for result in final_artifact.agent_results if result.agent_id == "research"]
+    assert len(research_results) == 2
+    research_comments = [
+        comment
+        for thread in final_artifact.threads
+        for comment in thread.comments
+        if comment.category.value == "research"
+    ]
+    assert len(research_comments) == 2

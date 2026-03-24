@@ -88,6 +88,7 @@ class RunMode(StrEnum):
 
     CREATE = "create"
     APPEND_AGENTS = "append_agents"
+    RESEARCH = "research"
 
 
 class AuthorType(StrEnum):
@@ -110,6 +111,7 @@ class AgentCategory(StrEnum):
     """Enumerate analysis categories."""
 
     FACT_CHECK = "fact_check"
+    RESEARCH = "research"
     SIMILARITY = "similarity"
     AI_LIKELIHOOD = "ai_likelihood"
     VALUE = "value"
@@ -575,6 +577,9 @@ class RunInput(BaseModel):
     text: str | None = None
     title: str | None = None
     url: str | None = None
+    prompt: str | None = None
+    anchor_id: str | None = None
+    comment_id: str | None = None
     selected_agents: list[str] = Field(default_factory=list)
     persistence_mode: PersistenceMode = PersistenceMode.SESSION
     include_debug_trace: bool = False

@@ -18,10 +18,16 @@ This project uses a code-orchestrated multi-agent model:
   - Returns structured claim findings: claim text, verdict, evidence summary, source links, anchor excerpt, confidence, value/differentiation notes, official-source links, and related-post links
   - Also returns summary-first overview data such as TL;DR, inferred audience, and overlap research for the review-summary panel
   - Also produces structured overlap research items that replace the prior standalone similarity surface in new runs
+  - Exposes a suggested research prompt in metadata so the research panel can seed a follow-up question without a separate suggestion pass
   - Multi-step execution; enabled by default because it now powers the summary panel, overlap research, and fact-check comment rail
   - No dependencies on other specialist agents; runs in parallel with the independent group when selected
   - Requires CONTENT_EVAL_OPENAI_API_KEY and CONTENT_EVAL_TAVILY_API_KEY in live mode
   - Acts as the research backbone for downstream editorial reasoning
+- Targeted research agent
+  - Hidden from the selectable catalog
+  - Runs through `POST /api/v1/runs/{run_id}/research` with a prompt and optional `anchor_id` / `comment_id`
+  - Reuses the existing normalized artifact, appends `research`-category comments, and does not replace prior fact-check findings
+  - Uses the same deep-research provider family with a prompt-scoped research method
 - Similarity research agent
   - Legacy compatibility path only
   - Hidden from the selectable agent catalog for new runs
@@ -58,6 +64,7 @@ Each agent should be declared with:
 - New-run dependency graph is:
   - `fact_check` and `ai_likelihood` can start independently
   - `editorial` waits for `fact_check` and `ai_likelihood`
+- Targeted research runs do not participate in the main dependency graph; they are queued as a separate review-phase follow-up on an already terminal artifact
 - `value`, `audience`, and first-pass `synthesis` are no longer scheduled for new runs
 - Each status transition emits a durable event for the live timeline.
 - Each completed node writes a resumable graph checkpoint.
@@ -106,6 +113,7 @@ Each agent should be declared with:
   - Vendored deep researcher graph (supervisor + parallel researchers + Tavily) in live mode
   - MockDeepResearchProvider in development/test fallback
   - Source: vendors/adapted from langchain-ai/open_deep_research (MCP stripped, CONTENT_EVAL key support added)
+  - The targeted research agent reuses the same provider family through a prompt-scoped `research(...)` method
 - Similarity search
   - Tavily in live mode
   - Mock search provider in development/test fallback

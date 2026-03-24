@@ -537,6 +537,63 @@
   background: transparent;
 }
 
+.researchPanel {
+  display: grid;
+  gap: 12px;
+  padding: 16px 22px 18px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(250, 250, 250, 0.56);
+}
+
+.researchPanelHeader {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.researchPanelHeaderText {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.researchPanelCopy {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+  max-width: 70ch;
+}
+
+.researchPanelBody {
+  display: grid;
+  gap: 10px;
+}
+
+.researchPromptInput {
+  min-height: 92px;
+  resize: vertical;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--ink);
+  line-height: 1.6;
+}
+
+.researchPanelActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.researchPanelHint {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 .revisionCta {
   display: flex;
   align-items: center;
@@ -1246,6 +1303,15 @@
 
   .eventMeta {
     justify-items: start;
+  }
+
+  .researchPanelHeader {
+    flex-direction: column;
+  }
+
+  .researchPanelActions {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .documentPane {

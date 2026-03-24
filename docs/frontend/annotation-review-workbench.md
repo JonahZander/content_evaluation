@@ -17,6 +17,10 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Review summary panel
   - Lives above the source text pane in Phase 3 only
   - Shows TL;DR, article profile, structural completeness, inferred audience, research summary, and overlap links from fact-check-backed artifact data
+- Research panel
+  - Lives below the review summary panel and above the workspace in Phase 3
+  - Starts compact and prompt-focused, with a single editable prompt field and one research action
+  - Prefills from suggested fact-check research prompts when available, otherwise opens empty
 - Revised markdown panel
   - Lives in an isolated Phase 4 shell once a candidate revision exists
   - Shows original cleaner-output markdown, candidate revised markdown, deterministic diff items, and per-diff reviewer decisions before the working draft is replaced
@@ -63,6 +67,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Agent comments are replyable by the human reviewer.
 - Agent comments expose immediate `Accept`, `Reject`, and `Uncertain` actions, and clicking the active state again should clear it back to `unreviewed`.
 - Agent comments should expose an `Add comment` action in the same compact action row as `Accept`, `Reject`, and `Uncertain`, revealing the reply field only on demand.
+- Research-category agent comments should expose `Ask follow-up` in that same action row and reuse the inline composer shell with follow-up language in the placeholder and submit label.
 - Completed, failed, or canceled artifacts should support additive follow-up analysis on the same artifact instead of forcing a new run.
 - Terminal artifacts with accepted agent suggestions should expose a `Generate revised markdown` action.
 - Once revised markdown exists, the reviewer must accept or reject every diff item before the reviewed markdown can be applied.
@@ -106,6 +111,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Agent comments are immutable in content; reviewer input happens through replies and review-state actions.
 - Audience analysis is summary-first in the current UI and should not create new inline annotation-heavy threads for newly generated artifacts.
 - The review summary panel should be fact-check-backed and compact rather than recreating old standalone value, audience, or claim-summary agent surfaces.
+- The research panel should remain minimal rather than becoming a separate chat surface.
 - Reviewer comments use the `human` category and are attached to an existing or newly created anchor.
 - Reviewer replies can be deleted inline, but agent-authored content remains immutable.
 - Run status is visible in the toolbar and progress panel.
@@ -113,6 +119,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Retry and resume events should be visible in both the run log and the per-agent status area.
 - Partial findings should rotate in a focused running preview card during Phase 2 rather than exposing the full workbench.
 - Append-agent runs should keep the review shell visible and surface only a compact inline progress strip while they are active.
+- Targeted research runs should keep the review shell visible and use the same compact inline progress treatment as append-agent runs.
 - Terminal artifacts should switch the primary action to `Add selected analysis`, disable already completed agents, and queue only newly selected follow-up analysis.
 - Starting a new analysis should warn before discarding a not-yet-downloaded JSON artifact.
 - The `New analysis` button should only appear once a real artifact exists.

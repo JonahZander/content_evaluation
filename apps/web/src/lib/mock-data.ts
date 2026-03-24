@@ -178,6 +178,7 @@ export const mockArtifact: AnalysisArtifact = {
       raw_output: {},
       metadata: {
         research_summary: "Research suggests the article's main claims are supportable and the framing is moderately differentiated.",
+        suggested_research_prompt: "Research recent statistics on editorial review workflows to strengthen the opening claim.",
         main_claims: [
           {
             claim_text: "Editorial teams need a fast way to decide whether a post is original, useful, and worth reader attention.",

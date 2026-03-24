@@ -2,7 +2,7 @@ import styles from "@/components/ReviewWorkbench.module.css";
 import type { AgentCatalogEntry, PersistenceMode } from "@/lib/types";
 
 export interface ReviewFormState {
-  sourceType: "url" | "text" | "file";
+  sourceType: "url" | "text" | "file" | "artifact";
   title: string;
   sourceLabel: string;
   text: string;
@@ -79,8 +79,9 @@ export function ReviewToolbar({
 }: ReviewToolbarProps) {
   return (
     <section className={styles.toolbar}>
-      <div className={styles.toolbarSettings}>
-        {!hasLoadedContent ? (
+      {!hasLoadedContent ? (
+        <div className={styles.chooseContentHeader}>
+          <span className={styles.chooseContentLabel}>Choose content</span>
           <select
             className={styles.toolbarSelect}
             data-testid="source-type-select"
@@ -95,44 +96,10 @@ export function ReviewToolbar({
             <option value="text">Pasted text</option>
             <option value="url">URL</option>
             <option value="file">Text file</option>
+            <option value="artifact">Import artifact</option>
           </select>
-        ) : null}
-        <input
-          className={styles.toolbarInput}
-          data-testid="draft-title-input"
-          value={formState.title}
-          onChange={(event) => onFormChange((current) => ({ ...current, title: event.target.value }))}
-          placeholder="Draft title"
-        />
-        <select
-          className={styles.toolbarSelect}
-          data-testid="persistence-mode-select"
-          value={formState.persistenceMode}
-          onChange={(event) =>
-            onFormChange((current) => ({
-              ...current,
-              persistenceMode: event.target.value as PersistenceMode,
-            }))
-          }
-        >
-          <option value="workspace">Workspace mode (recommended)</option>
-          <option value="session">Session mode (local only)</option>
-        </select>
-        <label className={styles.toggleLabel}>
-          <input
-            data-testid="debug-trace-toggle"
-            type="checkbox"
-            checked={formState.includeDebugTrace}
-            onChange={(event) =>
-              onFormChange((current) => ({
-                ...current,
-                includeDebugTrace: event.target.checked,
-              }))
-            }
-          />
-          Include debug trace
-        </label>
-      </div>
+        </div>
+      ) : null}
 
       <div className={styles.agentSelector}>
         {agents.map((agent) => {
@@ -220,6 +187,20 @@ export function ReviewToolbar({
               onChange={(event) => onFormChange((current) => ({ ...current, text: event.target.value }))}
               placeholder="Paste draft text"
             />
+          ) : formState.sourceType === "artifact" ? (
+            <div className={styles.fileInputWrap}>
+              <label className={styles.ghostButton}>
+                Select JSON artifact file
+                <input
+                  key={importInputKey}
+                  data-testid="artifact-import-input"
+                  type="file"
+                  accept="application/json,.json"
+                  onChange={(e) => onImportFileChange(e.target.files?.[0] ?? null)}
+                  hidden
+                />
+              </label>
+            </div>
           ) : null}
         </div>
       ) : null}
@@ -255,17 +236,6 @@ export function ReviewToolbar({
             Stop run
           </button>
         ) : null}
-        <label className={styles.ghostButton}>
-          Import artifact
-          <input
-            key={importInputKey}
-            data-testid="artifact-import-input"
-            type="file"
-            accept="application/json,.json"
-            onChange={(event) => onImportFileChange(event.target.files?.[0] ?? null)}
-            hidden
-          />
-        </label>
         {canExport ? (
           <>
             <button

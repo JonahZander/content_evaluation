@@ -97,7 +97,7 @@
 .toolbar {
   display: grid;
   gap: 12px;
-  padding: 18px 22px;
+  padding: 28px 22px 18px;
   background: transparent;
   border: 0;
   border-bottom: 1px solid var(--line);
@@ -118,6 +118,21 @@
   font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
   font-size: 12px;
   color: var(--muted);
+}
+
+.chooseContentHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.chooseContentLabel {
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
 }
 
 .agentSelector {
@@ -1340,7 +1355,6 @@
     border-bottom: 1px solid var(--line);
   }
 
-  .toolbarSettings,
   .sourceComposer,
   .eventItem {
     grid-template-columns: 1fr;

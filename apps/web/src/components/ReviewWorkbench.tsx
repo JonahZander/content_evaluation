@@ -496,6 +496,8 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   }
 
   async function handleSubmit() {
+    if (formState.sourceType === "artifact") return;
+
     if (revisionWorkflowPending) {
       dispatch({
         type: "SET_STATUS_MESSAGE",
@@ -567,37 +569,40 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         return;
       }
 
-      const payload =
-        formState.sourceType === "file" && selectedFile !== null
-          ? {
-              sourceType: "file" as const,
-              sourceLabel: selectedFile.name,
-              title: formState.title || selectedFile.name,
-              text: await selectedFile.text(),
-              selectedAgents: resolveSelectedAgents(formState.selectedAgents, agents),
-              persistenceMode: formState.persistenceMode,
-              includeDebugTrace: formState.includeDebugTrace,
-            }
-          : formState.sourceType === "url" && previewDocument !== null
-            ? {
-                sourceType: "url" as const,
-                sourceLabel: formState.url,
-                title: formState.title || previewDocument.title,
-                text: buildPreviewSubmissionText(previewDocument, hiddenPreviewBlockIds),
-                url: formState.url,
-                selectedAgents: resolveSelectedAgents(formState.selectedAgents, agents),
-                persistenceMode: formState.persistenceMode,
-                includeDebugTrace: formState.includeDebugTrace,
-              }
-            : {
-                sourceType: "text" as const,
-                sourceLabel: formState.sourceLabel || "Manual input",
-                title: formState.title,
-                text: formState.text,
-                selectedAgents: resolveSelectedAgents(formState.selectedAgents, agents),
-                persistenceMode: formState.persistenceMode,
-                includeDebugTrace: formState.includeDebugTrace,
-              };
+      let payload;
+      if (formState.sourceType === "file" && selectedFile !== null) {
+        const fileText = await selectedFile.text();
+        payload = {
+          sourceType: "file" as const,
+          sourceLabel: selectedFile.name,
+          title: extractTitleFromText(fileText) || selectedFile.name,
+          text: fileText,
+          selectedAgents: resolveSelectedAgents(formState.selectedAgents, agents),
+          persistenceMode: formState.persistenceMode,
+          includeDebugTrace: formState.includeDebugTrace,
+        };
+      } else if (formState.sourceType === "url" && previewDocument !== null) {
+        payload = {
+          sourceType: "url" as const,
+          sourceLabel: formState.url,
+          title: formState.title || previewDocument.title,
+          text: buildPreviewSubmissionText(previewDocument, hiddenPreviewBlockIds),
+          url: formState.url,
+          selectedAgents: resolveSelectedAgents(formState.selectedAgents, agents),
+          persistenceMode: formState.persistenceMode,
+          includeDebugTrace: formState.includeDebugTrace,
+        };
+      } else {
+        payload = {
+          sourceType: "text" as const,
+          sourceLabel: formState.sourceLabel || "Manual input",
+          title: extractTitleFromText(formState.text),
+          text: formState.text,
+          selectedAgents: resolveSelectedAgents(formState.selectedAgents, agents),
+          persistenceMode: formState.persistenceMode,
+          includeDebugTrace: formState.includeDebugTrace,
+        };
+      }
 
       const createdArtifact = await createRun(payload, signal);
       dispatch({ type: "SET_ARTIFACT", artifact: createdArtifact });
@@ -1014,7 +1019,6 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
                   updater: (current) => ({
                     ...current,
                     sourceLabel: file?.name ?? "upload",
-                    title: file?.name ?? current.title,
                   }),
                 });
               }}
@@ -1128,7 +1132,6 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
                   updater: (current) => ({
                     ...current,
                     sourceLabel: file?.name ?? "upload",
-                    title: file?.name ?? current.title,
                   }),
                 });
               }}
@@ -1843,7 +1846,8 @@ function isReviewFormState(value: unknown): value is ReviewFormState {
   }
   const candidate = value as Partial<ReviewFormState>;
   return (
-    (candidate.sourceType === "text" || candidate.sourceType === "url" || candidate.sourceType === "file")
+    (candidate.sourceType === "text" || candidate.sourceType === "url"
+      || candidate.sourceType === "file" || candidate.sourceType === "artifact")
     && typeof candidate.title === "string"
     && typeof candidate.sourceLabel === "string"
     && typeof candidate.text === "string"
@@ -1884,6 +1888,17 @@ function hydrateFormStateAfterRevision(
     ...next,
     selectedAgents: resolveSelectedAgents(rerunDefaults, agents),
   };
+}
+
+function extractTitleFromText(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) return "";
+  for (const line of trimmed.split("\n")) {
+    const match = /^#\s+(.+)$/.exec(line.trim());
+    if (match) return match[1].trim();
+  }
+  const first = trimmed.split("\n").find((l) => l.trim().length > 0) ?? "";
+  return first.length > 80 ? first.slice(0, 77) + "..." : first.trim();
 }
 
 function buildPreviewSubmissionText(document: ArtifactDocument, hiddenBlockIds: string[]): string {

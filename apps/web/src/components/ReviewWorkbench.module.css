@@ -373,6 +373,49 @@
   color: var(--muted);
 }
 
+.intakePreviewShell {
+  padding: 20px 22px;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+}
+
+.runningPreviewCard {
+  display: grid;
+  gap: 10px;
+  padding: 18px 20px;
+  border-radius: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+}
+
+.runningPreviewMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.runningPreviewText,
+.runningPreviewSuggestion {
+  margin: 0;
+  line-height: 1.65;
+}
+
+.runningPreviewSuggestion {
+  color: var(--muted);
+}
+
+.runningPreviewFootnote {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+
 .agentStatusGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -453,6 +496,35 @@
   gap: 8px;
 }
 
+.reviewInlineProgress {
+  display: grid;
+  gap: 10px;
+  padding: 14px 22px 18px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(250, 250, 250, 0.52);
+}
+
+.reviewInlineProgressMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.reviewInlineProgressStatus {
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+
+.analysisContextPanel {
+  padding: 0 22px 18px;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+}
+
 .revisionCta {
   display: flex;
   align-items: center;
@@ -478,6 +550,17 @@
   background: transparent;
   border: 0;
   box-shadow: none;
+}
+
+.diffReviewShell {
+  padding: 0;
+  background: transparent;
+}
+
+.runningStageActions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 4px;
 }
 
 .scrollFrame {

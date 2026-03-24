@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { ReviewWorkbench } from "@/components/ReviewWorkbench";
 import { mockArtifact } from "@/lib/mock-data";
@@ -76,6 +76,120 @@ afterEach(() => {
 });
 
 describe("ReviewWorkbench", () => {
+  it("keeps the intake shell visible before any artifact is loaded", () => {
+    render(<ReviewWorkbench initialArtifact={null} />);
+
+    expect(screen.getByTestId("source-type-select")).toBeInTheDocument();
+    expect(screen.queryByTestId("stop-run-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("export-todo-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("export-markdown-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("export-json-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("progress-track")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("review-workbench")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("revised-markdown-panel")).not.toBeInTheDocument();
+  });
+
+  it("renders the running shell for a fresh in-flight run", () => {
+    render(<ReviewWorkbench initialArtifact={buildRunningArtifact()} />);
+
+    expect(screen.getByTestId("running-stage-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("progress-track")).toBeInTheDocument();
+    expect(screen.getByTestId("running-preview-card")).toHaveTextContent("Waiting for the first agent result.");
+    expect(screen.queryByTestId("review-workbench")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("review-summary-panel")).not.toBeInTheDocument();
+  });
+
+  it("cycles through partial findings in the running preview card", () => {
+    vi.useFakeTimers();
+    try {
+      render(<ReviewWorkbench initialArtifact={buildRunningArtifactWithFindings()} />);
+
+      expect(screen.getByTestId("running-preview-card")).toHaveTextContent("First running finding");
+
+      act(() => {
+        vi.advanceTimersByTime(3000);
+      });
+
+      expect(screen.getByTestId("running-preview-card")).toHaveTextContent("Second running finding");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps append-agent runs in the review shell with compact progress", () => {
+    render(<ReviewWorkbench initialArtifact={buildFollowUpRunningArtifact()} />);
+
+    expect(screen.getByTestId("review-workbench")).toBeInTheDocument();
+    expect(screen.getByTestId("follow-up-progress")).toBeInTheDocument();
+    expect(screen.queryByTestId("running-stage-panel")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("review-summary-panel")).not.toBeInTheDocument();
+  });
+
+  it("isolates diff review from the rest of the workbench", () => {
+    render(<ReviewWorkbench initialArtifact={buildArtifactWithDiffReview()} />);
+
+    expect(screen.getByTestId("diff-review-shell")).toBeInTheDocument();
+    expect(screen.queryByTestId("review-workbench")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("progress-track")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("review-summary-panel")).not.toBeInTheDocument();
+  });
+
+  it("keeps imported draft artifacts in the intake shell", () => {
+    render(<ReviewWorkbench initialArtifact={buildDraftArtifact()} />);
+
+    expect(screen.getByTestId("source-type-select")).toBeInTheDocument();
+    expect(screen.getByTestId("intake-preview-shell")).toBeInTheDocument();
+    expect(screen.queryByTestId("review-workbench")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("progress-track")).not.toBeInTheDocument();
+  });
+
+  it("restores imported in-flight artifacts into the running shell and keeps live polling active", async () => {
+    const eventSources: Array<{
+      onmessage: ((event: MessageEvent) => void) | null;
+      onerror: (() => void) | null;
+    }> = [];
+    const globalEventSource = globalThis as typeof globalThis & {
+      EventSource: typeof EventSource;
+    };
+    const originalEventSource = globalEventSource.EventSource;
+
+    class SpyEventSource {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: (() => void) | null = null;
+
+      constructor(_: string) {
+        eventSources.push(this);
+      }
+
+      close() {}
+    }
+
+    globalEventSource.EventSource = SpyEventSource as unknown as typeof EventSource;
+
+    const importedRunningArtifact = buildRunningArtifact();
+    vi.mocked(api.importArtifact).mockResolvedValueOnce(importedRunningArtifact);
+
+    try {
+      render(<ReviewWorkbench initialArtifact={null} />);
+
+      const file = {
+        text: async () => JSON.stringify(importedRunningArtifact),
+      } as File;
+      fireEvent.change(screen.getByTestId("artifact-import-input"), { target: { files: [file] } });
+
+      await waitFor(() => expect(screen.getByTestId("running-stage-panel")).toBeInTheDocument());
+      await waitFor(() => expect(eventSources).toHaveLength(1));
+
+      eventSources[0].onmessage?.({
+        data: JSON.stringify({ snapshot_available: true }),
+      } as MessageEvent);
+
+      await waitFor(() => expect(api.fetchArtifact).toHaveBeenCalledWith(importedRunningArtifact.artifact_id));
+    } finally {
+      globalEventSource.EventSource = originalEventSource;
+    }
+  });
+
   it("renders text, threads, and connector paths", async () => {
     render(<ReviewWorkbench initialArtifact={mockArtifact} />);
 
@@ -363,12 +477,12 @@ describe("ReviewWorkbench", () => {
     expect(screen.getByTestId("draft-title-input")).toHaveValue("");
   });
 
-  it("disables export buttons when no artifact exists", () => {
+  it("hides export buttons when no artifact exists", () => {
     render(<ReviewWorkbench initialArtifact={null} />);
 
-    expect(screen.getByRole("button", { name: "Export Todo" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Export Markdown" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Export JSON" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Export Todo" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Export Markdown" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Export JSON" })).not.toBeInTheDocument();
   });
 
   it("toggles the active review state back to unreviewed", () => {
@@ -435,27 +549,26 @@ describe("ReviewWorkbench", () => {
     fireEvent.click(applyButton);
 
     await waitFor(() => expect(api.applyRevisedMarkdown).toHaveBeenCalledWith(artifactWithDiff.artifact_id));
-    expect(await screen.findByRole("button", { name: "Revision applied" })).toBeDisabled();
+    expect(screen.queryByTestId("diff-review-shell")).not.toBeInTheDocument();
+    expect(screen.getByTestId("review-workbench")).toBeInTheDocument();
   });
 
   it("blocks additive analysis while revised markdown review is pending", () => {
     render(<ReviewWorkbench initialArtifact={buildArtifactWithDiffReview()} />);
 
-    const analyzeButton = screen.getByTestId("analyze-button");
-
-    expect(analyzeButton).toBeDisabled();
-    expect(analyzeButton).toHaveTextContent("Apply revised markdown first");
+    expect(screen.queryByTestId("analyze-button")).not.toBeInTheDocument();
+    expect(screen.getByTestId("diff-review-shell")).toBeInTheDocument();
     expect(api.appendAgents).not.toHaveBeenCalled();
   });
 
   it("queues additional analysis for a terminal artifact without replacing it", () => {
-    render(<ReviewWorkbench initialArtifact={mockArtifact} />);
+    render(<ReviewWorkbench initialArtifact={buildAppendableArtifact()} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Add selected analysis" }));
 
     expect(api.appendAgents).toHaveBeenCalledWith({
       artifactId: mockArtifact.artifact_id,
-      selectedAgents: mockArtifact.run_config.selected_agents,
+      selectedAgents: ["editorial"],
     });
   });
 
@@ -468,14 +581,12 @@ describe("ReviewWorkbench", () => {
   });
 
   it("renders the run log below the progress section", () => {
-    render(<ReviewWorkbench initialArtifact={mockArtifact} />);
+    render(<ReviewWorkbench initialArtifact={buildRunningArtifact()} />);
 
     const progressHeading = screen.getByText("Run progress");
     const runLogToggle = screen.getByText(/Run log/);
 
-    expect(
-      progressHeading.compareDocumentPosition(runLogToggle) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(progressHeading.compareDocumentPosition(runLogToggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("renders the review summary panel above the text pane", () => {
@@ -495,7 +606,7 @@ describe("ReviewWorkbench", () => {
   });
 
   it("adds active progress styling while a run is live", () => {
-    render(<ReviewWorkbench initialArtifact={{ ...mockArtifact, status: "running" }} />);
+    render(<ReviewWorkbench initialArtifact={buildRunningArtifact()} />);
 
     const activeTrack = screen.getByTestId("progress-track");
     const activeFill = screen.getByTestId("progress-fill");
@@ -831,6 +942,170 @@ function buildSyntheticUnmatchedArtifact(): AnalysisArtifact {
       },
     ],
   };
+  return artifact;
+}
+
+function buildDraftArtifact(): AnalysisArtifact {
+  const artifact = structuredClone(mockArtifact);
+  artifact.status = "draft";
+  artifact.source = {
+    ...artifact.source,
+    imported: true,
+  };
+  artifact.agent_plan = [];
+  artifact.agent_results = [];
+  artifact.anchors = [];
+  artifact.threads = [];
+  artifact.summary = null;
+  artifact.review_summary = null;
+  artifact.revised_document = null;
+  artifact.diff_review = null;
+  artifact.events = [];
+  return artifact;
+}
+
+function buildAppendableArtifact(): AnalysisArtifact {
+  const artifact = structuredClone(mockArtifact);
+  artifact.run_config = {
+    ...artifact.run_config,
+    selected_agents: ["editorial"],
+    resolved_agents: ["editorial"],
+  };
+  artifact.agent_plan = artifact.agent_plan.map((item) =>
+    item.agent_id === "editorial"
+      ? { ...item, status: "pending" }
+      : item,
+  );
+  artifact.agent_results = artifact.agent_results.filter((item) => item.agent_id !== "editorial");
+  artifact.threads = artifact.threads.filter((thread) => thread.comments[0]?.category !== "editorial");
+  return artifact;
+}
+
+function buildRunningArtifact(): AnalysisArtifact {
+  const artifact = structuredClone(mockArtifact);
+  artifact.status = "running";
+  artifact.agent_plan = artifact.agent_plan.map((item, index) => ({
+    ...item,
+    status: index === 0 ? "running" : "pending",
+    message: index === 0 ? "Fact Check is gathering sources" : "Queued",
+  }));
+  artifact.agent_results = [];
+  artifact.anchors = [];
+  artifact.threads = [];
+  artifact.summary = null;
+  artifact.review_summary = null;
+  artifact.revised_document = null;
+  artifact.diff_review = null;
+  artifact.events = [
+    {
+      id: "event-running-started",
+      artifact_id: artifact.artifact_id,
+      event_type: "run",
+      stage: "run",
+      status: "started",
+      message: "Run started",
+      progress: 0.32,
+      snapshot_available: true,
+      created_at: new Date().toISOString(),
+      metadata: {},
+    },
+  ];
+  return artifact;
+}
+
+function buildRunningArtifactWithFindings(): AnalysisArtifact {
+  const artifact = buildRunningArtifact();
+  artifact.agent_results = [
+    {
+      agent_id: "ai_likelihood",
+      category: "ai_likelihood",
+      status: "running",
+      findings: [
+        {
+          id: "finding-running-1",
+          category: "ai_likelihood",
+          agent_name: "ai_likelihood",
+          anchor_ids: [],
+          rationale: "First running finding",
+          confidence: 0.41,
+          model_name: "mock-analysis",
+          suggestion: "First suggestion",
+          sources: [],
+          metadata: {},
+        },
+      ],
+      summary: null,
+      raw_output: {},
+      metadata: {},
+    },
+    {
+      agent_id: "editorial",
+      category: "editorial",
+      status: "running",
+      findings: [
+        {
+          id: "finding-running-2",
+          category: "editorial",
+          agent_name: "editorial",
+          anchor_ids: [],
+          rationale: "Second running finding",
+          confidence: 0.66,
+          model_name: "mock-analysis",
+          suggestion: "Second suggestion",
+          sources: [],
+          metadata: {},
+        },
+      ],
+      summary: null,
+      raw_output: {},
+      metadata: {},
+    },
+  ];
+  artifact.events = [
+    ...artifact.events,
+    {
+      id: "event-running-finding",
+      artifact_id: artifact.artifact_id,
+      event_type: "agent",
+      stage: "ai_likelihood",
+      status: "completed",
+      message: "AI Likelihood completed",
+      agent_id: "ai_likelihood",
+      agent_name: "AI Likelihood",
+      model_name: "mock-analysis",
+      snapshot_available: true,
+      created_at: new Date().toISOString(),
+      metadata: {},
+    },
+  ];
+  return artifact;
+}
+
+function buildFollowUpRunningArtifact(): AnalysisArtifact {
+  const artifact = structuredClone(mockArtifact);
+  artifact.status = "running";
+  artifact.summary = null;
+  artifact.review_summary = null;
+  artifact.diff_review = null;
+  artifact.revised_document = null;
+  artifact.events = [
+    ...artifact.events,
+    {
+      id: "event-follow-up-queued",
+      artifact_id: artifact.artifact_id,
+      event_type: "run",
+      stage: "run",
+      status: "queued",
+      message: "Additional analysis queued",
+      progress: 0.64,
+      snapshot_available: true,
+      created_at: new Date().toISOString(),
+      metadata: {
+        mode: "append_agents",
+        append_agent_ids: ["editorial"],
+      },
+    },
+  ];
   return artifact;
 }
 

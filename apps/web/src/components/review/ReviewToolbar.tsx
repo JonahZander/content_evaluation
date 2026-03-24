@@ -236,15 +236,17 @@ export function ReviewToolbar({
         >
           {submitting ? "Submitting..." : analyzeButtonLabel}
         </button>
-        <button
-          className={styles.ghostButton}
-          data-testid="stop-run-button"
-          type="button"
-          onClick={onStopRun}
-          disabled={!canStopRun}
-        >
-          Stop run
-        </button>
+        {canStopRun ? (
+          <button
+            className={styles.ghostButton}
+            data-testid="stop-run-button"
+            type="button"
+            onClick={onStopRun}
+            disabled={!canStopRun}
+          >
+            Stop run
+          </button>
+        ) : null}
         <label className={styles.ghostButton}>
           Import artifact
           <input
@@ -256,33 +258,37 @@ export function ReviewToolbar({
             hidden
           />
         </label>
-        <button
-          className={styles.ghostButton}
-          data-testid="export-todo-button"
-          type="button"
-          onClick={() => onExport("todo")}
-          disabled={!canExport}
-        >
-          Export Todo
-        </button>
-        <button
-          className={styles.ghostButton}
-          data-testid="export-markdown-button"
-          type="button"
-          onClick={() => onExport("md")}
-          disabled={!canExport}
-        >
-          Export Markdown
-        </button>
-        <button
-          className={styles.ghostButton}
-          data-testid="export-json-button"
-          type="button"
-          onClick={() => onExport("json")}
-          disabled={!canExport}
-        >
-          Export JSON
-        </button>
+        {canExport ? (
+          <>
+            <button
+              className={styles.ghostButton}
+              data-testid="export-todo-button"
+              type="button"
+              onClick={() => onExport("todo")}
+              disabled={!canExport}
+            >
+              Export Todo
+            </button>
+            <button
+              className={styles.ghostButton}
+              data-testid="export-markdown-button"
+              type="button"
+              onClick={() => onExport("md")}
+              disabled={!canExport}
+            >
+              Export Markdown
+            </button>
+            <button
+              className={styles.ghostButton}
+              data-testid="export-json-button"
+              type="button"
+              onClick={() => onExport("json")}
+              disabled={!canExport}
+            >
+              Export JSON
+            </button>
+          </>
+        ) : null}
         <span className={styles.statusPill} data-testid="run-status" role="status">
           {statusMessage}
         </span>

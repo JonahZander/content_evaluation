@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 
 import styles from "@/components/ReviewWorkbench.module.css";
 import { AgentUsageSummary } from "@/components/review/AgentUsageSummary";
@@ -41,6 +41,7 @@ import {
 import type {
   AgentCatalogEntry,
   AnalysisArtifact,
+  ArtifactEvent,
   ArtifactDocument,
   ArtifactThread,
   ReviewState,
@@ -51,6 +52,8 @@ import { anchorPrimarySegment } from "@/lib/types";
 interface ReviewWorkbenchProps {
   initialArtifact: AnalysisArtifact | null;
 }
+
+type WorkbenchPhase = "intake" | "running" | "review" | "diff_review";
 
 interface StoredWorkbenchState {
   version: 2;
@@ -71,7 +74,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   const [state, dispatch] = useReducer(workbenchReducer, {
     ...initialWorkbenchState,
     artifact: initialArtifact,
-    activeArtifactId: initialArtifact?.artifact_id ?? null,
+    activeArtifactId: initialArtifact ? activeArtifactIdFor(initialArtifact) : null,
     formState: initialArtifact
       ? hydrateFormStateFromArtifact(initialWorkbenchState.formState, initialArtifact)
       : initialWorkbenchState.formState,
@@ -358,6 +361,15 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     return map;
   }, [artifact?.agent_results, normalizedThreads]);
 
+  const workbenchPhase = useMemo(
+    () => getWorkbenchPhase(artifact),
+    [artifact],
+  );
+  const isIntakePhase = workbenchPhase === "intake";
+  const isRunningPhase = workbenchPhase === "running";
+  const isReviewPhase = workbenchPhase === "review";
+  const isDiffReviewPhase = workbenchPhase === "diff_review";
+
   const claimEvidenceByBlock = useMemo(() => {
     const map = new Map<string, Array<{
       anchorId: string;
@@ -419,8 +431,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   const canAnalyzePreviewDocument = previewDocument !== null && visiblePreviewBlockIds.size > 0;
   const canStopRun = artifact !== null && (artifact.status === "queued" || artifact.status === "running");
   const canExport = artifact !== null;
-  const showNewAnalysis = artifact !== null;
   const isTerminalArtifact = artifact !== null && TERMINAL_RUN_STATUSES.has(artifact.status);
+  const showNewAnalysis = artifact !== null && isReviewPhase;
+  const isFollowUpRunInProgress = artifact !== null && isReviewPhase && canStopRun;
   const completedAgentIds = useMemo(() => {
     if (artifact === null) {
       return new Set<string>();
@@ -443,7 +456,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   const showUrlImportGuidance =
     formState.sourceType === "url"
     && previewDocument !== null
-    && artifact === null
+    && isIntakePhase
     && hiddenPreviewBlockIds.length === 0;
   const canAnalyze =
     !isSubmitting &&
@@ -451,10 +464,10 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     !isSavingDiffReview &&
     !isApplyingRevision &&
     !revisionWorkflowPending &&
-    ((isTerminalArtifact && !canStopRun && appendableSelectedAgents.length > 0) ||
-      ((formState.sourceType === "url" && canAnalyzePreviewDocument) ||
+    ((isReviewPhase && !canStopRun && appendableSelectedAgents.length > 0) ||
+      (isIntakePhase && ((formState.sourceType === "url" && canAnalyzePreviewDocument) ||
         (formState.sourceType === "text" && formState.text.trim().length > 0) ||
-        (formState.sourceType === "file" && selectedFile !== null)));
+        (formState.sourceType === "file" && selectedFile !== null))));
   const canGenerateRevision =
     artifact !== null
     && isTerminalArtifact
@@ -471,8 +484,10 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   }, [artifact]);
   const analyzeButtonLabel = revisionWorkflowPending
     ? "Apply revised markdown first"
-    : isTerminalArtifact
-      ? "Add selected analysis"
+    : isReviewPhase
+      ? isFollowUpRunInProgress
+        ? "Additional analysis running"
+        : "Add selected analysis"
       : "Analyze content";
   const latestResumeEvent = useMemo(
     () =>
@@ -482,6 +497,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     [artifact?.events],
   );
   const isProgressActive = artifact !== null && (artifact.status === "queued" || artifact.status === "running");
+  const showRunningPanel = isRunningPhase;
 
   async function maybeReplaceCurrentAnalysis(resetForm: boolean) {
     const hasCurrentAnalysis = artifact !== null || previewDocument !== null;
@@ -704,7 +720,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       const imported = await importArtifact(parsed);
       dispatch({ type: "SET_ARTIFACT", artifact: imported });
       dispatch({ type: "SET_PREVIEW_DOCUMENT", document: null });
-      dispatch({ type: "SET_ACTIVE_ARTIFACT_ID", id: null });
+      dispatch({ type: "SET_ACTIVE_ARTIFACT_ID", id: activeArtifactIdFor(imported) });
       dispatch({ type: "SET_FORM_STATE", formState: hydrateFormStateFromArtifact(formState, imported) });
       dispatch({ type: "SET_HAS_DOWNLOADED_JSON", value: true });
       dispatch({ type: "SET_STATUS_MESSAGE", message: `Imported artifact ${imported.artifact_id}` });
@@ -915,147 +931,318 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       <div className={styles.shell}>
         <ReviewHero />
 
-        <ReviewToolbar
-          formState={formState}
-          agents={agents}
-          fileInputKey={fileInputKey}
-          selectedFile={selectedFile}
-          statusMessage={statusMessage}
-          submitting={isSubmitting}
-          previewing={isPreviewing}
-          canAnalyze={canAnalyze}
-          canPreviewUrl={canPreviewUrl}
-          canStopRun={canStopRun}
-          canExport={canExport}
-          canGenerateRevision={canGenerateRevision}
-          showGenerateRevision={artifact !== null && isTerminalArtifact && hasAcceptedSuggestions && diffReview === null}
-          generatingRevision={isGeneratingRevision}
-          showNewAnalysis={showNewAnalysis}
-          analyzeButtonLabel={analyzeButtonLabel}
-          disabledAgentIds={[...completedAgentIds]}
-          importInputKey={importInputKey}
-          showUrlImportGuidance={showUrlImportGuidance}
-          hasLoadedContent={artifact !== null}
-          onFormChange={(updater) =>
-            dispatch({
-              type: "UPDATE_FORM_STATE",
-              updater: (current) => {
-                const next = updater(current);
-                if (next.selectedAgents !== current.selectedAgents) {
-                  return {
-                    ...next,
-                    selectedAgents: resolveSelectedAgents(next.selectedAgents, agents),
-                  };
-                }
-                return next;
-              },
-            })
-          }
-          onFileChange={(file) => {
-            dispatch({ type: "SET_SELECTED_FILE", file });
-            dispatch({ type: "BUMP_FILE_INPUT_KEY" });
-            dispatch({
-              type: "UPDATE_FORM_STATE",
-              updater: (current) => ({
-                ...current,
-                sourceLabel: file?.name ?? "upload",
-                title: file?.name ?? current.title,
-              }),
-            });
-          }}
-          onImportFileChange={handleImportFile}
-          onPreviewUrl={handlePreviewUrl}
-          onSubmit={handleSubmit}
-          onGenerateRevision={handleGenerateRevision}
-          onStopRun={handleStopRun}
-          onStartNewAnalysis={handleStartNewAnalysis}
-          onExport={handleExport}
-        />
+        {isIntakePhase ? (
+          <>
+            <ReviewToolbar
+              formState={formState}
+              agents={agents}
+              fileInputKey={fileInputKey}
+              selectedFile={selectedFile}
+              statusMessage={statusMessage}
+              submitting={isSubmitting}
+              previewing={isPreviewing}
+              canAnalyze={canAnalyze}
+              canPreviewUrl={canPreviewUrl}
+              canStopRun={false}
+              canExport={false}
+              canGenerateRevision={false}
+              showGenerateRevision={false}
+              generatingRevision={isGeneratingRevision}
+              showNewAnalysis={false}
+              analyzeButtonLabel={analyzeButtonLabel}
+              disabledAgentIds={[...completedAgentIds]}
+              importInputKey={importInputKey}
+              showUrlImportGuidance={showUrlImportGuidance}
+              hasLoadedContent={false}
+              onFormChange={(updater) =>
+                dispatch({
+                  type: "UPDATE_FORM_STATE",
+                  updater: (current) => {
+                    const next = updater(current);
+                    if (next.selectedAgents !== current.selectedAgents) {
+                      return {
+                        ...next,
+                        selectedAgents: resolveSelectedAgents(next.selectedAgents, agents),
+                      };
+                    }
+                    return next;
+                  },
+                })
+              }
+              onFileChange={(file) => {
+                dispatch({ type: "SET_SELECTED_FILE", file });
+                dispatch({ type: "BUMP_FILE_INPUT_KEY" });
+                dispatch({
+                  type: "UPDATE_FORM_STATE",
+                  updater: (current) => ({
+                    ...current,
+                    sourceLabel: file?.name ?? "upload",
+                    title: file?.name ?? current.title,
+                  }),
+                });
+              }}
+              onImportFileChange={handleImportFile}
+              onPreviewUrl={handlePreviewUrl}
+              onSubmit={handleSubmit}
+              onGenerateRevision={handleGenerateRevision}
+              onStopRun={handleStopRun}
+              onStartNewAnalysis={handleStartNewAnalysis}
+              onExport={handleExport}
+            />
+
+            {displayDocument !== null ? (
+              <section className={styles.intakePreviewShell} data-testid="intake-preview-shell">
+                <DocumentPane
+                  document={displayDocument}
+                  anchors={[]}
+                  threads={[]}
+                  anchorThreadMap={new Map<string, { colors: string[] }>()}
+                  claimEvidenceByBlock={new Map<
+                    string,
+                    Array<{
+                      anchorId: string;
+                      claimText: string;
+                      verdict: string;
+                      evidenceSummary: string;
+                      sourceLinks: string[];
+                    }>
+                  >()}
+                  selectionEnabled={false}
+                  hoveredAnchorId={null}
+                  hiddenBlockIds={hiddenPreviewBlockIds}
+                  previewPruningEnabled={formState.sourceType === "url" && previewDocument !== null}
+                  anchorRefs={anchorRefs}
+                  commentRefs={commentRefs}
+                  onHoverAnchor={() => undefined}
+                  onSelectionDraft={() => undefined}
+                  onHideBlock={(blockId) => dispatch({ type: "HIDE_PREVIEW_BLOCK", blockId })}
+                  onRestoreBlock={(blockId) => dispatch({ type: "RESTORE_PREVIEW_BLOCK", blockId })}
+                  onRestoreAllBlocks={() => dispatch({ type: "RESTORE_ALL_PREVIEW_BLOCKS" })}
+                  replyDrafts={replyDrafts}
+                  activeReplyComposerId={activeReplyComposerId}
+                  editingCommentId={editingCommentId}
+                  editingBody={editingBody}
+                  onReplyDraftChange={() => undefined}
+                  onToggleReplyComposer={() => undefined}
+                  onAddReply={() => undefined}
+                  onDeleteReply={() => undefined}
+                  onReviewState={() => undefined}
+                  onStartEditing={() => undefined}
+                  onEditingBodyChange={() => undefined}
+                  onSaveEdit={() => undefined}
+                  onCancelEdit={() => undefined}
+                  onDeleteComment={() => undefined}
+                />
+              </section>
+            ) : null}
+          </>
+        ) : null}
 
         {artifact?.error_message ? <section className={styles.errorBanner}>{artifact.error_message}</section> : null}
 
-        <SelectionBanner
-          selectionDraft={selectionDraft}
-          commentDraft={commentDraft}
-          onCommentDraftChange={(value) => dispatch({ type: "SET_COMMENT_DRAFT", draft: value })}
-          onSave={handleCreateComment}
-          onCancel={() => dispatch({ type: "SET_SELECTION_DRAFT", draft: null })}
-        />
-
-        <section className={styles.progressPanel}>
-          <div className={styles.sectionTitle}>Run progress</div>
-          <div
-            className={`${styles.progressTrack} ${isProgressActive ? styles.progressTrackActive : ""}`}
-            data-testid="progress-track"
-            aria-hidden="true"
-          >
-            <div
-              className={`${styles.progressFill} ${isProgressActive ? styles.progressFillActive : ""}`}
-              data-testid="progress-fill"
-              style={{ width: `${Math.round(progress * 100)}%` }}
-            />
-          </div>
-          <div className={styles.progressMeta}>
-            <span>{Math.round(progress * 100)}% complete</span>
-            <span>{artifact?.status ?? (previewDocument ? "draft imported" : "idle")}</span>
-          </div>
-          {latestResumeEvent ? (
-            <div className={styles.progressNote} data-testid="run-resumed-note">
-              {latestResumeEvent.message}
-              {latestResumeEvent.attempt ? ` (${latestResumeEvent.attempt}${latestResumeEvent.max_attempts ? ` of ${latestResumeEvent.max_attempts}` : ""})` : ""}
-            </div>
-          ) : null}
-          <div className={styles.agentStatusGrid}>
-            {(artifact?.agent_plan ?? []).map((item) => (
-              <article key={item.agent_id} className={styles.agentStatusCard} data-testid={`agent-plan-${item.agent_id}`}>
-                <strong>{item.display_name}</strong>
-                <span className={styles.pill}>{item.status}</span>
-                <p className={styles.agentStatusCopy}>{item.message ?? item.category}</p>
-              </article>
-            ))}
-          </div>
-          <hr className={styles.runDetailsDivider} />
-          <AgentUsageSummary
-            agentResults={artifact?.agent_results ?? []}
+        {showRunningPanel ? (
+          <RunningStagePanel
+            progress={progress}
+            status={artifact?.status ?? "running"}
+            latestResumeEvent={latestResumeEvent}
             agentPlan={artifact?.agent_plan ?? []}
+            agentResults={artifact?.agent_results ?? []}
+            events={artifact?.events ?? []}
+            onStopRun={handleStopRun}
+            canStopRun={canStopRun}
           />
-          <hr className={styles.runDetailsDivider} />
-          <details className={styles.runLogDetails}>
-            <summary className={styles.runLogToggle}>
-              Run log ({(artifact?.events ?? []).length} events)
-            </summary>
-            <CommentRail events={artifact?.events ?? []} />
-          </details>
-        </section>
-
-        <RunMetrics summary={artifact?.summary ?? null} />
-
-        <ReviewSummaryPanel reviewSummary={artifact?.review_summary ?? null} />
-
-        {artifact !== null && isTerminalArtifact && hasAcceptedSuggestions && diffReview === null ? (
-          <section className={styles.revisionCta} data-testid="revision-cta-top">
-            <span>Ready to generate the revised version</span>
-            <button
-              className={styles.button}
-              data-testid="generate-revised-markdown-button"
-              type="button"
-              onClick={handleGenerateRevision}
-              disabled={!canGenerateRevision || isGeneratingRevision}
-            >
-              {isGeneratingRevision ? "Generating revision..." : "Generate revised markdown"}
-            </button>
-          </section>
         ) : null}
 
-        <section className={styles.workspace} ref={workspaceRef}>
-          {reviewProgress !== null && reviewProgress.total > 0 ? (
-            <div className={styles.reviewProgressBar}>
-              <span className={styles.pill}>
-                {reviewProgress.reviewed} of {reviewProgress.total} comments reviewed
-              </span>
-            </div>
-          ) : null}
-          {diffReview !== null ? (
+        {isReviewPhase ? (
+          <>
+            <ReviewToolbar
+              formState={formState}
+              agents={agents}
+              fileInputKey={fileInputKey}
+              selectedFile={selectedFile}
+              statusMessage={statusMessage}
+              submitting={isSubmitting}
+              previewing={isPreviewing}
+              canAnalyze={canAnalyze}
+              canPreviewUrl={false}
+              canStopRun={canStopRun}
+              canExport={canExport}
+              canGenerateRevision={canGenerateRevision}
+              showGenerateRevision={artifact !== null && isTerminalArtifact && hasAcceptedSuggestions && diffReview === null}
+              generatingRevision={isGeneratingRevision}
+              showNewAnalysis={showNewAnalysis}
+              analyzeButtonLabel={analyzeButtonLabel}
+              disabledAgentIds={[...completedAgentIds]}
+              importInputKey={importInputKey}
+              showUrlImportGuidance={false}
+              hasLoadedContent={true}
+              onFormChange={(updater) =>
+                dispatch({
+                  type: "UPDATE_FORM_STATE",
+                  updater: (current) => {
+                    const next = updater(current);
+                    if (next.selectedAgents !== current.selectedAgents) {
+                      return {
+                        ...next,
+                        selectedAgents: resolveSelectedAgents(next.selectedAgents, agents),
+                      };
+                    }
+                    return next;
+                  },
+                })
+              }
+              onFileChange={(file) => {
+                dispatch({ type: "SET_SELECTED_FILE", file });
+                dispatch({ type: "BUMP_FILE_INPUT_KEY" });
+                dispatch({
+                  type: "UPDATE_FORM_STATE",
+                  updater: (current) => ({
+                    ...current,
+                    sourceLabel: file?.name ?? "upload",
+                    title: file?.name ?? current.title,
+                  }),
+                });
+              }}
+              onImportFileChange={handleImportFile}
+              onPreviewUrl={handlePreviewUrl}
+              onSubmit={handleSubmit}
+              onGenerateRevision={handleGenerateRevision}
+              onStopRun={handleStopRun}
+              onStartNewAnalysis={handleStartNewAnalysis}
+              onExport={handleExport}
+            />
+
+            <SelectionBanner
+              selectionDraft={selectionDraft}
+              commentDraft={commentDraft}
+              onCommentDraftChange={(value) => dispatch({ type: "SET_COMMENT_DRAFT", draft: value })}
+              onSave={handleCreateComment}
+              onCancel={() => dispatch({ type: "SET_SELECTION_DRAFT", draft: null })}
+            />
+
+            {artifact !== null && !isFollowUpRunInProgress && isTerminalArtifact && hasAcceptedSuggestions && diffReview === null ? (
+              <section className={styles.revisionCta} data-testid="revision-cta-top">
+                <span>Ready to generate the revised version</span>
+                <button
+                  className={styles.button}
+                  data-testid="generate-revised-markdown-button"
+                  type="button"
+                  onClick={handleGenerateRevision}
+                  disabled={!canGenerateRevision || isGeneratingRevision}
+                >
+                  {isGeneratingRevision ? "Generating revision..." : "Generate revised markdown"}
+                </button>
+              </section>
+            ) : null}
+
+            {artifact !== null && isFollowUpRunInProgress ? (
+              <section className={styles.reviewInlineProgress} data-testid="follow-up-progress">
+                <div className={styles.reviewInlineProgressMeta}>
+                  <span className={styles.pill}>Additional analysis running</span>
+                  <span className={styles.reviewInlineProgressStatus}>{artifact.status}</span>
+                </div>
+                <div
+                  className={`${styles.progressTrack} ${isProgressActive ? styles.progressTrackActive : ""}`}
+                  data-testid="compact-progress-track"
+                  aria-hidden="true"
+                >
+                  <div
+                    className={`${styles.progressFill} ${isProgressActive ? styles.progressFillActive : ""}`}
+                    data-testid="compact-progress-fill"
+                    style={{ width: `${Math.round(progress * 100)}%` }}
+                  />
+                </div>
+                <div className={styles.progressMeta}>
+                  <span>{Math.round(progress * 100)}% complete</span>
+                  <button className={styles.stateButton} type="button" onClick={handleStopRun} disabled={!canStopRun}>
+                    Stop run
+                  </button>
+                </div>
+              </section>
+            ) : null}
+
+            {artifact !== null && artifact.summary !== null && !isFollowUpRunInProgress ? (
+              <RunMetrics summary={artifact.summary} />
+            ) : null}
+            <ReviewSummaryPanel reviewSummary={artifact?.review_summary ?? null} />
+            <section className={styles.analysisContextPanel}>
+              <AgentUsageSummary
+                agentResults={artifact?.agent_results ?? []}
+                agentPlan={artifact?.agent_plan ?? []}
+              />
+            </section>
+
+            <section className={styles.workspace} ref={workspaceRef} data-testid="review-workbench">
+              {reviewProgress !== null && reviewProgress.total > 0 ? (
+                <div className={styles.reviewProgressBar}>
+                  <span className={styles.pill}>
+                    {reviewProgress.reviewed} of {reviewProgress.total} comments reviewed
+                  </span>
+                </div>
+              ) : null}
+              <DocumentPane
+                document={displayDocument}
+                anchors={artifact?.anchors ?? []}
+                threads={normalizedThreads}
+                anchorThreadMap={anchorThreadMap}
+                claimEvidenceByBlock={claimEvidenceByBlock}
+                selectionEnabled={artifact !== null}
+                hoveredAnchorId={hoveredAnchorId}
+                hiddenBlockIds={artifact === null && formState.sourceType === "url" ? hiddenPreviewBlockIds : []}
+                previewPruningEnabled={artifact === null && formState.sourceType === "url" && previewDocument !== null}
+                anchorRefs={anchorRefs}
+                commentRefs={commentRefs}
+                onHoverAnchor={(anchorId) => dispatch({ type: "SET_HOVERED_ANCHOR_ID", anchorId })}
+                onSelectionDraft={(draft) => dispatch({ type: "SET_SELECTION_DRAFT", draft: artifact !== null ? draft : null })}
+                onHideBlock={(blockId) => dispatch({ type: "HIDE_PREVIEW_BLOCK", blockId })}
+                onRestoreBlock={(blockId) => dispatch({ type: "RESTORE_PREVIEW_BLOCK", blockId })}
+                onRestoreAllBlocks={() => dispatch({ type: "RESTORE_ALL_PREVIEW_BLOCKS" })}
+                replyDrafts={replyDrafts}
+                editingCommentId={editingCommentId}
+                editingBody={editingBody}
+                onReplyDraftChange={(commentId, value) => {
+                  dispatch({ type: "SET_REPLY_DRAFT", commentId, body: value });
+                }}
+                activeReplyComposerId={activeReplyComposerId}
+                onToggleReplyComposer={(commentId) =>
+                  dispatch({
+                    type: "SET_ACTIVE_REPLY_COMPOSER",
+                    commentId: activeReplyComposerId === commentId ? null : commentId,
+                  })
+                }
+                onAddReply={handleReply}
+                onDeleteReply={handleDeleteReply}
+                onReviewState={handleReviewState}
+                onStartEditing={(commentId, body) => {
+                  dispatch({ type: "SET_EDITING_COMMENT", commentId, body });
+                }}
+                onEditingBodyChange={(value) => dispatch({ type: "SET_EDITING_BODY", body: value })}
+                onSaveEdit={handleSaveEdit}
+                onCancelEdit={() => {
+                  dispatch({ type: "SET_EDITING_COMMENT", commentId: null, body: "" });
+                }}
+                onDeleteComment={handleDeleteHumanComment}
+              />
+            </section>
+
+            {artifact !== null && !isFollowUpRunInProgress && isTerminalArtifact && hasAcceptedSuggestions && diffReview === null ? (
+              <section className={styles.revisionCta} data-testid="revision-cta-bottom">
+                <span>Ready to generate the revised version</span>
+                <button
+                  className={styles.button}
+                  type="button"
+                  onClick={handleGenerateRevision}
+                  disabled={!canGenerateRevision || isGeneratingRevision}
+                >
+                  {isGeneratingRevision ? "Generating revision..." : "Generate revised markdown"}
+                </button>
+              </section>
+            ) : null}
+          </>
+        ) : null}
+
+        {isDiffReviewPhase && diffReview !== null ? (
+          <section className={styles.diffReviewShell} data-testid="diff-review-shell">
             <RevisedMarkdownPanel
               originalMarkdown={diffReview.originalMarkdown}
               candidateMarkdown={diffReview.candidateMarkdown}
@@ -1066,67 +1253,156 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
               onDecisionChange={handleDiffDecision}
               onApply={handleApplyRevision}
             />
-          ) : null}
-          <DocumentPane
-            document={displayDocument}
-            anchors={artifact?.anchors ?? []}
-            threads={normalizedThreads}
-            anchorThreadMap={anchorThreadMap}
-            claimEvidenceByBlock={claimEvidenceByBlock}
-            selectionEnabled={artifact !== null}
-            hoveredAnchorId={hoveredAnchorId}
-            hiddenBlockIds={artifact === null && formState.sourceType === "url" ? hiddenPreviewBlockIds : []}
-            previewPruningEnabled={artifact === null && formState.sourceType === "url" && previewDocument !== null}
-            anchorRefs={anchorRefs}
-            commentRefs={commentRefs}
-            onHoverAnchor={(anchorId) => dispatch({ type: "SET_HOVERED_ANCHOR_ID", anchorId })}
-            onSelectionDraft={(draft) => dispatch({ type: "SET_SELECTION_DRAFT", draft: artifact !== null ? draft : null })}
-            onHideBlock={(blockId) => dispatch({ type: "HIDE_PREVIEW_BLOCK", blockId })}
-            onRestoreBlock={(blockId) => dispatch({ type: "RESTORE_PREVIEW_BLOCK", blockId })}
-            onRestoreAllBlocks={() => dispatch({ type: "RESTORE_ALL_PREVIEW_BLOCKS" })}
-            replyDrafts={replyDrafts}
-            editingCommentId={editingCommentId}
-            editingBody={editingBody}
-            onReplyDraftChange={(commentId, value) => {
-              dispatch({ type: "SET_REPLY_DRAFT", commentId, body: value });
-            }}
-            activeReplyComposerId={activeReplyComposerId}
-            onToggleReplyComposer={(commentId) =>
-              dispatch({
-                type: "SET_ACTIVE_REPLY_COMPOSER",
-                commentId: activeReplyComposerId === commentId ? null : commentId,
-              })
-            }
-            onAddReply={handleReply}
-            onDeleteReply={handleDeleteReply}
-            onReviewState={handleReviewState}
-            onStartEditing={(commentId, body) => {
-              dispatch({ type: "SET_EDITING_COMMENT", commentId, body });
-            }}
-            onEditingBodyChange={(value) => dispatch({ type: "SET_EDITING_BODY", body: value })}
-            onSaveEdit={handleSaveEdit}
-            onCancelEdit={() => {
-              dispatch({ type: "SET_EDITING_COMMENT", commentId: null, body: "" });
-            }}
-            onDeleteComment={handleDeleteHumanComment}
-          />
-        </section>
-
-        {artifact !== null && isTerminalArtifact && hasAcceptedSuggestions && diffReview === null ? (
-          <section className={styles.revisionCta} data-testid="revision-cta-bottom">
-            <span>Ready to generate the revised version</span>
-            <button
-              className={styles.button}
-              type="button"
-              onClick={handleGenerateRevision}
-              disabled={!canGenerateRevision || isGeneratingRevision}
-            >
-              {isGeneratingRevision ? "Generating revision..." : "Generate revised markdown"}
-            </button>
           </section>
         ) : null}
       </div>
     </main>
+  );
+}
+
+function RunningStagePanel({
+  progress,
+  status,
+  latestResumeEvent,
+  agentPlan,
+  agentResults,
+  events,
+  onStopRun,
+  canStopRun,
+}: {
+  progress: number;
+  status: RunStatus;
+  latestResumeEvent: ArtifactEvent | undefined;
+  agentPlan: AnalysisArtifact["agent_plan"];
+  agentResults: AnalysisArtifact["agent_results"];
+  events: AnalysisArtifact["events"];
+  onStopRun: () => void;
+  canStopRun: boolean;
+}) {
+  const findings = useMemo(
+    () =>
+          agentResults.flatMap((result) =>
+            result.findings.map((finding) => ({
+              agentId: result.agent_id,
+              category: result.category,
+              rationale: finding.rationale,
+              suggestion: finding.suggestion,
+              confidence: finding.confidence,
+              sources: finding.sources ?? [],
+              metadata: finding.metadata,
+            })),
+          ),
+    [agentResults],
+  );
+
+  return (
+    <section className={styles.progressPanel} data-testid="running-stage-panel">
+      <div className={styles.sectionTitle}>Run progress</div>
+      <div
+        className={`${styles.progressTrack} ${styles.progressTrackActive}`}
+        data-testid="progress-track"
+        aria-hidden="true"
+      >
+        <div
+          className={`${styles.progressFill} ${styles.progressFillActive}`}
+          data-testid="progress-fill"
+          style={{ width: `${Math.round(progress * 100)}%` }}
+        />
+      </div>
+      <div className={styles.progressMeta}>
+        <span>{Math.round(progress * 100)}% complete</span>
+        <span>{status}</span>
+      </div>
+      {latestResumeEvent ? (
+        <div className={styles.progressNote} data-testid="run-resumed-note">
+          {latestResumeEvent.message}
+          {latestResumeEvent.attempt ? ` (${latestResumeEvent.attempt}${latestResumeEvent.max_attempts ? ` of ${latestResumeEvent.max_attempts}` : ""})` : ""}
+        </div>
+      ) : null}
+      <RunningFindingsPreview findings={findings} />
+      <div className={styles.agentStatusGrid}>
+        {agentPlan.map((item) => (
+          <article key={item.agent_id} className={styles.agentStatusCard} data-testid={`agent-plan-${item.agent_id}`}>
+            <strong>{item.display_name}</strong>
+            <span className={styles.pill}>{item.status}</span>
+            <p className={styles.agentStatusCopy}>{item.message ?? item.category}</p>
+          </article>
+        ))}
+      </div>
+      <hr className={styles.runDetailsDivider} />
+      <AgentUsageSummary agentResults={agentResults} agentPlan={agentPlan} />
+      <hr className={styles.runDetailsDivider} />
+      <details className={styles.runLogDetails}>
+        <summary className={styles.runLogToggle}>Run log ({events.length} events)</summary>
+        <CommentRail events={events} />
+      </details>
+      <div className={styles.runningStageActions}>
+        <button className={styles.ghostButton} type="button" onClick={onStopRun} disabled={!canStopRun}>
+          Stop run
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function RunningFindingsPreview({
+  findings,
+}: {
+  findings: Array<{
+    agentId: string;
+    category: AnalysisArtifact["agent_results"][number]["category"];
+    rationale: string;
+    suggestion: string | null | undefined;
+    confidence: number;
+    sources: string[];
+    metadata: Record<string, unknown>;
+  }>;
+}) {
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    if (findings.length <= 1) {
+      setIndex(0);
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setIndex((current) => (current + 1) % findings.length);
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [findings.length]);
+
+  useEffect(() => {
+    if (index >= findings.length) {
+      setIndex(0);
+    }
+  }, [findings.length, index]);
+
+  if (!findings.length) {
+    return (
+      <article className={styles.runningPreviewCard} data-testid="running-preview-card">
+        <div className={styles.metricLabel}>Partial findings</div>
+        <p className={styles.reviewSummaryText}>Waiting for the first agent result.</p>
+      </article>
+    );
+  }
+
+  const item = findings[index % findings.length];
+
+  return (
+    <article className={styles.runningPreviewCard} data-testid="running-preview-card">
+      <div className={styles.runningPreviewMeta}>
+        <span className={styles.pill}>{item.category}</span>
+        <span className={styles.reviewBadge}>
+          Finding {index + 1} of {findings.length}
+        </span>
+      </div>
+      <p className={styles.runningPreviewText}>{item.rationale}</p>
+      {item.suggestion ? <p className={styles.runningPreviewSuggestion}>{item.suggestion}</p> : null}
+      <div className={styles.runningPreviewFootnote}>
+        <span>{item.confidence.toFixed(2)} confidence</span>
+        <span>{item.sources.length} sources</span>
+      </div>
+    </article>
   );
 }
 
@@ -1341,6 +1617,31 @@ function buildPreviewSubmissionText(document: ArtifactDocument, hiddenBlockIds: 
 
 function activeArtifactIdFor(artifact: AnalysisArtifact): string | null {
   return artifact.status === "running" || artifact.status === "queued" ? artifact.artifact_id : null;
+}
+
+function getWorkbenchPhase(artifact: AnalysisArtifact | null): WorkbenchPhase {
+  if (artifact === null || artifact.status === "draft") {
+    return "intake";
+  }
+  if (artifact.diff_review != null && !isRevisedMarkdownApplied(artifact)) {
+    return "diff_review";
+  }
+  if ((artifact.status === "queued" || artifact.status === "running") && !isAppendRun(artifact)) {
+    return "running";
+  }
+  return "review";
+}
+
+function isAppendRun(artifact: AnalysisArtifact): boolean {
+  return artifact.events.some(
+    (event) => {
+      const metadata = event.metadata as { mode?: unknown };
+      return (
+        event.event_type === "run"
+        && (metadata.mode === "append_agents" || event.message.includes("Additional analysis"))
+      );
+    },
+  );
 }
 
 function hasFormDraft(formState: ReviewFormState): boolean {

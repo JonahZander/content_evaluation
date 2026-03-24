@@ -59,7 +59,7 @@ export const initialWorkbenchState: WorkbenchState = {
   artifact: null,
   previewDocument: null,
   activeArtifactId: null,
-  statusMessage: "Ready.",
+  statusMessage: "",
   agents: [],
 
   isSubmitting: false,

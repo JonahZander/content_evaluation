@@ -971,7 +971,8 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     <main className={styles.page}>
       <div className={styles.shell}>
         <ReviewHero />
-
+      </div>
+      <div className={styles.shell}>
         {isIntakePhase ? (
           <>
             <ReviewToolbar

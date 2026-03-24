@@ -267,9 +267,11 @@ export function ReviewToolbar({
             </button>
           </>
         ) : null}
-        <span className={styles.statusPill} data-testid="run-status" role="status">
-          {statusMessage}
-        </span>
+        {statusMessage ? (
+          <span className={styles.statusPill} data-testid="run-status" role="status">
+            {statusMessage}
+          </span>
+        ) : null}
       </div>
     </section>
   );

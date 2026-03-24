@@ -16,9 +16,9 @@ This project uses a code-orchestrated multi-agent model:
   - Extracts the 3–5 most important verifiable claims from the article
   - Uses the vendored deep researcher graph (supervisor + parallel Tavily researchers) to verify each claim against live web sources
   - Returns structured claim findings: claim text, verdict, evidence summary, source links, anchor excerpt, confidence, value/differentiation notes, official-source links, and related-post links
-  - Also returns summary-first overview data such as TL;DR, inferred audience, and main-claim entries for the review-summary panel
+  - Also returns summary-first overview data such as TL;DR, inferred audience, and overlap research for the review-summary panel
   - Also produces structured overlap research items that replace the prior standalone similarity surface in new runs
-  - Multi-step execution; enabled by default because it now powers the summary panel, overlap research, and claim evidence UI
+  - Multi-step execution; enabled by default because it now powers the summary panel, overlap research, and fact-check comment rail
   - No dependencies on other specialist agents; runs in parallel with the independent group when selected
   - Requires CONTENT_EVAL_OPENAI_API_KEY and CONTENT_EVAL_TAVILY_API_KEY in live mode
   - Acts as the research backbone for downstream editorial reasoning
@@ -98,7 +98,7 @@ Each agent should be declared with:
 - Artifact assembly should happen in code, not inside prompts.
 - Agent outputs should be inspectable in the UI and exportable for debugging.
 - Agent comments should remain immutable; reviewer feedback happens via replies and review-state actions inside the same artifact.
-- Not every agent should produce comment-rail surface area. Fact-check is summary/evidence-first by default, while AI-likelihood and editorial remain comment-producing.
+- Fact-check, AI-likelihood, and editorial produce comment-rail surface area; fact-check also remains summary/evidence-first.
 
 ## Current Provider Routing
 

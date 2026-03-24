@@ -89,6 +89,7 @@ export interface ArtifactComment {
   body: string;
   suggestion?: string | null;
   sources?: string[];
+  metadata?: Record<string, unknown>;
   review_state: ReviewState;
   created_at: string;
   updated_at: string;

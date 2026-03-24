@@ -370,40 +370,6 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   const isReviewPhase = workbenchPhase === "review";
   const isDiffReviewPhase = workbenchPhase === "diff_review";
 
-  const claimEvidenceByBlock = useMemo(() => {
-    const map = new Map<string, Array<{
-      anchorId: string;
-      claimText: string;
-      verdict: string;
-      evidenceSummary: string;
-      sourceLinks: string[];
-    }>>();
-    const anchorsById = new Map((artifact?.anchors ?? []).map((anchor) => [anchor.id, anchor]));
-    const factCheckResult = artifact?.agent_results.find((result) => result.agent_id === "fact_check");
-    factCheckResult?.findings.forEach((finding) => {
-      finding.anchor_ids.forEach((anchorId) => {
-        const anchor = anchorsById.get(anchorId);
-        const primarySegment = anchor ? anchorPrimarySegment(anchor) : null;
-        if (!primarySegment) {
-          return;
-        }
-        const items = map.get(primarySegment.block_id) ?? [];
-        const sourceLinks = Array.isArray(finding.metadata.source_links)
-          ? finding.metadata.source_links.map((item) => String(item))
-          : (finding.sources ?? []);
-        items.push({
-          anchorId,
-          claimText: String(finding.metadata.claim_text ?? finding.metadata.anchor_excerpt ?? finding.rationale),
-          verdict: String(finding.metadata.verdict ?? "UNVERIFIABLE"),
-          evidenceSummary: String(finding.metadata.evidence_summary ?? finding.rationale),
-          sourceLinks,
-        });
-        map.set(primarySegment.block_id, items);
-      });
-    });
-    return map;
-  }, [artifact?.agent_results, artifact?.anchors]);
-
   const progress = useMemo(() => {
     if (artifact === null) {
       return 0;
@@ -998,16 +964,6 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
                   anchors={[]}
                   threads={[]}
                   anchorThreadMap={new Map<string, { colors: string[] }>()}
-                  claimEvidenceByBlock={new Map<
-                    string,
-                    Array<{
-                      anchorId: string;
-                      claimText: string;
-                      verdict: string;
-                      evidenceSummary: string;
-                      sourceLinks: string[];
-                    }>
-                  >()}
                   selectionEnabled={false}
                   hoveredAnchorId={null}
                   hiddenBlockIds={hiddenPreviewBlockIds}
@@ -1187,7 +1143,6 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
                 anchors={artifact?.anchors ?? []}
                 threads={normalizedThreads}
                 anchorThreadMap={anchorThreadMap}
-                claimEvidenceByBlock={claimEvidenceByBlock}
                 selectionEnabled={artifact !== null}
                 hoveredAnchorId={hoveredAnchorId}
                 hiddenBlockIds={artifact === null && formState.sourceType === "url" ? hiddenPreviewBlockIds : []}

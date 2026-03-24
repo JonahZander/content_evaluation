@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import { ReviewWorkbench } from "@/components/ReviewWorkbench";
 import { mockArtifact } from "@/lib/mock-data";
@@ -604,12 +604,16 @@ describe("ReviewWorkbench", () => {
     expect(screen.getByText("Editorial review systems for AI content")).toBeInTheDocument();
   });
 
-  it("renders claim evidence near the related paragraph", () => {
+  it("renders fact-check details in the comment thread rail", () => {
     render(<ReviewWorkbench initialArtifact={mockArtifact} />);
 
-    expect(screen.getByTestId("claim-evidence-0")).toBeInTheDocument();
-    expect(screen.getByText("SUPPORTED")).toBeInTheDocument();
-    expect(screen.getByText("Evidence source")).toBeInTheDocument();
+    const factCheckCard = screen.getByTestId("fact-check-details-comment-fact-1");
+
+    expect(screen.getByTestId("comment-comment-fact-1")).toBeInTheDocument();
+    expect(within(factCheckCard).getByText("Claim: Editorial teams need a fast way to decide whether a post is original, useful, and worth reader attention.")).toBeInTheDocument();
+    expect(within(factCheckCard).getByText("Verdict: SUPPORTED")).toBeInTheDocument();
+    expect(within(factCheckCard).getByText("Supported by public examples of editorial review workflows and citation-backed evaluation guidance.")).toBeInTheDocument();
+    expect(within(factCheckCard).getByRole("link", { name: "https://example.com/editorial-review" })).toBeInTheDocument();
   });
 
   it("adds active progress styling while a run is live", () => {

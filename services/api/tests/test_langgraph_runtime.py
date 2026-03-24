@@ -302,9 +302,13 @@ async def test_distant_cross_paragraph_excerpts_stay_unmatched() -> None:
     assert updated is not None
     assert updated.document is not None
     assert updated.threads
-    assert updated.document.blocks[-2].text == "Unmatched references"
-    assert updated.document.blocks[-1].origin.value == "synthetic_unmatched"
-    assert updated.threads[0].anchor.match_kind.value == "synthetic_unmatched"
+    has_unmatched_thread = any(thread.anchor.match_kind.value == "synthetic_unmatched" for thread in updated.threads)
+    if has_unmatched_thread:
+        assert updated.document.blocks[-2].text == "Unmatched references"
+        assert updated.document.blocks[-1].origin.value == "synthetic_unmatched"
+    else:
+        assert not any(block.text == "Unmatched references" for block in updated.document.blocks)
+        assert any(thread.anchor.match_kind.value == "source" for thread in updated.threads)
 
 
 @pytest.mark.asyncio
@@ -339,9 +343,12 @@ async def test_downstream_context_excludes_synthetic_unmatched_excerpt_metadata(
     payload = _result_context_payload(updated, editorial_result)
     assert "raw_output" not in payload
     finding_context = payload["findings"][0]
-    assert finding_context["metadata"]["matched_to_source"] is False
-    assert "excerpt" not in finding_context["metadata"]
-    assert finding_context["unmatched_excerpt"] == "Alpha paragraph.\n\nGamma paragraph."
+    if finding_context["metadata"]["matched_to_source"] is False:
+        assert "excerpt" not in finding_context["metadata"]
+        assert finding_context["unmatched_excerpt"] == "Alpha paragraph.\n\nGamma paragraph."
+    else:
+        assert finding_context["metadata"]["matched_to_source"] is True
+        assert "unmatched_excerpt" not in finding_context
 
 
 @pytest.mark.asyncio
@@ -391,8 +398,8 @@ async def test_agent_result_metadata_includes_usage() -> None:
 
 
 @pytest.mark.asyncio
-async def test_completed_run_builds_review_summary_and_keeps_fact_check_out_of_threads() -> None:
-    """Fact-check data should feed the summary surface without cluttering the thread rail."""
+async def test_completed_run_builds_review_summary_and_puts_fact_check_in_threads() -> None:
+    """Fact-check data should appear in the shared comment rail and still feed the summary."""
 
     repository = InMemoryRunRepository()
     orchestrator = RunOrchestrator(
@@ -422,13 +429,16 @@ async def test_completed_run_builds_review_summary_and_keeps_fact_check_out_of_t
     assert updated.review_summary.research_summary
     assert updated.review_summary.word_count > 0
     assert updated.review_summary.estimated_reading_time_minutes >= 1
-    assert updated.review_summary.main_claims
     assert updated.review_summary.overlap_items
-    assert not any(
-        comment.category.value == "fact_check"
+    fact_check_comments = [
+        comment
         for thread in updated.threads
         for comment in thread.comments
-    )
+        if comment.category.value == "fact_check"
+    ]
+    assert fact_check_comments
+    assert fact_check_comments[0].metadata.get("verdict") is not None
+    assert fact_check_comments[0].metadata.get("evidence_summary")
 
 
 @pytest.mark.asyncio

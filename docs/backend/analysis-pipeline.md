@@ -57,15 +57,15 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
   - Convert agent outputs into anchors, comments, results, summary data, debug traces, and usage metadata
   - Build both score-oriented `summary` data and narrative `review_summary` data
   - Thread `AgentExecutionResult.usage` into `ArtifactAgentResult.metadata` so token counts are available to the frontend without re-querying backend state
-   - Resolve comment anchors against normalized block text, preferring exact matches inside the referenced `block_id` and using a bounded within-block fuzzy fallback only for near-miss quotes
-   - Treat ellipsis excerpts as ordered fragments across one source block or a bounded window of adjacent source blocks instead of collapsing them into one normalized string
-   - Represent resolved anchors as ordered block-local segments so one finding can span multiple adjacent paragraphs
-   - Exclude synthetic unmatched fallback blocks from later anchor matching and downstream agent context
-   - When an excerpt still cannot be mapped into adjacent visible blocks, append a bottom-of-document unmatched-reference block instead of falling back to the first paragraph
+  - Fact-check findings become normal comment-rail threads and carry structured claim metadata (`claim_text`, `verdict`, `evidence_summary`, source links, and related research links) on each comment
+  - Resolve comment anchors against normalized block text, preferring exact matches inside the referenced `block_id` and using a bounded within-block fuzzy fallback only for near-miss quotes
+  - Treat ellipsis excerpts as ordered fragments across one source block or a bounded window of adjacent source blocks instead of collapsing them into one normalized string
+  - Represent resolved anchors as ordered block-local segments so one finding can span multiple adjacent paragraphs
+  - Exclude synthetic unmatched fallback blocks from later anchor matching and downstream agent context
+  - When an excerpt still cannot be mapped into adjacent visible blocks, append a bottom-of-document unmatched-reference block instead of falling back to the first paragraph
   - Keep human comment/reply/review-state data in the same artifact structure
-  - Keep fact-check claim evidence on structured finding metadata so the frontend can render nearby evidence links without parsing prose
-  - Fact-check is now summary-first and also supplies TL;DR, audience overview, main-claim summaries, official-source links, and differentiation/value context
-  - AI-likelihood and editorial remain the only default comment-producing agents in new runs
+  - Fact-check remains summary-first and also supplies TL;DR, audience overview, overlap research, and differentiation/value context
+  - AI-likelihood, editorial, and fact-check are the comment-producing agents surfaced in the review rail
   - Keep artifact assembly outside the graph-state model
 8. Export and import
    - Export the artifact as JSON

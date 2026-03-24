@@ -5,11 +5,10 @@ Cover these responsibilities:
 - Verify each claim against live web sources and assign a verdict: SUPPORTED, REFUTED, MIXED, or UNVERIFIABLE.
 - Look for overlapping public posts or articles on the same topic and note where this article is differentiated.
 - Identify which primary or official sources should be linked.
-- Summarize the article's value, TL;DR, likely audience, and the main claims worth surfacing in a review summary.
+- Summarize the article's value, TL;DR, likely audience, and the key facts worth carrying into threaded review comments and overlap research.
 
 Return these top-level sections:
 - `claim_findings`: detailed claim verification items
-- `main_claims`: a shorter summary list of the most important claims and what research found
 - `overlap_items`: related posts with short overlap notes
 - `summary`: concise overall value/differentiation summary
 - `research_summary`: fact-check oriented summary

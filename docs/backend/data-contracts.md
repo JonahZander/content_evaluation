@@ -173,7 +173,7 @@ Narrative review context shown above the source text pane.
 | `article_format` | `str` | Heuristic article-type guess such as `tutorial`, `announcement`, or `case_study`. |
 | `reading_difficulty` | `str` | Coarse density indicator such as `accessible`, `moderate`, or `dense`. |
 | `structural_completeness` | `ArtifactStructuralCompleteness` | Lightweight intro/headings/conclusion signals. |
-| `main_claims` | `list[ArtifactClaimSummary]` | Key fact-check-backed claims surfaced for summary review. |
+| `main_claims` | `list[ArtifactClaimSummary]` | Legacy fact-check claim summary kept for import compatibility; the UI no longer renders it by default. |
 | `overlap_items` | `list[ArtifactOverlapItem]` | Linked overlapping articles with short notes. |
 
 ### ArtifactOverlapItem
@@ -185,6 +185,8 @@ Narrative review context shown above the source text pane.
 | `note` | `str` | Short explanation of why the article overlaps. |
 
 ### ArtifactClaimSummary
+
+Legacy claim summary shape retained for compatibility with older exports and imports. New fact-check UI should read thread-level comment metadata instead.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -214,5 +216,5 @@ Narrative review context shown above the source text pane.
 - `anchors[*].segments` is the canonical multi-block shape. `block_id`, `start_offset`, and `end_offset` at the anchor level are kept for backward compatibility and always mirror `segments[0]`.
 - `ArtifactBlockOrigin.synthetic_unmatched` blocks are not original article text. Export consumers should exclude them or render them differently.
 - `agent_results[*].raw_output` contains the unvalidated provider response. Do not rely on its shape externally.
-- Fact-check evidence used by the UI lives on `agent_results[*].findings[*].metadata`, especially `claim_text`, `verdict`, `evidence_summary`, `source_links`, `official_source_links`, and `related_post_links`.
+- Fact-check evidence used by the UI lives on `agent_results[*].findings[*].metadata` and on the corresponding threaded `ArtifactComment.metadata`, especially `claim_text`, `verdict`, `evidence_summary`, `source_links`, `official_source_links`, and `related_post_links`.
 - `debug` is always `null` unless `include_debug_trace: true` was set on the run.

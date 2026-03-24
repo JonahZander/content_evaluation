@@ -37,7 +37,6 @@ from content_evaluation.domain.models import (
     ArtifactBlock,
     ArtifactBlockKind,
     ArtifactBlockOrigin,
-    ArtifactClaimSummary,
     ArtifactComment,
     ArtifactDiffItem,
     ArtifactDiffReview,
@@ -1667,6 +1666,7 @@ def _append_agent_comment(
         body=finding.rationale,
         suggestion=finding.suggestion,
         sources=finding.sources,
+        metadata=dict(finding.metadata),
         review_state=ReviewState.UNREVIEWED,
     )
     anchor = next(item for item in artifact.anchors if item.id == comment.anchor_id)
@@ -1682,7 +1682,11 @@ def _append_agent_comment(
 def _should_create_thread_for_agent(definition: AgentDefinition) -> bool:
     """Return whether one agent should appear in the comment rail."""
 
-    return definition.category in {AgentCategory.AI_LIKELIHOOD, AgentCategory.EDITORIAL}
+    return definition.category in {
+        AgentCategory.AI_LIKELIHOOD,
+        AgentCategory.EDITORIAL,
+        AgentCategory.FACT_CHECK,
+    }
 
 
 def _progress_for_artifact(artifact: AnalysisArtifact) -> float:
@@ -1761,7 +1765,6 @@ def _build_review_summary(artifact: AnalysisArtifact) -> ArtifactReviewSummary |
         article_format=overview["article_format"],
         reading_difficulty=overview["reading_difficulty"],
         structural_completeness=overview["structural_completeness"],
-        main_claims=_build_main_claim_summaries(fact_check_result),
         overlap_items=overlap_items,
     )
 
@@ -1926,51 +1929,6 @@ def _first_rationale(result: ArtifactAgentResult | None) -> str:
     if result is None or not result.findings:
         return ""
     return result.findings[0].rationale
-
-
-def _build_main_claim_summaries(result: ArtifactAgentResult | None) -> list[ArtifactClaimSummary]:
-    """Return structured main-claim entries from fact-check output."""
-
-    if result is None:
-        return []
-
-    raw_main_claims = _coerce_dict_list(result.metadata.get("main_claims"))
-    if raw_main_claims:
-        return [
-            ArtifactClaimSummary(
-                claim_text=_coerce_str(item.get("claim_text")) or "",
-                verdict=_coerce_str(item.get("verdict")) or "UNVERIFIABLE",
-                evidence_summary=_coerce_str(item.get("evidence_summary")) or "",
-                source_links=_coerce_str_list(item.get("source_links")),
-                anchor_quote=_coerce_str(item.get("anchor_quote")) or "",
-                value_add=_coerce_str(item.get("value_add")) or "",
-                official_source_links=_coerce_str_list(item.get("official_source_links")),
-                related_post_links=_coerce_str_list(item.get("related_post_links")),
-            )
-            for item in raw_main_claims
-        ]
-
-    claim_summaries: list[ArtifactClaimSummary] = []
-    for finding in result.findings:
-        metadata = finding.metadata
-        claim_text = _coerce_str(metadata.get("claim_text")) or finding.rationale
-        evidence_summary = _coerce_str(metadata.get("evidence_summary")) or finding.rationale
-        source_links = _coerce_str_list(metadata.get("source_links") or finding.sources)
-        official_source_links = _coerce_str_list(metadata.get("official_source_links"))
-        related_post_links = _coerce_str_list(metadata.get("related_post_links"))
-        claim_summaries.append(
-            ArtifactClaimSummary(
-                claim_text=claim_text or finding.rationale,
-                verdict=_coerce_str(metadata.get("verdict")) or "UNVERIFIABLE",
-                evidence_summary=evidence_summary,
-                source_links=source_links,
-                anchor_quote=_coerce_str(metadata.get("anchor_excerpt")) or _coerce_str(metadata.get("excerpt")) or "",
-                value_add=_coerce_str(metadata.get("value_add")) or "",
-                official_source_links=official_source_links or source_links,
-                related_post_links=related_post_links,
-            )
-        )
-    return claim_summaries
 
 
 def _fact_check_value_summary(result: ArtifactAgentResult | None) -> str:

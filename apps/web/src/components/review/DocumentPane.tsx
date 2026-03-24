@@ -59,7 +59,6 @@ interface DocumentPaneProps {
   anchors: ArtifactAnchor[];
   threads: ArtifactThread[];
   anchorThreadMap: Map<string, AnchorThread>;
-  claimEvidenceByBlock: Map<string, ClaimEvidence[]>;
   selectionEnabled?: boolean;
   hoveredAnchorId: string | null;
   hiddenBlockIds?: string[];
@@ -85,14 +84,6 @@ interface DocumentPaneProps {
   onSaveEdit: (commentId: string) => void;
   onCancelEdit: () => void;
   onDeleteComment: (commentId: string) => void;
-}
-
-interface ClaimEvidence {
-  anchorId: string;
-  claimText: string;
-  verdict: string;
-  evidenceSummary: string;
-  sourceLinks: string[];
 }
 
 const reviewActions: ReviewState[] = ["accepted", "rejected", "uncertain"];
@@ -437,6 +428,7 @@ function ThreadCards({
           const isEditing = editingCommentId === comment.id;
           const isReplyComposerOpen = activeReplyComposerId === comment.id;
           const isAgentComment = comment.author_type === "agent";
+          const factCheckDetails = comment.category === "fact_check" ? getFactCheckDetails(comment.metadata) : null;
           return (
             <article
               key={comment.id}
@@ -472,8 +464,35 @@ function ThreadCards({
               ) : (
                 <p className={styles.cardBody}>{comment.body}</p>
               )}
+              {factCheckDetails !== null ? (
+                <div className={styles.factCheckDetails} data-testid={`fact-check-details-${comment.id}`}>
+                  {factCheckDetails.claimText ? (
+                    <div className={styles.factCheckClaim}>Claim: {factCheckDetails.claimText}</div>
+                  ) : null}
+                  {factCheckDetails.verdict ? (
+                    <div className={styles.factCheckVerdict}>Verdict: {factCheckDetails.verdict}</div>
+                  ) : null}
+                  {factCheckDetails.evidenceSummary ? (
+                    <p className={styles.factCheckEvidence}>{factCheckDetails.evidenceSummary}</p>
+                  ) : null}
+                  {factCheckDetails.sourceLinks.length > 0 ? (
+                    <div className={styles.sources}>
+                      <span className={styles.sourcesLabel}>Sources:</span>
+                      <ul className={styles.sourcesList}>
+                        {factCheckDetails.sourceLinks.map((url) => (
+                          <li key={url}>
+                            <a href={url} target="_blank" rel="noopener noreferrer" className={styles.sourceLink}>
+                              {url}
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
               {comment.suggestion ? <div className={styles.suggestion}>Suggestion: {comment.suggestion}</div> : null}
-              {comment.sources && comment.sources.length > 0 ? (
+              {factCheckDetails === null && comment.sources && comment.sources.length > 0 ? (
                 <div className={styles.sources}>
                   <span className={styles.sourcesLabel}>Sources:</span>
                   <ul className={styles.sourcesList}>
@@ -592,12 +611,47 @@ function sortComments(comments: ArtifactComment[]): ArtifactComment[] {
   });
 }
 
+interface FactCheckDetails {
+  claimText: string;
+  verdict: string;
+  evidenceSummary: string;
+  sourceLinks: string[];
+}
+
+function getFactCheckDetails(metadata: Record<string, unknown> | undefined): FactCheckDetails | null {
+  if (metadata === undefined) {
+    return null;
+  }
+  const claimText = typeof metadata.claim_text === "string" ? metadata.claim_text : "";
+  const verdict = typeof metadata.verdict === "string" ? metadata.verdict.replaceAll("_", " ") : "";
+  const evidenceSummary = typeof metadata.evidence_summary === "string" ? metadata.evidence_summary : "";
+  const sourceLinks = dedupeStrings([
+    ...extractStringArray(metadata.source_links),
+    ...extractStringArray(metadata.official_source_links),
+    ...extractStringArray(metadata.related_post_links),
+  ]);
+  if (!claimText && !verdict && !evidenceSummary && sourceLinks.length === 0) {
+    return null;
+  }
+  return { claimText, verdict, evidenceSummary, sourceLinks };
+}
+
+function extractStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map((item) => String(item)).filter((item) => item.length > 0);
+}
+
+function dedupeStrings(values: string[]): string[] {
+  return [...new Set(values)];
+}
+
 export function DocumentPane({
   document,
   anchors,
   threads,
   anchorThreadMap,
-  claimEvidenceByBlock,
   selectionEnabled = true,
   hoveredAnchorId,
   hiddenBlockIds = [],
@@ -793,7 +847,7 @@ export function DocumentPane({
       resizeObserver?.disconnect();
       window.removeEventListener("resize", handleResize);
     };
-  }, [anchorRefs, claimEvidenceByBlock, commentRefs, blockThreads, document, hoveredAnchorId, hiddenBlockIdSet]);
+  }, [anchorRefs, commentRefs, blockThreads, document, hoveredAnchorId, hiddenBlockIdSet]);
 
   return (
     <div className={styles.documentPane} ref={paneRef}>
@@ -887,37 +941,6 @@ export function DocumentPane({
                       >
                         {isPreviewHidden ? "Restore section" : "Remove section"}
                       </button>
-                    </div>
-                  ) : null}
-                  {(claimEvidenceByBlock.get(block.id) ?? []).length ? (
-                    <div className={styles.claimEvidencePanel} data-testid={`claim-evidence-${block.index}`}>
-                      {(claimEvidenceByBlock.get(block.id) ?? []).map((item) => (
-                        <article
-                          key={`${item.anchorId}-${item.sourceLinks[0] ?? item.claimText}`}
-                          className={styles.claimEvidenceCard}
-                        >
-                          <div className={styles.claimEvidenceHeader}>
-                            <span className={styles.claimEvidenceVerdict}>{item.verdict.replaceAll("_", " ")}</span>
-                            <span className={styles.claimEvidenceClaim}>{item.claimText}</span>
-                          </div>
-                          <p className={styles.claimEvidenceText}>{item.evidenceSummary}</p>
-                          {item.sourceLinks.length ? (
-                            <div className={styles.claimEvidenceLinks}>
-                              {item.sourceLinks.slice(0, 3).map((source) => (
-                                <a
-                                  key={source}
-                                  className={styles.claimEvidenceLink}
-                                  href={source}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                >
-                                  Evidence source
-                                </a>
-                              ))}
-                            </div>
-                          ) : null}
-                        </article>
-                      ))}
                     </div>
                   ) : null}
                   {(blockThreads.get(block.id) ?? []).length ? (

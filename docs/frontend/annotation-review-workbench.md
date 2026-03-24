@@ -16,7 +16,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
   - Overall score, novelty, AI-likelihood, TL;DR, and article-length overview metrics shown only in the terminal review phase
 - Review summary panel
   - Lives above the source text pane in Phase 3 only
-  - Shows TL;DR, article profile, structural completeness, main claims, inferred audience, research summary, and overlap links from fact-check-backed artifact data
+  - Shows TL;DR, article profile, structural completeness, inferred audience, research summary, and overlap links from fact-check-backed artifact data
 - Revised markdown panel
   - Lives in an isolated Phase 4 shell once a candidate revision exists
   - Shows original cleaner-output markdown, candidate revised markdown, deterministic diff items, and per-diff reviewer decisions before the working draft is replaced
@@ -72,7 +72,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Partial findings should appear as each agent finishes instead of waiting for the full run.
 - Hovering or selecting a summary finding should highlight linked spans in the source text.
 - Highlighted spans should stay visually continuous even when the underlying text contains inline markdown links.
-- Fact-check claim highlights should render distinct evidence chips near the relevant paragraph instead of creating more comment-rail cards.
+- Fact-check findings should render as regular comment-rail cards with structured claim, verdict, evidence, and source details instead of separate paragraph-side claim chips.
 - Connector lines should visually link each comment card to the relevant highlight.
 - Connector lines should recalculate after thread/document/layout changes and should avoid resize-jank during rapid window resizing.
 - Multiple comments on the same span should stack vertically while connecting back to the same text selection.
@@ -92,7 +92,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Highlighted text should stay neutral by default so dense clusters remain legible, with agent color becoming prominent on hover or focus from the linked thread.
 - Connector lines should stay subtle by default and bring forward the linked agent color on hover or focus.
 - When multiple agents or anchor ranges overlap on the same visible text, render one neutral highlight fill rather than layered color overlays.
-- Fact-check evidence should stay lightweight: one compact chip row or small stacked evidence block beside the paragraph, capped to a few links.
+- Fact-check evidence should stay lightweight inside the comment card: one compact structured block with a few source links.
 - Completed fact-check should stay visible in the selector but show a clear `Already run` lock state instead of behaving like a generic disabled option.
 - Supported markdown rendering is intentionally narrow in v1:
   - headings
@@ -105,7 +105,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Unsupported markdown should stay readable as text rather than render rich embeds or media.
 - Agent comments are immutable in content; reviewer input happens through replies and review-state actions.
 - Audience analysis is summary-first in the current UI and should not create new inline annotation-heavy threads for newly generated artifacts.
-- The review summary panel should be fact-check-backed and compact rather than recreating old standalone value or audience agent surfaces.
+- The review summary panel should be fact-check-backed and compact rather than recreating old standalone value, audience, or claim-summary agent surfaces.
 - Reviewer comments use the `human` category and are attached to an existing or newly created anchor.
 - Reviewer replies can be deleted inline, but agent-authored content remains immutable.
 - Run status is visible in the toolbar and progress panel.

@@ -794,86 +794,8 @@
   color: var(--ink);
 }
 
-.claimEvidencePanel {
-  display: grid;
-  gap: 16px;
-}
-
-.claimEvidenceCard {
-  padding: 18px 20px;
-  border-radius: 0;
-  background: rgba(245, 245, 245, 0.68);
-  border: 1px solid var(--line);
-}
-
-.claimEvidenceHeader {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-
-.claimEvidenceVerdict {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 8px;
-  border-radius: 0;
-  background: rgba(235, 235, 235, 0.68);
-  color: var(--ink);
-  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-}
-
-.claimEvidenceClaim {
-  font-weight: 600;
-  line-height: 1.45;
-}
-
-.claimEvidenceText {
-  margin: 12px 0 0;
-  line-height: 1.55;
-  color: var(--ink);
-}
-
-.claimEvidenceLinks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 14px;
-}
-
 .reviewSummaryCardWide {
   grid-column: 1 / -1;
-}
-
-.claimEvidenceInlineLink {
-  color: var(--ink);
-  text-decoration: underline;
-  text-decoration-color: var(--line);
-  text-underline-offset: 2px;
-  word-break: break-all;
-}
-
-.claimEvidenceInlineLink:hover {
-  color: var(--muted);
-  text-decoration-color: currentColor;
-}
-
-.claimEvidenceLink {
-  display: inline-flex;
-  align-items: center;
-  padding: 6px 10px;
-  border-radius: 0;
-  background: rgba(250, 250, 250, 0.68);
-  border: 1px solid var(--line);
-  color: var(--ink);
-  text-decoration: none;
-  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
 }
 
 .anchorText {
@@ -960,6 +882,34 @@
   margin: 0;
   font-size: 0.96rem;
   line-height: 1.55;
+}
+
+.factCheckDetails {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 0;
+  background: rgba(0, 0, 0, 0.04);
+  display: grid;
+  gap: 8px;
+}
+
+.factCheckClaim,
+.factCheckVerdict,
+.factCheckEvidence {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.factCheckClaim,
+.factCheckVerdict {
+  font-weight: 600;
+}
+
+.factCheckVerdict {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-size: 11px;
 }
 
 .suggestion {

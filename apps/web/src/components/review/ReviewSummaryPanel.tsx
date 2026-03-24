@@ -1,28 +1,5 @@
-import type { ReactNode } from "react";
-
 import styles from "@/components/ReviewWorkbench.module.css";
 import type { ArtifactReviewSummary } from "@/lib/types";
-
-const URL_PATTERN = /(https?:\/\/[^\s,)}\]>"]+)/g;
-
-function linkifyText(text: string): ReactNode[] {
-  const parts = text.split(URL_PATTERN);
-  return parts.map((part, index) =>
-    URL_PATTERN.test(part) ? (
-      <a
-        key={index}
-        className={styles.claimEvidenceInlineLink}
-        href={part}
-        target="_blank"
-        rel="noreferrer"
-      >
-        {part}
-      </a>
-    ) : (
-      part
-    ),
-  );
-}
 
 interface ReviewSummaryPanelProps {
   reviewSummary: ArtifactReviewSummary | null;
@@ -39,16 +16,6 @@ type ReviewSummaryView = ArtifactReviewSummary & {
     has_headings?: boolean;
     has_conclusion?: boolean;
   };
-  main_claims?: Array<{
-    claim_text: string;
-    verdict: string;
-    evidence_summary: string;
-    source_links?: string[];
-    anchor_quote?: string;
-    value_add?: string;
-    official_source_links?: string[];
-    related_post_links?: string[];
-  }>;
 };
 
 export function ReviewSummaryPanel({ reviewSummary }: ReviewSummaryPanelProps) {
@@ -58,8 +25,6 @@ export function ReviewSummaryPanel({ reviewSummary }: ReviewSummaryPanelProps) {
 
   const summary = reviewSummary as ReviewSummaryView;
   const hasOverlapItems = summary.overlap_items.length > 0;
-  const mainClaims = summary.main_claims ?? [];
-  const hasMainClaims = mainClaims.length > 0;
   const structuralCompleteness = summary.structural_completeness;
   const completenessItems = [
     { label: "Intro", value: structuralCompleteness?.has_intro ?? false },
@@ -105,48 +70,6 @@ export function ReviewSummaryPanel({ reviewSummary }: ReviewSummaryPanelProps) {
             <p className={styles.reviewSummaryText}>
               {summary.research_summary || "Pending"}
             </p>
-          </article>
-          <article className={`${styles.reviewSummaryCard} ${styles.reviewSummaryCardWide}`}>
-            <div className={styles.metricLabel}>Main claims</div>
-            {hasMainClaims ? (
-              <div className={styles.claimEvidencePanel}>
-                {mainClaims.map((claim) => {
-                  const links = [
-                    ...((claim.official_source_links ?? []).map((link) => ({ label: "Official", href: link }))),
-                    ...((claim.related_post_links ?? []).map((link) => ({ label: "Related", href: link }))),
-                    ...((claim.source_links ?? []).map((link) => ({ label: "Source", href: link }))),
-                  ];
-                  return (
-                    <article key={`${claim.claim_text}-${claim.verdict}`} className={styles.claimEvidenceCard}>
-                      <div className={styles.claimEvidenceHeader}>
-                        <span className={styles.claimEvidenceVerdict}>Verdict: {claim.verdict}</span>
-                        <span className={styles.claimEvidenceClaim}>{claim.claim_text}</span>
-                      </div>
-                      <p className={styles.claimEvidenceText}>{linkifyText(claim.evidence_summary)}</p>
-                      {claim.value_add ? <p className={styles.claimEvidenceText}>{linkifyText(claim.value_add)}</p> : null}
-                      {claim.anchor_quote ? <p className={styles.claimEvidenceText}>“{claim.anchor_quote}”</p> : null}
-                      {links.length > 0 ? (
-                        <div className={styles.claimEvidenceLinks}>
-                          {links.map((link) => (
-                            <a
-                              key={`${link.label}-${link.href}`}
-                              className={styles.claimEvidenceLink}
-                              href={link.href}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              {link.label}
-                            </a>
-                          ))}
-                        </div>
-                      ) : null}
-                    </article>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className={styles.reviewSummaryText}>No main claims were surfaced yet.</p>
-            )}
           </article>
           <article className={styles.reviewSummaryCard}>
             <div className={styles.metricLabel}>Audience</div>

@@ -913,10 +913,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   return (
     <main className={styles.page}>
       <div className={styles.shell}>
-        <ReviewHero
-          overallScore={artifact?.summary?.overall_score ?? 0}
-          verdict={artifact?.summary?.verdict ?? (displayDocument ? "Imported draft ready for review" : "No artifact loaded")}
-        />
+        <ReviewHero />
 
         <ReviewToolbar
           formState={formState}

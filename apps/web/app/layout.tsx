@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import DotGrid from "@/components/DotGrid/DotGrid";
 
 export const metadata: Metadata = {
   title: "Content Evaluation",
@@ -9,7 +10,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <DotGrid dotSize={4} gap={28} baseColor="#d4d4d4" activeColor="#9a9a9a" proximity={120} />
+        {children}
+      </body>
     </html>
   );
 }

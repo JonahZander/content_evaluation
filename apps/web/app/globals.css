@@ -1,18 +1,21 @@
 :root {
-  --bg: #f4efe7;
-  --bg-panel: rgba(255, 252, 245, 0.84);
-  --bg-card: rgba(255, 248, 236, 0.9);
-  --ink: #171310;
-  --muted: #675d54;
-  --line: rgba(39, 31, 21, 0.15);
-  --amber: #c77a00;
-  --vermilion: #b84c24;
-  --teal: #0f7c7a;
-  --cobalt: #2d5ecf;
-  --olive: #607737;
-  --sky: #0c7dc2;
-  --human: #2d2d2d;
-  --paper-shadow: 0 24px 60px rgba(42, 31, 18, 0.12);
+  --bg: #ffffff;
+  --bg-panel: rgba(255, 255, 255, 0.68);
+  --bg-card: rgba(250, 250, 250, 0.68);
+  --ink: #0a0a0a;
+  --muted: #6b6b6b;
+  --line: #e5e5e5;
+
+  /* Grayscale category palette */
+  --sky: #3a3a3a;        /* fact_check */
+  --amber: #7a7a7a;      /* similarity */
+  --vermilion: #1a1a1a;  /* ai_likelihood */
+  --teal: #555555;       /* value */
+  --cobalt: #2e2e2e;     /* audience */
+  --olive: #8a8a8a;      /* editorial */
+  --human: #4a4a4a;      /* human */
+
+  --paper-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 * {
@@ -23,11 +26,9 @@ html,
 body {
   margin: 0;
   min-height: 100%;
-  background:
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.8), transparent 32%),
-    linear-gradient(160deg, #f7f0e4 0%, #ece0cf 42%, #efe8dc 100%);
+  background: #ffffff;
   color: var(--ink);
-  font-family: Baskerville, "Palatino Linotype", "Book Antiqua", serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
 body {

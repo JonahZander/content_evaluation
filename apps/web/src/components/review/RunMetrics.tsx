@@ -33,8 +33,16 @@ export function RunMetrics({ summary }: RunMetricsProps) {
       ? `${summaryMetrics.estimated_reading_time_minutes} min read`
       : "Pending";
 
+  const overallScore = summary?.overall_score != null ? `${Math.round(summary.overall_score * 100)}%` : "—";
+  const verdict = summary?.verdict ?? null;
+
   return (
     <section className={styles.metrics}>
+      <article className={styles.metricCard}>
+        <div className={styles.metricLabel}>Overall score</div>
+        <div className={styles.metricValue}>{overallScore}</div>
+        {verdict && <div className={styles.metricValueCompact}>{verdict}</div>}
+      </article>
       <article className={styles.metricCard}>
         <div className={styles.metricLabel}>TL;DR</div>
         <div className={styles.metricValueCompact}>{summaryMetrics?.tl_dr || "Pending"}</div>

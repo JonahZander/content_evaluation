@@ -40,6 +40,9 @@ tmp-artifacts/
 .worktrees/
 services/api/graphs/
 
+# Playwright MCP cache
+.playwright-mcp/
+
 # Symlinked skill directories
 .codex/
 .claude/

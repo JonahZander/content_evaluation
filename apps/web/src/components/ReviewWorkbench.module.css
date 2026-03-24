@@ -595,9 +595,7 @@
 }
 
 .revisionCta {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
   gap: 14px;
   padding: 20px 24px;
   border-radius: 0;
@@ -607,6 +605,57 @@
   font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
   font-size: 13px;
   color: var(--muted);
+}
+
+.revisionCtaHeader {
+  display: grid;
+  gap: 6px;
+}
+
+.revisionCtaHint {
+  color: var(--muted);
+}
+
+.revisionCtaActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.rewriteComposer {
+  display: grid;
+  gap: 10px;
+}
+
+.rewriteComposerActions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.revisionModeMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.historicalNotice {
+  padding: 16px 18px;
+  border-left: 2px solid var(--line);
+  background: rgba(35, 28, 20, 0.05);
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.historicalSection {
+  display: grid;
+  gap: 16px;
+}
+
+.historicalSectionHeader {
+  display: grid;
+  gap: 8px;
 }
 
 .workspace {

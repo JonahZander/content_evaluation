@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from content_evaluation.domain.models import ArtifactBlock, ProviderRoute
+from content_evaluation.domain.models import ArtifactBlock, ProviderRoute, RevisionMode
 
 
 class AnalysisProvider(Protocol):
@@ -25,6 +25,8 @@ class AnalysisProvider(Protocol):
         self,
         original_markdown: str,
         accepted_suggestions: list[dict[str, object]],
+        mode: RevisionMode,
+        direction_prompt: str | None = None,
         route: ProviderRoute | None = None,
     ) -> dict[str, object]:
         """Return one revised-markdown payload built from accepted suggestions."""

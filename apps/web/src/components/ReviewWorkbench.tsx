@@ -47,6 +47,7 @@ import type {
   ArtifactComment,
   ArtifactThread,
   ReviewState,
+  RevisionMode,
   RunStatus,
 } from "@/lib/types";
 import { anchorPrimarySegment } from "@/lib/types";
@@ -111,16 +112,26 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   const workspaceRef = useRef<HTMLDivElement | null>(null);
   const anchorRefs = useRef<Record<string, HTMLSpanElement | null>>({});
   const commentRefs = useRef<Record<string, HTMLElement | null>>({});
+  const historicalAnchorRefs = useRef<Record<string, HTMLSpanElement | null>>({});
+  const historicalCommentRefs = useRef<Record<string, HTMLElement | null>>({});
   const refreshInFlightRef = useRef<Promise<AnalysisArtifact> | null>(null);
   const queuedRefreshArtifactIdRef = useRef<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const [isQueuingResearch, setIsQueuingResearch] = useState(false);
+  const [rewritePromptOpen, setRewritePromptOpen] = useState(false);
+  const [rewriteDirectionPrompt, setRewriteDirectionPrompt] = useState("");
 
   useEffect(() => {
     return () => {
       abortControllerRef.current?.abort();
     };
   }, []);
+
+  useEffect(() => {
+    if (artifact?.diff_review) {
+      setRewritePromptOpen(false);
+    }
+  }, [artifact?.diff_review]);
 
   useEffect(() => {
     fetchAgents()
@@ -305,64 +316,39 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   }, [activeArtifactId, refreshArtifactCoalesced]);
 
   const normalizedThreads = useMemo(() => {
-    if (artifact === null || artifact.document === null) {
-      return [] as ArtifactThread[];
-    }
-
-    const blockIndexById = new Map(artifact.document.blocks.map((block) => [block.id, block.index]));
-    return [...artifact.threads]
-      .map((thread) => ({
-        ...thread,
-        comments: [...thread.comments].sort((left, right) => {
-          const createdAtDifference = new Date(left.created_at).getTime() - new Date(right.created_at).getTime();
-          if (createdAtDifference !== 0) {
-            return createdAtDifference;
-          }
-          return left.id.localeCompare(right.id);
-        }),
-      }))
-      .sort((left, right) => {
-        const leftPrimarySegment = anchorPrimarySegment(left.anchor);
-        const rightPrimarySegment = anchorPrimarySegment(right.anchor);
-        const leftBlockIndex = blockIndexById.get(leftPrimarySegment.block_id) ?? Number.MAX_SAFE_INTEGER;
-        const rightBlockIndex = blockIndexById.get(rightPrimarySegment.block_id) ?? Number.MAX_SAFE_INTEGER;
-        if (leftBlockIndex !== rightBlockIndex) {
-          return leftBlockIndex - rightBlockIndex;
-        }
-        if (leftPrimarySegment.start_offset !== rightPrimarySegment.start_offset) {
-          return leftPrimarySegment.start_offset - rightPrimarySegment.start_offset;
-        }
-        if (leftPrimarySegment.end_offset !== rightPrimarySegment.end_offset) {
-          return leftPrimarySegment.end_offset - rightPrimarySegment.end_offset;
-        }
-        return left.anchor.id.localeCompare(right.anchor.id);
-      });
+    return normalizeThreads(artifact?.document ?? null, artifact?.threads ?? []);
   }, [artifact]);
 
   const anchorThreadMap = useMemo(() => {
-    const map = new Map<string, { colors: string[] }>();
-    normalizedThreads.forEach((thread) => {
-      map.set(thread.anchor.id, {
-        colors: thread.comments.map((comment) => categoryColors[comment.category] ?? "var(--ink)"),
-      });
-    });
-    (artifact?.agent_results ?? []).forEach((result) => {
-      result.findings.forEach((finding) => {
-        finding.anchor_ids.forEach((anchorId) => {
-          const existing = map.get(anchorId);
-          const color = categoryColors[finding.category] ?? "var(--ink)";
-          if (existing) {
-            if (!existing.colors.includes(color)) {
-              existing.colors.push(color);
-            }
-            return;
-          }
-          map.set(anchorId, { colors: [color] });
-        });
-      });
-    });
-    return map;
+    return buildAnchorThreadMap(normalizedThreads, artifact?.agent_results ?? []);
   }, [artifact?.agent_results, normalizedThreads]);
+  const currentRevisionId = artifact?.document?.revision_id ?? null;
+  const inlineHistoricalThreads = useMemo(
+    () => normalizedThreads.filter((thread) => isHistoricalThread(thread, currentRevisionId)),
+    [currentRevisionId, normalizedThreads],
+  );
+  const previousDraftSnapshot = artifact?.previous_draft_snapshot ?? null;
+  const inlineHistoricalCommentIds = useMemo(
+    () => new Set(inlineHistoricalThreads.flatMap((thread) => thread.comments.map((comment) => comment.id))),
+    [inlineHistoricalThreads],
+  );
+  const historicalSnapshotThreads = useMemo(() => {
+    if (previousDraftSnapshot === null) {
+      return [] as ArtifactThread[];
+    }
+    const filteredThreads = previousDraftSnapshot.threads
+      .map((thread) => ({
+        ...thread,
+        comments: thread.comments.filter((comment) => !inlineHistoricalCommentIds.has(comment.id)),
+      }))
+      .filter((thread) => thread.comments.length > 0);
+    return normalizeThreads(previousDraftSnapshot.document, filteredThreads);
+  }, [inlineHistoricalCommentIds, previousDraftSnapshot]);
+  const historicalAnchorThreadMap = useMemo(
+    () => buildAnchorThreadMap(historicalSnapshotThreads, previousDraftSnapshot?.agent_results ?? []),
+    [historicalSnapshotThreads, previousDraftSnapshot?.agent_results],
+  );
+  const hasHistoricalFindings = inlineHistoricalThreads.length > 0 || historicalSnapshotThreads.length > 0;
 
   const workbenchPhase = useMemo(
     () => getWorkbenchPhase(artifact),
@@ -452,8 +438,12 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     && !isGeneratingRevision
     && !isApplyingRevision;
   const reviewProgress = useMemo(() => {
-    if (!artifact) return null;
-    const agentComments = artifact.threads.flatMap((t) => t.comments).filter((c) => c.author_type !== "human");
+    const revisionId = artifact?.document?.revision_id;
+    if (!artifact || revisionId == null) return null;
+    const agentComments = artifact.threads
+      .filter((thread) => thread.document_revision_id === revisionId)
+      .flatMap((thread) => thread.comments)
+      .filter((comment) => comment.author_type !== "human" && comment.document_revision_id === revisionId);
     const reviewed = agentComments.filter((c) => c.review_state !== "unreviewed").length;
     return { reviewed, total: agentComments.length };
   }, [artifact]);
@@ -883,16 +873,35 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     window.open(getExportUrl(artifact.artifact_id, format), "_blank", "noopener,noreferrer");
   }
 
-  async function handleGenerateRevision() {
+  async function handleGenerateRevision(mode: RevisionMode) {
     if (artifact === null || !canGenerateRevision) {
       return;
     }
+    const trimmedDirectionPrompt = rewriteDirectionPrompt.trim();
+    if (mode === "rewrite" && !trimmedDirectionPrompt) {
+      dispatch({ type: "SET_STATUS_MESSAGE", message: "Add a direction before generating a rewrite draft." });
+      return;
+    }
     dispatch({ type: "SET_IS_GENERATING_REVISION", value: true });
-    dispatch({ type: "SET_STATUS_MESSAGE", message: "Generating revised markdown..." });
+    dispatch({
+      type: "SET_STATUS_MESSAGE",
+      message: mode === "rewrite" ? "Generating rewrite draft..." : "Applying accepted changes...",
+    });
     try {
-      const updatedArtifact = await generateRevisedMarkdown(artifact.artifact_id);
+      const updatedArtifact = await generateRevisedMarkdown({
+        artifactId: artifact.artifact_id,
+        mode,
+        directionPrompt: mode === "rewrite" ? trimmedDirectionPrompt : undefined,
+      });
       dispatch({ type: "SET_ARTIFACT", artifact: updatedArtifact });
-      dispatch({ type: "SET_STATUS_MESSAGE", message: "Candidate revised markdown ready for diff review." });
+      setRewritePromptOpen(false);
+      if (mode === "rewrite") {
+        setRewriteDirectionPrompt("");
+      }
+      dispatch({
+        type: "SET_STATUS_MESSAGE",
+        message: mode === "rewrite" ? "Rewrite draft ready for diff review." : "Surgical revision ready for diff review.",
+      });
     } catch (error) {
       dispatch({
         type: "SET_STATUS_MESSAGE",
@@ -932,6 +941,8 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     dispatch({ type: "SET_STATUS_MESSAGE", message: "Applying reviewed revised markdown..." });
     try {
       const updatedArtifact = await applyRevisedMarkdown(artifact.artifact_id);
+      setRewritePromptOpen(false);
+      setRewriteDirectionPrompt("");
       dispatch({ type: "SET_ARTIFACT", artifact: updatedArtifact });
       dispatch({
         type: "SET_FORM_STATE",
@@ -1010,7 +1021,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
               onImportFileChange={handleImportFile}
               onPreviewUrl={handlePreviewUrl}
               onSubmit={handleSubmit}
-              onGenerateRevision={handleGenerateRevision}
+              onGenerateRevision={() => void handleGenerateRevision("surgical")}
               onStopRun={handleStopRun}
               onStartNewAnalysis={handleStartNewAnalysis}
               onExport={handleExport}
@@ -1019,11 +1030,12 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
             {displayDocument !== null ? (
               <section className={styles.intakePreviewShell} data-testid="intake-preview-shell">
                 <DocumentPane
-                  document={displayDocument}
-                  anchors={[]}
-                  threads={[]}
-                  anchorThreadMap={new Map<string, { colors: string[] }>()}
-                  selectionEnabled={false}
+                document={displayDocument}
+                anchors={[]}
+                threads={[]}
+                anchorThreadMap={new Map<string, { colors: string[] }>()}
+                activeDocumentRevisionId={null}
+                selectionEnabled={false}
                   hoveredAnchorId={null}
                   hiddenBlockIds={hiddenPreviewBlockIds}
                   previewPruningEnabled={formState.sourceType === "url" && previewDocument !== null}
@@ -1123,7 +1135,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
               onImportFileChange={handleImportFile}
               onPreviewUrl={handlePreviewUrl}
               onSubmit={handleSubmit}
-              onGenerateRevision={handleGenerateRevision}
+              onGenerateRevision={() => void handleGenerateRevision("surgical")}
               onStopRun={handleStopRun}
               onStartNewAnalysis={handleStartNewAnalysis}
               onExport={handleExport}
@@ -1138,18 +1150,17 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
             />
 
             {artifact !== null && !isFollowUpRunInProgress && isTerminalArtifact && hasAcceptedSuggestions && diffReview === null ? (
-              <section className={styles.revisionCta} data-testid="revision-cta-top">
-                <span>Ready to generate the revised version</span>
-                <button
-                  className={styles.button}
-                  data-testid="generate-revised-markdown-button"
-                  type="button"
-                  onClick={handleGenerateRevision}
-                  disabled={!canGenerateRevision || isGeneratingRevision}
-                >
-                  {isGeneratingRevision ? "Generating revision..." : "Generate revised markdown"}
-                </button>
-              </section>
+              <RevisionActions
+                location="top"
+                canGenerateRevision={canGenerateRevision}
+                generatingRevision={isGeneratingRevision}
+                rewritePromptOpen={rewritePromptOpen}
+                rewriteDirectionPrompt={rewriteDirectionPrompt}
+                onRewriteDirectionPromptChange={setRewriteDirectionPrompt}
+                onToggleRewritePrompt={() => setRewritePromptOpen((current) => !current)}
+                onApplyChanges={() => void handleGenerateRevision("surgical")}
+                onRewriteDraft={() => void handleGenerateRevision("rewrite")}
+              />
             ) : null}
 
             {artifact !== null && isFollowUpRunInProgress ? (
@@ -1182,6 +1193,11 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
               <RunMetrics summary={artifact.summary} />
             ) : null}
             <ReviewSummaryPanel reviewSummary={artifact?.review_summary ?? null} />
+            {hasHistoricalFindings ? (
+              <section className={styles.historicalNotice} data-testid="historical-findings-indicator">
+                Fact-check and research findings below reflect the previous draft. They are preserved as historical context and do not count as current-draft revision input.
+              </section>
+            ) : null}
             {artifact !== null ? (
               <ResearchPanel
                 key={artifact.artifact_id}
@@ -1211,6 +1227,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
                 anchors={artifact?.anchors ?? []}
                 threads={normalizedThreads}
                 anchorThreadMap={anchorThreadMap}
+                activeDocumentRevisionId={currentRevisionId}
                 selectionEnabled={artifact !== null}
                 hoveredAnchorId={hoveredAnchorId}
                 hiddenBlockIds={artifact === null && formState.sourceType === "url" ? hiddenPreviewBlockIds : []}
@@ -1250,17 +1267,46 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
               />
             </section>
 
-            {artifact !== null && !isFollowUpRunInProgress && isTerminalArtifact && hasAcceptedSuggestions && diffReview === null ? (
-              <section className={styles.revisionCta} data-testid="revision-cta-bottom">
-                <span>Ready to generate the revised version</span>
-                <button
-                  className={styles.button}
-                  type="button"
-                  onClick={handleGenerateRevision}
-                  disabled={!canGenerateRevision || isGeneratingRevision}
-                >
-                  {isGeneratingRevision ? "Generating revision..." : "Generate revised markdown"}
-                </button>
+            {previousDraftSnapshot !== null && historicalSnapshotThreads.length > 0 ? (
+              <section className={styles.historicalSection} data-testid="historical-findings-panel">
+                <div className={styles.historicalSectionHeader}>
+                  <h2 className={styles.sectionTitle}>Original-draft findings</h2>
+                  <p className={styles.reviewSummaryText}>
+                    These preserved fact-check and research findings no longer map cleanly into the current draft, so they remain attached to the archived previous draft.
+                  </p>
+                </div>
+                <DocumentPane
+                  document={previousDraftSnapshot.document}
+                  anchors={previousDraftSnapshot.anchors}
+                  threads={historicalSnapshotThreads}
+                  anchorThreadMap={historicalAnchorThreadMap}
+                  activeDocumentRevisionId={currentRevisionId}
+                  selectionEnabled={false}
+                  hoveredAnchorId={hoveredAnchorId}
+                  hiddenBlockIds={[]}
+                  previewPruningEnabled={false}
+                  anchorRefs={historicalAnchorRefs}
+                  commentRefs={historicalCommentRefs}
+                  onHoverAnchor={(anchorId) => dispatch({ type: "SET_HOVERED_ANCHOR_ID", anchorId })}
+                  onSelectionDraft={() => undefined}
+                  onHideBlock={() => undefined}
+                  onRestoreBlock={() => undefined}
+                  onRestoreAllBlocks={() => undefined}
+                  replyDrafts={{}}
+                  editingCommentId={null}
+                  editingBody=""
+                  onReplyDraftChange={() => undefined}
+                  activeReplyComposerId={null}
+                  onToggleReplyComposer={() => undefined}
+                  onAddReply={() => undefined}
+                  onDeleteReply={() => undefined}
+                  onReviewState={() => undefined}
+                  onStartEditing={() => undefined}
+                  onEditingBodyChange={() => undefined}
+                  onSaveEdit={() => undefined}
+                  onCancelEdit={() => undefined}
+                  onDeleteComment={() => undefined}
+                />
               </section>
             ) : null}
           </>
@@ -1271,6 +1317,8 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
             <RevisedMarkdownPanel
               originalMarkdown={diffReview.originalMarkdown}
               candidateMarkdown={diffReview.candidateMarkdown}
+              mode={diffReview.mode}
+              directionPrompt={diffReview.directionPrompt}
               diffItems={diffReview.diffItems}
               applied={revisedMarkdownApplied}
               savingDecision={isSavingDiffReview}
@@ -1336,6 +1384,81 @@ function ResearchPanel({
           </span>
         </div>
       </div>
+    </section>
+  );
+}
+
+function RevisionActions({
+  location,
+  canGenerateRevision,
+  generatingRevision,
+  rewritePromptOpen,
+  rewriteDirectionPrompt,
+  onRewriteDirectionPromptChange,
+  onToggleRewritePrompt,
+  onApplyChanges,
+  onRewriteDraft,
+}: {
+  location: "top" | "bottom";
+  canGenerateRevision: boolean;
+  generatingRevision: boolean;
+  rewritePromptOpen: boolean;
+  rewriteDirectionPrompt: string;
+  onRewriteDirectionPromptChange: (value: string) => void;
+  onToggleRewritePrompt: () => void;
+  onApplyChanges: () => void;
+  onRewriteDraft: () => void;
+}) {
+  return (
+    <section className={styles.revisionCta} data-testid={`revision-cta-${location}`}>
+      <div className={styles.revisionCtaHeader}>
+        <span>Choose how to revise the current draft</span>
+        <span className={styles.revisionCtaHint}>Historical findings are excluded from this step.</span>
+      </div>
+      <div className={styles.revisionCtaActions}>
+        <button
+          className={styles.button}
+          data-testid="apply-changes-button"
+          type="button"
+          onClick={onApplyChanges}
+          disabled={!canGenerateRevision || generatingRevision}
+        >
+          {generatingRevision ? "Generating..." : "Apply changes"}
+        </button>
+        <button
+          className={styles.ghostButton}
+          data-testid="rewrite-draft-button"
+          type="button"
+          onClick={onToggleRewritePrompt}
+          disabled={!canGenerateRevision || generatingRevision}
+        >
+          {rewritePromptOpen ? "Cancel rewrite" : "Rewrite draft"}
+        </button>
+      </div>
+      {rewritePromptOpen ? (
+        <div className={styles.rewriteComposer}>
+          <textarea
+            className={styles.researchPromptInput}
+            data-testid="rewrite-direction-input"
+            aria-label="Rewrite direction"
+            rows={3}
+            value={rewriteDirectionPrompt}
+            placeholder="Give the rewrite a direction, such as leading with the strongest finding or tightening the structure."
+            onChange={(event) => onRewriteDirectionPromptChange(event.target.value)}
+          />
+          <div className={styles.rewriteComposerActions}>
+            <button
+              className={styles.button}
+              data-testid="submit-rewrite-draft-button"
+              type="button"
+              onClick={onRewriteDraft}
+              disabled={!canGenerateRevision || generatingRevision || rewriteDirectionPrompt.trim().length === 0}
+            >
+              {generatingRevision ? "Generating..." : "Generate rewrite"}
+            </button>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -1518,19 +1641,24 @@ interface ArtifactDiffItemView {
 }
 
 interface ArtifactDiffReviewView {
+  mode: RevisionMode;
+  directionPrompt: string | null;
   originalMarkdown: string;
   candidateMarkdown: string;
   diffItems: ArtifactDiffItemView[];
 }
 
 function hasAcceptedRevisionSuggestions(artifact: AnalysisArtifact | null): boolean {
-  if (artifact === null) {
+  const currentRevisionId = artifact?.document?.revision_id;
+  if (artifact === null || currentRevisionId == null) {
     return false;
   }
   return artifact.threads.some((thread) =>
     thread.comments.some(
       (comment) =>
-        comment.author_type === "agent"
+        comment.document_revision_id === currentRevisionId
+        && thread.document_revision_id === currentRevisionId
+        && comment.author_type === "agent"
         && comment.review_state === "accepted"
         && typeof comment.suggestion === "string"
         && comment.suggestion.trim().length > 0,
@@ -1548,10 +1676,82 @@ function getArtifactDiffReview(artifact: AnalysisArtifact | null): ArtifactDiffR
   }
 
   return {
+    mode: diffReview.mode,
+    directionPrompt: diffReview.direction_prompt ?? null,
     originalMarkdown: diffReview.original_markdown,
     candidateMarkdown: diffReview.candidate_markdown,
     diffItems: diffReview.diff_items.flatMap((item) => toDiffItemView(item)),
   };
+}
+
+function normalizeThreads(document: ArtifactDocument | null, threads: ArtifactThread[]): ArtifactThread[] {
+  if (document === null) {
+    return [];
+  }
+
+  const blockIndexById = new Map(document.blocks.map((block) => [block.id, block.index]));
+  return [...threads]
+    .map((thread) => ({
+      ...thread,
+      comments: [...thread.comments].sort((left, right) => {
+        const createdAtDifference = new Date(left.created_at).getTime() - new Date(right.created_at).getTime();
+        if (createdAtDifference !== 0) {
+          return createdAtDifference;
+        }
+        return left.id.localeCompare(right.id);
+      }),
+    }))
+    .sort((left, right) => {
+      const leftPrimarySegment = anchorPrimarySegment(left.anchor);
+      const rightPrimarySegment = anchorPrimarySegment(right.anchor);
+      const leftBlockIndex = blockIndexById.get(leftPrimarySegment.block_id) ?? Number.MAX_SAFE_INTEGER;
+      const rightBlockIndex = blockIndexById.get(rightPrimarySegment.block_id) ?? Number.MAX_SAFE_INTEGER;
+      if (leftBlockIndex !== rightBlockIndex) {
+        return leftBlockIndex - rightBlockIndex;
+      }
+      if (leftPrimarySegment.start_offset !== rightPrimarySegment.start_offset) {
+        return leftPrimarySegment.start_offset - rightPrimarySegment.start_offset;
+      }
+      if (leftPrimarySegment.end_offset !== rightPrimarySegment.end_offset) {
+        return leftPrimarySegment.end_offset - rightPrimarySegment.end_offset;
+      }
+      return left.anchor.id.localeCompare(right.anchor.id);
+    });
+}
+
+function buildAnchorThreadMap(
+  threads: ArtifactThread[],
+  agentResults: AnalysisArtifact["agent_results"],
+): Map<string, { colors: string[] }> {
+  const map = new Map<string, { colors: string[] }>();
+  threads.forEach((thread) => {
+    map.set(thread.anchor.id, {
+      colors: thread.comments.map((comment) => categoryColors[comment.category] ?? "var(--ink)"),
+    });
+  });
+  agentResults.forEach((result) => {
+    result.findings.forEach((finding) => {
+      finding.anchor_ids.forEach((anchorId) => {
+        const existing = map.get(anchorId);
+        const color = categoryColors[finding.category] ?? "var(--ink)";
+        if (existing) {
+          if (!existing.colors.includes(color)) {
+            existing.colors.push(color);
+          }
+          return;
+        }
+        map.set(anchorId, { colors: [color] });
+      });
+    });
+  });
+  return map;
+}
+
+function isHistoricalThread(thread: ArtifactThread, currentRevisionId: string | null): boolean {
+  if (currentRevisionId == null) {
+    return false;
+  }
+  return thread.document_revision_id != null && thread.document_revision_id !== currentRevisionId;
 }
 
 function toDiffItemView(value: unknown): ArtifactDiffItemView[] {

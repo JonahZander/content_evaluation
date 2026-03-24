@@ -27,6 +27,7 @@ from content_evaluation.api.schemas import (
     CreateCommentRequest,
     CreateReplyRequest,
     CreateRunRequest,
+    GenerateRevisedMarkdownRequest,
     ImportArtifactRequest,
     PreviewSourceRequest,
     ResearchRequest,
@@ -178,10 +179,18 @@ async def queue_targeted_research(
 
 
 @app.post("/api/v1/runs/{run_id}/revised-markdown")
-async def generate_revised_markdown(run_id: UUID, services: ServicesDependency) -> AnalysisArtifact:
+async def generate_revised_markdown(
+    run_id: UUID,
+    request: GenerateRevisedMarkdownRequest,
+    services: ServicesDependency,
+) -> AnalysisArtifact:
     """Generate a candidate revised markdown artifact from accepted suggestions."""
 
-    return await services.orchestrator.generate_revised_markdown(run_id)
+    return await services.orchestrator.generate_revised_markdown(
+        run_id,
+        mode=request.mode,
+        direction_prompt=request.direction_prompt,
+    )
 
 
 @app.patch("/api/v1/runs/{run_id}/revised-markdown/diff-review")

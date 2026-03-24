@@ -59,6 +59,7 @@ interface DocumentPaneProps {
   anchors: ArtifactAnchor[];
   threads: ArtifactThread[];
   anchorThreadMap: Map<string, AnchorThread>;
+  activeDocumentRevisionId: string | null;
   selectionEnabled?: boolean;
   hoveredAnchorId: string | null;
   hiddenBlockIds?: string[];
@@ -379,6 +380,7 @@ function resolveSelectionDraft(
 
 function ThreadCards({
   thread,
+  activeDocumentRevisionId,
   hoveredAnchorId,
   commentRefs,
   replyDrafts,
@@ -398,6 +400,7 @@ function ThreadCards({
   onDeleteComment,
 }: {
   thread: ArtifactThread;
+  activeDocumentRevisionId: string | null;
   hoveredAnchorId: string | null;
   commentRefs: MutableRefObject<Record<string, HTMLElement | null>>;
   replyDrafts: Record<string, string>;
@@ -416,6 +419,10 @@ function ThreadCards({
   onCancelEdit: () => void;
   onDeleteComment: (commentId: string) => void;
 }) {
+  const isHistoricalThread = activeDocumentRevisionId !== null
+    && thread.document_revision_id !== undefined
+    && thread.document_revision_id !== null
+    && thread.document_revision_id !== activeDocumentRevisionId;
   return (
     <section
       className={`${styles.thread} ${hoveredAnchorId === thread.anchor.id ? styles.threadActive : ""}`}
@@ -429,6 +436,13 @@ function ThreadCards({
           const isReplyComposerOpen = activeReplyComposerId === comment.id;
           const isAgentComment = comment.author_type === "agent";
           const isResearchComment = comment.category === "research";
+          const isHistoricalComment = isHistoricalThread
+            || (
+              activeDocumentRevisionId !== null
+              && comment.document_revision_id !== undefined
+              && comment.document_revision_id !== null
+              && comment.document_revision_id !== activeDocumentRevisionId
+            );
           const factCheckDetails = comment.category === "fact_check" ? getFactCheckDetails(comment.metadata) : null;
           return (
             <article
@@ -443,7 +457,10 @@ function ThreadCards({
                 <span className={styles.pill} style={{ color: colorForCategory(comment.category) }}>
                   {comment.author_label}
                 </span>
-                <span className={styles.reviewBadge}>{comment.review_state}</span>
+                <div className={styles.toolbarGroup}>
+                  {isHistoricalComment ? <span className={styles.reviewBadge}>original draft</span> : null}
+                  <span className={styles.reviewBadge}>{comment.review_state}</span>
+                </div>
               </div>
               {isEditing ? (
                 <div className={styles.inlineEditor}>
@@ -653,6 +670,7 @@ export function DocumentPane({
   anchors,
   threads,
   anchorThreadMap,
+  activeDocumentRevisionId,
   selectionEnabled = true,
   hoveredAnchorId,
   hiddenBlockIds = [],
@@ -949,6 +967,7 @@ export function DocumentPane({
                       <ThreadCards
                         key={thread.anchor.id}
                         thread={thread}
+                        activeDocumentRevisionId={activeDocumentRevisionId}
                         hoveredAnchorId={hoveredAnchorId}
                         commentRefs={commentRefs}
                         replyDrafts={replyDrafts}

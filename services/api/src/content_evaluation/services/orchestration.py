@@ -44,9 +44,11 @@ from content_evaluation.domain.models import (
     ArtifactDebug,
     ArtifactEvent,
     ArtifactOverlapItem,
+    ArtifactPreviousDraftSnapshot,
     ArtifactRevisedDocument,
     ArtifactReviewSummary,
     ArtifactStructuralCompleteness,
+    ArtifactThread,
     ContentFormat,
     ExtractedContent,
     ArtifactSource,
@@ -60,6 +62,7 @@ from content_evaluation.domain.models import (
     PersistenceMode,
     ProviderKind,
     ProviderRoute,
+    RevisionMode,
     ReviewState,
     RevisedMarkdownDiffDecision,
     RunConfig,
@@ -114,7 +117,16 @@ class RevisionSuggestionInput:
     comment: str
     suggestion: str
     author_label: str
+    document_revision_id: str | None
     sort_key: tuple[int, int, int, str, datetime, str]
+
+
+@dataclass(frozen=True, slots=True)
+class RevisionReplacement:
+    """Store one surgical replacement instruction."""
+
+    anchor: str
+    replacement: str
 
 
 class LangGraphState(TypedDict):
@@ -379,7 +391,13 @@ class RunOrchestrator:
             content_format=extracted.content_format,
         )
 
-    async def generate_revised_markdown(self, artifact_id: UUID) -> AnalysisArtifact:
+    async def generate_revised_markdown(
+        self,
+        artifact_id: UUID,
+        *,
+        mode: RevisionMode,
+        direction_prompt: str | None = None,
+    ) -> AnalysisArtifact:
         """Generate candidate revised markdown from accepted suggestions."""
 
         async with self._artifact_lock(artifact_id):
@@ -407,17 +425,29 @@ class RunOrchestrator:
             rewrite_payload = await self._analysis_provider.generate_revised_markdown(
                 original_markdown,
                 suggestion_payload,
+                mode,
+                direction_prompt=direction_prompt,
                 route=_route_for_revision(self._runtime_mode, self._analysis_provider),
             )
-            candidate_markdown = _coerce_str(rewrite_payload.get("markdown"))
+            if mode is RevisionMode.SURGICAL:
+                replacements = _coerce_revision_replacements(rewrite_payload.get("replacements"))
+                candidate_markdown = _apply_replacements(original_markdown, replacements)
+            else:
+                candidate_markdown = _coerce_str(rewrite_payload.get("markdown"))
             if not candidate_markdown:
                 raise ValidationError("Revised markdown generation returned an empty document.")
 
             artifact.revised_document = ArtifactRevisedDocument(
+                mode=mode,
+                source_revision_id=artifact.document.revision_id,
+                direction_prompt=direction_prompt.strip() if direction_prompt and direction_prompt.strip() else None,
                 markdown=candidate_markdown,
                 accepted_comment_ids=[item.comment_id for item in accepted_items],
             )
             artifact.diff_review = ArtifactDiffReview(
+                mode=mode,
+                source_revision_id=artifact.document.revision_id,
+                direction_prompt=direction_prompt.strip() if direction_prompt and direction_prompt.strip() else None,
                 original_markdown=original_markdown,
                 candidate_markdown=candidate_markdown,
                 diff_items=_build_diff_items(original_markdown, candidate_markdown),
@@ -463,6 +493,15 @@ class RunOrchestrator:
                 raise ValidationError("Review every diff item before applying revised markdown.")
 
             applied_markdown = _apply_diff_review(artifact.diff_review)
+            previous_document = artifact.document.model_copy(deep=True)
+            previous_revision_id = previous_document.revision_id
+            revised_document = artifact.revised_document.model_copy(deep=True) if artifact.revised_document is not None else None
+            preserved_categories = {AgentCategory.FACT_CHECK, AgentCategory.RESEARCH}
+            previous_snapshot = _build_previous_draft_snapshot(
+                artifact,
+                document_revision_id=previous_revision_id,
+                preserved_categories=preserved_categories,
+            )
             artifact.document = normalize_text(
                 RunInput(
                     source_type=artifact.source.source_type,
@@ -475,15 +514,37 @@ class RunOrchestrator:
                 artifact.document.title,
                 content_format=ContentFormat.MARKDOWN,
             )
+            new_revision_id = artifact.document.revision_id
+            preserved_agent_results = _preserve_historical_agent_results(
+                previous_snapshot.agent_results,
+                document_revision_id=previous_revision_id,
+            )
+            preserved_threads = _remap_preserved_threads_to_revision(
+                artifact,
+                previous_snapshot.threads,
+                document_revision_id=previous_revision_id,
+            )
+            preserved_anchor_ids = {
+                thread.anchor.id
+                for thread in preserved_threads
+            }
+            preserved_anchors = [
+                anchor
+                for anchor in artifact.anchors
+                if anchor.id in preserved_anchor_ids
+            ]
             artifact.source.title = artifact.document.title
             artifact.agent_plan = []
-            artifact.agent_results = []
-            artifact.anchors = []
-            artifact.threads = []
+            artifact.agent_results = preserved_agent_results
+            artifact.anchors = preserved_anchors
+            artifact.threads = preserved_threads
             artifact.summary = None
             artifact.review_summary = None
             artifact.error_message = None
             artifact.status = RunStatus.COMPLETED
+            artifact.previous_draft_snapshot = previous_snapshot
+            artifact.revised_document = None
+            artifact.diff_review = None
             await self._append_event(
                 artifact,
                 EventType.ARTIFACT,
@@ -491,6 +552,11 @@ class RunOrchestrator:
                 "applied",
                 "Reviewed revised markdown promoted to the working document",
                 snapshot_available=True,
+                metadata={
+                    "mode": revised_document.mode.value if revised_document is not None else None,
+                    "source_revision_id": previous_revision_id,
+                    "document_revision_id": new_revision_id,
+                },
             )
             return artifact
 
@@ -1486,6 +1552,7 @@ class RunOrchestrator:
                     block_id=getattr(finding, "block_id", None),
                 )
             resolved = AgentFinding(
+                document_revision_id=artifact.document.revision_id,
                 category=result.definition.category,
                 agent_name=result.definition.agent_id,
                 anchor_ids=[anchor.id],
@@ -1516,6 +1583,7 @@ class RunOrchestrator:
         artifact.agent_results.append(
             ArtifactAgentResult(
                 agent_id=result.definition.agent_id,
+                document_revision_id=artifact.document.revision_id,
                 category=result.definition.category,
                 status=AgentPlanStatus.COMPLETED,
                 findings=resolved_findings,
@@ -1909,8 +1977,17 @@ def _context_for_agent(artifact: AnalysisArtifact, definition: AgentDefinition) 
     """Build upstream context for one agent."""
 
     context: dict[str, object] = {}
+    current_revision_id = artifact.document.revision_id if artifact.document is not None else None
     for dependency in definition.depends_on:
-        result = next((item for item in artifact.agent_results if item.agent_id == dependency), None)
+        result = next(
+            (
+                item
+                for item in artifact.agent_results
+                if item.agent_id == dependency
+                and item.document_revision_id in {None, current_revision_id}
+            ),
+            None,
+        )
         if result is not None:
             context[dependency] = _result_context_payload(artifact, result)
     return context
@@ -1927,6 +2004,7 @@ def _append_agent_comment(
     comment = ArtifactComment(
         artifact_id=artifact_id,
         anchor_id=finding.anchor_ids[0],
+        document_revision_id=finding.document_revision_id,
         author_type=AuthorType.AGENT,
         author_label=f"{display_name} agent",
         category=finding.category,
@@ -1939,9 +2017,11 @@ def _append_agent_comment(
     anchor = next(item for item in artifact.anchors if item.id == comment.anchor_id)
     thread = next((item for item in artifact.threads if item.anchor.id == anchor.id), None)
     if thread is None:
-        from content_evaluation.domain.models import ArtifactThread
-
-        thread = ArtifactThread(anchor=anchor, comments=[])
+        thread = ArtifactThread(
+            document_revision_id=finding.document_revision_id,
+            anchor=anchor,
+            comments=[],
+        )
         artifact.threads.append(thread)
     thread.comments.append(comment)
 
@@ -1967,16 +2047,34 @@ def _progress_for_artifact(artifact: AnalysisArtifact) -> float:
     return min(0.99, (completed + (0.5 if running else 0.0)) / len(artifact.agent_plan))
 
 
+def _result_for_current_revision(
+    artifact: AnalysisArtifact,
+    *,
+    agent_id: str,
+) -> ArtifactAgentResult | None:
+    """Return one agent result scoped to the current document revision."""
+
+    current_revision_id = artifact.document.revision_id if artifact.document is not None else None
+    return next(
+        (
+            item
+            for item in artifact.agent_results
+            if item.agent_id == agent_id and item.document_revision_id in {None, current_revision_id}
+        ),
+        None,
+    )
+
+
 def _build_summary(artifact: AnalysisArtifact) -> ArtifactSummary:
     """Build the final artifact summary."""
 
     config = SummaryScoringConfig()
-    fact_check_result = next((item for item in artifact.agent_results if item.agent_id == "fact_check"), None)
+    fact_check_result = _result_for_current_revision(artifact, agent_id="fact_check")
     overlap_items = _result_overlap_items(fact_check_result)
     overlap_scores = _result_overlap_scores(fact_check_result, overlap_items)
     overview = _build_overview_data(artifact, fact_check_result)
 
-    ai_result = next((item for item in artifact.agent_results if item.agent_id == "ai_likelihood"), None)
+    ai_result = _result_for_current_revision(artifact, agent_id="ai_likelihood")
     ai_likelihood = 0.0
     if ai_result is not None:
         ai_likelihood = max((finding.confidence for finding in ai_result.findings), default=0.0)
@@ -2011,7 +2109,7 @@ def _build_summary(artifact: AnalysisArtifact) -> ArtifactSummary:
 def _build_review_summary(artifact: AnalysisArtifact) -> ArtifactReviewSummary | None:
     """Build the narrative summary shown above the document."""
 
-    fact_check_result = next((item for item in artifact.agent_results if item.agent_id == "fact_check"), None)
+    fact_check_result = _result_for_current_revision(artifact, agent_id="fact_check")
     overview = _build_overview_data(artifact, fact_check_result)
     research_summary = ""
     overlap_items = _result_overlap_items(fact_check_result)
@@ -2334,13 +2432,18 @@ def _accepted_revision_inputs(artifact: AnalysisArtifact) -> list[RevisionSugges
     if artifact.document is None:
         return []
 
+    current_revision_id = artifact.document.revision_id
     block_index_by_id = {block.id: block.index for block in artifact.document.blocks}
     items: list[RevisionSuggestionInput] = []
     for thread in artifact.threads:
+        if thread.document_revision_id not in {None, current_revision_id}:
+            continue
         for comment in thread.comments:
             if comment.author_type is not AuthorType.AGENT:
                 continue
             if comment.review_state is not ReviewState.ACCEPTED or not comment.suggestion:
+                continue
+            if comment.document_revision_id not in {None, current_revision_id}:
                 continue
             primary = thread.anchor.segments[0]
             items.append(
@@ -2350,6 +2453,7 @@ def _accepted_revision_inputs(artifact: AnalysisArtifact) -> list[RevisionSugges
                     comment=_compact_text(comment.body),
                     suggestion=_compact_text(comment.suggestion),
                     author_label=comment.author_label,
+                    document_revision_id=comment.document_revision_id or thread.document_revision_id,
                     sort_key=(
                         1 if thread.anchor.match_kind == ArtifactAnchorMatchKind.SYNTHETIC_UNMATCHED else 0,
                         block_index_by_id.get(primary.block_id, 10**9),
@@ -2362,6 +2466,131 @@ def _accepted_revision_inputs(artifact: AnalysisArtifact) -> list[RevisionSugges
             )
     items.sort(key=lambda item: item.sort_key)
     return items
+
+
+def _coerce_revision_replacements(value: object) -> list[RevisionReplacement]:
+    """Return validated surgical replacement instructions."""
+
+    if not isinstance(value, list):
+        return []
+    replacements: list[RevisionReplacement] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        anchor = _coerce_str(item.get("anchor")).strip()
+        replacement = _coerce_str(item.get("replacement")).strip()
+        if not anchor or not replacement:
+            continue
+        replacements.append(RevisionReplacement(anchor=anchor, replacement=replacement))
+    return replacements
+
+
+def _apply_replacements(original_markdown: str, replacements: list[RevisionReplacement]) -> str:
+    """Apply surgical replacements to the original markdown in order."""
+
+    revised = original_markdown.strip()
+    for item in replacements:
+        if item.anchor not in revised:
+            continue
+        revised = revised.replace(item.anchor, item.replacement, 1)
+    return revised
+
+
+def _build_previous_draft_snapshot(
+    artifact: AnalysisArtifact,
+    *,
+    document_revision_id: str,
+    preserved_categories: set[AgentCategory],
+) -> ArtifactPreviousDraftSnapshot:
+    """Archive the immediately previous draft and preserved findings."""
+
+    if artifact.document is None:
+        raise ValidationError("Artifact document is missing")
+
+    preserved_threads: list[ArtifactThread] = []
+    for thread in artifact.threads:
+        preserved_comments = [
+            comment.model_copy(deep=True)
+            for comment in thread.comments
+            if comment.category in preserved_categories
+        ]
+        if not preserved_comments:
+            continue
+        preserved_threads.append(
+            ArtifactThread(
+                document_revision_id=thread.document_revision_id,
+                anchor=thread.anchor.model_copy(deep=True),
+                comments=preserved_comments,
+            )
+        )
+    preserved_anchor_ids = {thread.anchor.id for thread in preserved_threads}
+    preserved_anchors = [
+        anchor.model_copy(deep=True)
+        for anchor in artifact.anchors
+        if anchor.id in preserved_anchor_ids
+    ]
+    preserved_results = [
+        result.model_copy(deep=True)
+        for result in artifact.agent_results
+        if result.category in preserved_categories
+    ]
+    return ArtifactPreviousDraftSnapshot(
+        document_revision_id=document_revision_id,
+        document=artifact.document.model_copy(deep=True),
+        anchors=preserved_anchors,
+        threads=preserved_threads,
+        agent_results=preserved_results,
+    )
+
+
+def _preserve_historical_agent_results(
+    results: list[ArtifactAgentResult],
+    *,
+    document_revision_id: str,
+) -> list[ArtifactAgentResult]:
+    """Keep preserved fact-check and research results tied to the old revision."""
+
+    preserved: list[ArtifactAgentResult] = []
+    for result in results:
+        clone = result.model_copy(deep=True)
+        clone.document_revision_id = document_revision_id
+        for finding in clone.findings:
+            finding.document_revision_id = document_revision_id
+            finding.metadata["historical"] = True
+            finding.metadata["document_revision_id"] = document_revision_id
+        clone.metadata["historical"] = True
+        clone.metadata["document_revision_id"] = document_revision_id
+        preserved.append(clone)
+    return preserved
+
+
+def _remap_preserved_threads_to_revision(
+    artifact: AnalysisArtifact,
+    threads: list[ArtifactThread],
+    *,
+    document_revision_id: str,
+) -> list[ArtifactThread]:
+    """Clone preserved historical threads that still anchor honestly into the new draft."""
+
+    if artifact.document is None:
+        raise ValidationError("Artifact document is missing")
+
+    remapped_threads: list[ArtifactThread] = []
+    for thread in threads:
+        matched_anchor = create_anchor_from_excerpt(artifact.document.blocks, thread.anchor.quote)
+        if matched_anchor is None:
+            continue
+        existing_anchor = _resolve_anchor(artifact, thread.anchor.quote, block_id=matched_anchor.segments[0].block_id)
+        existing_anchor.document_revision_id = document_revision_id
+        clone = thread.model_copy(deep=True)
+        clone.anchor = existing_anchor
+        clone.document_revision_id = document_revision_id
+        for comment in clone.comments:
+            comment.document_revision_id = document_revision_id
+            comment.metadata["historical"] = True
+            comment.metadata["document_revision_id"] = document_revision_id
+        remapped_threads.append(clone)
+    return remapped_threads
 
 
 def _document_markdown(document: ArtifactDocument) -> str:
@@ -2487,7 +2716,11 @@ def _resolve_anchor(artifact: AnalysisArtifact, excerpt: str, *, block_id: str |
         None,
     )
     if existing is not None:
+        if existing.document_revision_id is None and artifact.document is not None:
+            existing.document_revision_id = artifact.document.revision_id
         return existing
+    if artifact.document is not None:
+        anchor.document_revision_id = artifact.document.revision_id
     artifact.anchors.append(anchor)
     return anchor
 
@@ -2525,6 +2758,7 @@ def _create_unmatched_anchor(artifact: AnalysisArtifact, excerpt: str) -> Artifa
         artifact.document.text = "\n\n".join(block.text for block in artifact.document.blocks if block.text)
 
     return ArtifactAnchor(
+        document_revision_id=artifact.document.revision_id,
         quote=quote,
         match_kind=ArtifactAnchorMatchKind.SYNTHETIC_UNMATCHED,
         segments=[

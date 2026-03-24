@@ -145,15 +145,20 @@ def _render_comment(comment: ArtifactComment) -> list[str]:
 def _revision_items(artifact: AnalysisArtifact) -> list[RevisionPayloadItem]:
     """Return accepted agent suggestions in stable article order."""
 
+    current_revision_id = artifact.document.revision_id if artifact.document is not None else None
     block_index_by_id = {
         block.id: block.index for block in (artifact.document.blocks if artifact.document is not None else [])
     }
     items: list[RevisionPayloadItem] = []
     for thread in artifact.threads:
+        if thread.document_revision_id not in {None, current_revision_id}:
+            continue
         for comment in thread.comments:
             if comment.author_type.value != "agent":
                 continue
             if comment.review_state.value != "accepted" or not comment.suggestion:
+                continue
+            if comment.document_revision_id not in {None, current_revision_id}:
                 continue
             items.append(
                 RevisionPayloadItem(

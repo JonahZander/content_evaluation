@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from content_evaluation.domain.models import ArtifactBlock, ContentFormat, ExtractedContent, ProviderRoute
+from content_evaluation.domain.models import (
+    ArtifactBlock,
+    ContentFormat,
+    ExtractedContent,
+    ProviderRoute,
+    RevisionMode,
+)
 
 
 class MockSimilaritySearchProvider:
@@ -110,11 +116,26 @@ class MockAnalysisProvider:
         self,
         original_markdown: str,
         accepted_suggestions: list[dict[str, object]],
+        mode: RevisionMode,
+        direction_prompt: str | None = None,
         route: ProviderRoute | None = None,
     ) -> dict[str, object]:
         """Return a deterministic revised-markdown candidate for tests."""
 
         del route
+        if mode is RevisionMode.SURGICAL:
+            replacements: list[dict[str, str]] = []
+            for item in accepted_suggestions:
+                quote = str(item.get("quote", "")).strip()
+                suggestion = str(item.get("suggestion", "")).strip()
+                if not quote or not suggestion:
+                    continue
+                replacements.append({"anchor": quote, "replacement": suggestion})
+            return {
+                "replacements": replacements,
+                "usage": {"input_tokens": 12, "output_tokens": 8, "total_tokens": 20},
+            }
+
         revised = original_markdown.strip()
         for item in accepted_suggestions:
             quote = str(item.get("quote", "")).strip()
@@ -122,6 +143,8 @@ class MockAnalysisProvider:
             if not quote or not suggestion or quote not in revised:
                 continue
             revised = revised.replace(quote, suggestion, 1)
+        if direction_prompt:
+            revised = f"{revised}\n\n<!-- Rewrite direction: {direction_prompt.strip()} -->".strip()
         if revised == original_markdown.strip() and accepted_suggestions:
             notes = "\n".join(
                 f"- {str(item.get('suggestion', '')).strip()}"

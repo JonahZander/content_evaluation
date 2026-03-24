@@ -107,6 +107,13 @@ class ReviewState(StrEnum):
     UNCERTAIN = "uncertain"
 
 
+class RevisionMode(StrEnum):
+    """Enumerate revised-markdown generation modes."""
+
+    SURGICAL = "surgical"
+    REWRITE = "rewrite"
+
+
 class AgentCategory(StrEnum):
     """Enumerate analysis categories."""
 
@@ -258,6 +265,7 @@ class ArtifactDocument(BaseModel):
     """Store normalized reviewable content."""
 
     id: UUID = Field(default_factory=uuid4)
+    revision_id: str = Field(default_factory=lambda: f"revision-{uuid4()}")
     title: str
     source_type: SourceType
     source_label: str
@@ -281,6 +289,7 @@ class ArtifactAnchor(BaseModel):
     """Store a text-range anchor across one or more contiguous blocks."""
 
     id: str = Field(default_factory=lambda: f"anchor-{uuid4()}")
+    document_revision_id: str | None = None
     block_id: str = ""
     start_offset: int = 0
     end_offset: int = 0
@@ -333,6 +342,7 @@ class ArtifactComment(BaseModel):
     id: str = Field(default_factory=lambda: f"comment-{uuid4()}")
     artifact_id: UUID
     anchor_id: str
+    document_revision_id: str | None = None
     author_type: AuthorType
     author_label: str
     category: AgentCategory
@@ -349,6 +359,7 @@ class ArtifactComment(BaseModel):
 class ArtifactThread(BaseModel):
     """Store the comments for a single anchor."""
 
+    document_revision_id: str | None = None
     anchor: ArtifactAnchor
     comments: list[ArtifactComment]
 
@@ -357,6 +368,7 @@ class AgentFinding(BaseModel):
     """Store one structured agent finding."""
 
     id: str = Field(default_factory=lambda: f"finding-{uuid4()}")
+    document_revision_id: str | None = None
     category: AgentCategory
     agent_name: str
     anchor_ids: list[str]
@@ -389,6 +401,7 @@ class ArtifactAgentResult(BaseModel):
     """Store one resolved agent result."""
 
     agent_id: str
+    document_revision_id: str | None = None
     category: AgentCategory
     status: AgentPlanStatus
     findings: list[AgentFinding] = Field(default_factory=list)
@@ -481,6 +494,9 @@ class ArtifactDiffItem(BaseModel):
 class ArtifactDiffReview(BaseModel):
     """Store one diff-review payload for revised markdown."""
 
+    mode: RevisionMode = RevisionMode.SURGICAL
+    source_revision_id: str = ""
+    direction_prompt: str | None = None
     original_markdown: str
     candidate_markdown: str
     diff_items: list[ArtifactDiffItem] = Field(default_factory=list)
@@ -489,9 +505,23 @@ class ArtifactDiffReview(BaseModel):
 class ArtifactRevisedDocument(BaseModel):
     """Store one generated revised-markdown candidate."""
 
+    mode: RevisionMode = RevisionMode.SURGICAL
+    source_revision_id: str = ""
+    direction_prompt: str | None = None
     markdown: str
     accepted_comment_ids: list[str] = Field(default_factory=list)
     generated_at: datetime = Field(default_factory=now_utc)
+
+
+class ArtifactPreviousDraftSnapshot(BaseModel):
+    """Store the immediately previous draft and its preserved findings."""
+
+    document_revision_id: str
+    document: ArtifactDocument
+    anchors: list[ArtifactAnchor] = Field(default_factory=list)
+    threads: list[ArtifactThread] = Field(default_factory=list)
+    agent_results: list[ArtifactAgentResult] = Field(default_factory=list)
+    archived_at: datetime = Field(default_factory=now_utc)
 
 
 class ArtifactEvent(BaseModel):
@@ -547,7 +577,7 @@ class RunConfig(BaseModel):
 class AnalysisArtifact(BaseModel):
     """Store the complete artifact consumed by the UI and exports."""
 
-    schema_version: str = "1.3"
+    schema_version: str = "1.4"
     artifact_id: UUID = Field(default_factory=uuid4)
     status: RunStatus = RunStatus.QUEUED
     created_at: datetime = Field(default_factory=now_utc)
@@ -563,6 +593,7 @@ class AnalysisArtifact(BaseModel):
     review_summary: ArtifactReviewSummary | None = None
     revised_document: ArtifactRevisedDocument | None = None
     diff_review: ArtifactDiffReview | None = None
+    previous_draft_snapshot: ArtifactPreviousDraftSnapshot | None = None
     events: list[ArtifactEvent] = Field(default_factory=list)
     debug: ArtifactDebug | None = None
     error_message: str | None = None

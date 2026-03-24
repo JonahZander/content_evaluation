@@ -3,6 +3,7 @@ import {
   AnalysisArtifact,
   ArtifactDocument,
   PersistenceMode,
+  RevisionMode,
   RevisedMarkdownDiffDecision,
   ReviewState,
 } from "@/lib/types";
@@ -45,6 +46,12 @@ export interface QueueResearchPayload {
 export interface UpdateRevisedMarkdownDiffReviewDecision {
   diffId: string;
   decision: RevisedMarkdownDiffDecision;
+}
+
+export interface GenerateRevisedMarkdownPayload {
+  artifactId: string;
+  mode: RevisionMode;
+  directionPrompt?: string;
 }
 
 async function parseJson<T>(response: Response): Promise<T> {
@@ -181,10 +188,17 @@ export async function cancelRun(artifactId: string): Promise<AnalysisArtifact> {
   );
 }
 
-export async function generateRevisedMarkdown(artifactId: string): Promise<AnalysisArtifact> {
+export async function generateRevisedMarkdown(payload: GenerateRevisedMarkdownPayload): Promise<AnalysisArtifact> {
   return parseJson(
-    await fetch(`${API_BASE_URL}/api/v1/runs/${artifactId}/revised-markdown`, {
+    await fetch(`${API_BASE_URL}/api/v1/runs/${payload.artifactId}/revised-markdown`, {
       method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        mode: payload.mode,
+        direction_prompt: payload.directionPrompt,
+      }),
     }),
   );
 }

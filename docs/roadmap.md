@@ -87,3 +87,17 @@ excluded here — that warrants its own planning document when the time comes.
 - **Feedback loop** — reviewer decisions feed back into agent instruction tuning over time
 - **Custom agent configuration** — let users configure which agents run and at what model/cost tier without code changes
 - **Artifact versioning** — track edits to the article and re-run affected agents without a full re-analysis
+
+## Artifact Structure Direction
+
+- **Near-term revision provenance**
+  - Keep one main mutable artifact as the live workbench object
+  - When a revision is applied, archive the immediately previous draft as a snapshot inside the artifact
+  - Preserve only fact-check and targeted research against that previous-draft snapshot
+  - Continue clearing or recomputing the cheaper draft-shape-dependent analysis surfaces on the new draft
+- **Possible future pivot: immutable run and research artifacts**
+  - If the product grows into deeper revision history, branch comparisons, or reusable research libraries, pivot toward separate immutable artifacts for:
+    - each full analysis run
+    - each targeted research run
+  - The review workbench would then compose multiple artifacts into one session view rather than mutating a single artifact in place
+  - This is intentionally deferred for now because it adds substantial storage, merge, and UI complexity

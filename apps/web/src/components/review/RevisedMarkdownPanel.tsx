@@ -17,6 +17,8 @@ export interface RevisedMarkdownDiffItemView {
 }
 
 interface RevisedMarkdownPanelProps {
+  mode: "surgical" | "rewrite";
+  directionPrompt: string | null;
   originalMarkdown: string;
   candidateMarkdown: string;
   diffItems: RevisedMarkdownDiffItemView[];
@@ -28,6 +30,8 @@ interface RevisedMarkdownPanelProps {
 }
 
 export function RevisedMarkdownPanel({
+  mode,
+  directionPrompt,
   originalMarkdown,
   candidateMarkdown,
   diffItems,
@@ -54,6 +58,10 @@ export function RevisedMarkdownPanel({
         >
           <div>
             <h2 className={styles.sectionTitle} style={{ marginBottom: "10px" }}>Revised markdown</h2>
+            <div className={styles.revisionModeMeta}>
+              <span className={styles.pill}>{mode === "surgical" ? "Apply changes" : "Rewrite draft"}</span>
+              {directionPrompt ? <span className={styles.reviewBadge}>Direction: {directionPrompt}</span> : null}
+            </div>
             <p className={styles.reviewSummaryText} style={{ marginTop: 0 }}>
               {applied
                 ? "The reviewed revision has been promoted to the working draft. Follow-up analysis is available again."

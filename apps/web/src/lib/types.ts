@@ -14,6 +14,7 @@ export type ArtifactBlockKind = "paragraph" | "heading" | "code";
 export type ArtifactBlockOrigin = "source" | "synthetic_unmatched";
 export type ArtifactInlineMarkKind = "strong" | "emphasis" | "code" | "link";
 export type ArtifactAnchorMatchKind = "source" | "synthetic_unmatched";
+export type RevisionMode = "surgical" | "rewrite";
 
 export interface ArtifactSource {
   source_type: SourceType;
@@ -44,6 +45,7 @@ export interface ArtifactInlineMark {
 
 export interface ArtifactDocument {
   id: string;
+  revision_id: string;
   title: string;
   source_type: SourceType;
   source_label: string;
@@ -61,6 +63,7 @@ export interface ArtifactAnchorSegment {
 
 export interface ArtifactAnchor {
   id: string;
+  document_revision_id?: string | null;
   block_id: string;
   start_offset: number;
   end_offset: number;
@@ -83,6 +86,7 @@ export interface ArtifactComment {
   id: string;
   artifact_id: string;
   anchor_id: string;
+  document_revision_id?: string | null;
   author_type: AuthorType;
   author_label: string;
   category: AgentCategory;
@@ -97,12 +101,14 @@ export interface ArtifactComment {
 }
 
 export interface ArtifactThread {
+  document_revision_id?: string | null;
   anchor: ArtifactAnchor;
   comments: ArtifactComment[];
 }
 
 export interface AgentFinding {
   id: string;
+  document_revision_id?: string | null;
   category: AgentCategory;
   agent_name: string;
   anchor_ids: string[];
@@ -131,6 +137,7 @@ export interface ArtifactAgentPlanItem {
 
 export interface ArtifactAgentResult {
   agent_id: string;
+  document_revision_id?: string | null;
   category: AgentCategory;
   status: AgentPlanStatus;
   findings: AgentFinding[];
@@ -191,6 +198,9 @@ export interface ArtifactReviewSummary {
 export type RevisedMarkdownDiffDecision = "pending" | "accepted" | "rejected";
 
 export interface ArtifactRevisedDocument {
+  mode: RevisionMode;
+  source_revision_id: string;
+  direction_prompt?: string | null;
   markdown: string;
   accepted_comment_ids: string[];
   generated_at: string;
@@ -209,9 +219,21 @@ export interface ArtifactDiffItem {
 }
 
 export interface ArtifactDiffReview {
+  mode: RevisionMode;
+  source_revision_id: string;
+  direction_prompt?: string | null;
   original_markdown: string;
   candidate_markdown: string;
   diff_items: ArtifactDiffItem[];
+}
+
+export interface ArtifactPreviousDraftSnapshot {
+  document_revision_id: string;
+  document: ArtifactDocument;
+  anchors: ArtifactAnchor[];
+  threads: ArtifactThread[];
+  agent_results: ArtifactAgentResult[];
+  archived_at: string;
 }
 
 export interface ArtifactEvent {
@@ -263,6 +285,7 @@ export interface AnalysisArtifact {
   review_summary?: ArtifactReviewSummary | null;
   revised_document?: ArtifactRevisedDocument | null;
   diff_review?: ArtifactDiffReview | null;
+  previous_draft_snapshot?: ArtifactPreviousDraftSnapshot | null;
   events: ArtifactEvent[];
   debug?: ArtifactDebug | null;
   error_message?: string | null;

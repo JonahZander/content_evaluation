@@ -146,7 +146,10 @@ def test_generate_revised_markdown_requires_accepted_suggestions(monkeypatch: py
         run_id = response.json()["artifact_id"]
         _wait_for_run_completion(client, run_id)
 
-        generate_response = client.post(f"/api/v1/runs/{run_id}/revised-markdown")
+        generate_response = client.post(
+            f"/api/v1/runs/{run_id}/revised-markdown",
+            json={"mode": "surgical"},
+        )
 
     assert generate_response.status_code == 400
     assert "Accept at least one agent suggestion" in generate_response.text
@@ -171,9 +174,13 @@ def test_revised_markdown_diff_review_and_apply_flow(monkeypatch: pytest.MonkeyP
         run_payload = _wait_for_run_completion(client, run_id)
         accepted_comment_ids = _accept_agent_comments(client, run_payload)
 
-        generate_response = client.post(f"/api/v1/runs/{run_id}/revised-markdown")
+        generate_response = client.post(
+            f"/api/v1/runs/{run_id}/revised-markdown",
+            json={"mode": "surgical"},
+        )
         assert generate_response.status_code == 200
         revised_payload = generate_response.json()
+        assert revised_payload["revised_document"]["mode"] == "surgical"
         assert set(revised_payload["revised_document"]["accepted_comment_ids"]) == set(accepted_comment_ids)
         assert revised_payload["diff_review"]["diff_items"]
 
@@ -202,8 +209,16 @@ def test_revised_markdown_diff_review_and_apply_flow(monkeypatch: pytest.MonkeyP
         assert apply_response.status_code == 200
         applied_payload = apply_response.json()
         assert applied_payload["status"] == "completed"
-        assert applied_payload["threads"] == []
-        assert applied_payload["agent_results"] == []
+        assert applied_payload["previous_draft_snapshot"] is not None
+        assert applied_payload["previous_draft_snapshot"]["threads"]
+        if applied_payload["threads"]:
+            assert any(comment["category"] == "fact_check" for thread in applied_payload["threads"] for comment in thread["comments"])
+            assert all(
+                comment["document_revision_id"] != applied_payload["document"]["revision_id"]
+                for thread in applied_payload["threads"]
+                for comment in thread["comments"]
+            )
+        assert all(result["category"] in {"fact_check", "research"} for result in applied_payload["agent_results"])
         assert applied_payload["document"]["raw_content"] == expected_applied_markdown
 
 
@@ -515,7 +530,10 @@ def test_generate_revised_markdown_requires_accepted_suggestions(monkeypatch: py
         run_id = response.json()["artifact_id"]
         _wait_for_run_completion(client, run_id)
 
-        revised_response = client.post(f"/api/v1/runs/{run_id}/revised-markdown")
+        revised_response = client.post(
+            f"/api/v1/runs/{run_id}/revised-markdown",
+            json={"mode": "surgical"},
+        )
 
     assert revised_response.status_code == 400
     assert "Accept at least one agent suggestion" in revised_response.text
@@ -547,11 +565,16 @@ def test_api_generates_and_applies_revised_markdown(monkeypatch: pytest.MonkeyPa
         )
         assert review_response.status_code == 200
 
-        revised_response = client.post(f"/api/v1/runs/{run_id}/revised-markdown")
+        revised_response = client.post(
+            f"/api/v1/runs/{run_id}/revised-markdown",
+            json={"mode": "rewrite", "direction_prompt": "Lead with the strongest finding."},
+        )
         assert revised_response.status_code == 200
         revised_payload = revised_response.json()
         assert revised_payload["revised_document"] is not None
         assert revised_payload["diff_review"] is not None
+        assert revised_payload["revised_document"]["mode"] == "rewrite"
+        assert revised_payload["revised_document"]["direction_prompt"] == "Lead with the strongest finding."
         diff_items = revised_payload["diff_review"]["diff_items"]
         assert diff_items
 
@@ -570,7 +593,7 @@ def test_api_generates_and_applies_revised_markdown(monkeypatch: pytest.MonkeyPa
         assert apply_response.status_code == 200
         applied_payload = apply_response.json()
         assert applied_payload["document"] is not None
-        assert applied_payload["agent_results"] == []
+        assert all(result["category"] in {"fact_check", "research"} for result in applied_payload["agent_results"])
         assert applied_payload["agent_plan"] == []
         assert applied_payload["summary"] is None
         assert applied_payload["review_summary"] is None

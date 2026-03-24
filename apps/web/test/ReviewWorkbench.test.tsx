@@ -542,12 +542,12 @@ describe("ReviewWorkbench", () => {
 
     const { unmount } = render(<ReviewWorkbench initialArtifact={artifactWithoutAcceptedSuggestions} />);
 
-    expect(screen.queryByTestId("generate-revised-markdown-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("apply-changes-button")).not.toBeInTheDocument();
 
     unmount();
     render(<ReviewWorkbench initialArtifact={mockArtifact} />);
 
-    expect(screen.getByTestId("generate-revised-markdown-button")).toBeInTheDocument();
+    expect(screen.getByTestId("apply-changes-button")).toBeInTheDocument();
   });
 
   it("generates a revised markdown candidate and shows the diff review panel", async () => {
@@ -556,12 +556,41 @@ describe("ReviewWorkbench", () => {
 
     render(<ReviewWorkbench initialArtifact={mockArtifact} />);
 
-    fireEvent.click(screen.getByTestId("generate-revised-markdown-button"));
+    fireEvent.click(screen.getByTestId("apply-changes-button"));
 
-    await waitFor(() => expect(api.generateRevisedMarkdown).toHaveBeenCalledWith(mockArtifact.artifact_id));
+    await waitFor(() =>
+      expect(api.generateRevisedMarkdown).toHaveBeenCalledWith({
+        artifactId: mockArtifact.artifact_id,
+        mode: "surgical",
+        directionPrompt: undefined,
+      }),
+    );
     expect(await screen.findByTestId("revised-markdown-panel")).toBeInTheDocument();
     expect(screen.getByTestId("diff-item-status-diff-1")).toHaveTextContent("pending");
     expect(screen.getByRole("button", { name: "Apply reviewed markdown" })).toBeDisabled();
+  });
+
+  it("opens rewrite mode with a direction prompt and labels the diff review mode", async () => {
+    const generatedArtifact = buildArtifactWithRewriteDiffReview();
+    vi.mocked(api.generateRevisedMarkdown).mockResolvedValueOnce(generatedArtifact);
+
+    render(<ReviewWorkbench initialArtifact={mockArtifact} />);
+
+    fireEvent.click(screen.getByTestId("rewrite-draft-button"));
+    fireEvent.change(screen.getByTestId("rewrite-direction-input"), {
+      target: { value: "Lead with the strongest finding." },
+    });
+    fireEvent.click(screen.getByTestId("submit-rewrite-draft-button"));
+
+    await waitFor(() =>
+      expect(api.generateRevisedMarkdown).toHaveBeenCalledWith({
+        artifactId: mockArtifact.artifact_id,
+        mode: "rewrite",
+        directionPrompt: "Lead with the strongest finding.",
+      }),
+    );
+    expect(await screen.findByText("Rewrite draft")).toBeInTheDocument();
+    expect(screen.getByText("Direction: Lead with the strongest finding.")).toBeInTheDocument();
   });
 
   it("saves diff decisions and applies the reviewed revision", async () => {
@@ -706,7 +735,7 @@ describe("ReviewWorkbench", () => {
   });
 
   it("renders overlap-heavy fixture blocks without duplicating text", () => {
-    const artifact = reproDuplicateSections as AnalysisArtifact;
+    const artifact = reproDuplicateSections as unknown as AnalysisArtifact;
 
     render(<ReviewWorkbench initialArtifact={artifact} />);
 
@@ -1237,6 +1266,8 @@ function buildResearchCommentArtifact(): AnalysisArtifact {
 function buildArtifactWithDiffReview(): AnalysisArtifact {
   const artifact = structuredClone(mockArtifact) as AnalysisArtifact & Record<string, unknown>;
   artifact.diff_review = {
+    mode: "surgical",
+    source_revision_id: artifact.document?.revision_id ?? "revision-demo-current",
     original_markdown: artifact.document?.raw_content ?? "",
     candidate_markdown: [
       "Editorial teams need a fast way to decide whether a post is original, useful, and worth reader attention.",
@@ -1267,9 +1298,26 @@ function buildArtifactWithDiffReview(): AnalysisArtifact {
     ],
   };
   artifact.revised_document = {
+    mode: "surgical",
+    source_revision_id: artifact.document?.revision_id ?? "revision-demo-current",
     markdown: artifact.diff_review!.candidate_markdown,
     accepted_comment_ids: ["comment-2"],
     generated_at: new Date().toISOString(),
+  };
+  return artifact;
+}
+
+function buildArtifactWithRewriteDiffReview(): AnalysisArtifact {
+  const artifact = buildArtifactWithDiffReview();
+  artifact.diff_review = {
+    ...artifact.diff_review!,
+    mode: "rewrite",
+    direction_prompt: "Lead with the strongest finding.",
+  };
+  artifact.revised_document = {
+    ...artifact.revised_document!,
+    mode: "rewrite",
+    direction_prompt: "Lead with the strongest finding.",
   };
   return artifact;
 }
@@ -1300,6 +1348,7 @@ function buildArtifactAfterAppliedRevision(): AnalysisArtifact {
   const artifact = buildArtifactWithReviewedDiffs() as AnalysisArtifact & Record<string, unknown>;
   artifact.document = {
     ...artifact.document!,
+    revision_id: "revision-demo-next",
     raw_content: [
       "Editorial teams need a fast way to decide whether a post is original, useful, and worth reader attention.",
       "",
@@ -1315,11 +1364,55 @@ function buildArtifactAfterAppliedRevision(): AnalysisArtifact {
     ].join("\n"),
   };
   artifact.agent_plan = [];
-  artifact.agent_results = [];
-  artifact.anchors = [];
-  artifact.threads = [];
+  artifact.agent_results = [
+    {
+      ...artifact.agent_results[0],
+      document_revision_id: "revision-demo-current",
+      findings: artifact.agent_results[0].findings.map((finding) => ({
+        ...finding,
+        document_revision_id: "revision-demo-current",
+      })),
+      metadata: {
+        ...artifact.agent_results[0].metadata,
+        historical: true,
+      },
+    },
+  ];
+  artifact.anchors = [
+    {
+      ...artifact.anchors[0],
+      document_revision_id: "revision-demo-current",
+    },
+  ];
+  artifact.threads = [
+    {
+      ...artifact.threads[0],
+      document_revision_id: "revision-demo-current",
+      anchor: {
+        ...artifact.threads[0].anchor,
+        document_revision_id: "revision-demo-current",
+      },
+      comments: artifact.threads[0].comments
+        .filter((comment) => comment.category === "fact_check")
+        .map((comment) => ({
+          ...comment,
+          document_revision_id: "revision-demo-current",
+        })),
+    },
+  ];
   artifact.summary = null;
   artifact.review_summary = null;
+  artifact.previous_draft_snapshot = {
+    document_revision_id: "revision-demo-current",
+    document: {
+      ...mockArtifact.document!,
+      revision_id: "revision-demo-current",
+    },
+    anchors: structuredClone(mockArtifact.anchors),
+    threads: structuredClone(mockArtifact.threads),
+    agent_results: structuredClone(mockArtifact.agent_results.filter((result) => result.category === "fact_check")),
+    archived_at: new Date().toISOString(),
+  };
   artifact.events = [
     ...artifact.events,
     {
@@ -1340,6 +1433,7 @@ function buildArtifactAfterAppliedRevision(): AnalysisArtifact {
 function buildUrlPreviewDocument(): NonNullable<AnalysisArtifact["document"]> {
   return {
     id: "preview-doc",
+    revision_id: "revision-preview-doc",
     title: "Imported URL Preview",
     source_type: "url",
     source_label: "https://example.com/post",

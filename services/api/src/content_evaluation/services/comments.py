@@ -47,6 +47,7 @@ class CommentService:
             if block_id is None or start_offset is None or end_offset is None or quote is None:
                 raise ValidationError("A new anchor requires block_id, start_offset, end_offset, and quote")
             anchor = ArtifactAnchor(
+                document_revision_id=artifact.document.revision_id if artifact.document is not None else None,
                 block_id=block_id,
                 start_offset=start_offset,
                 end_offset=end_offset,
@@ -58,6 +59,7 @@ class CommentService:
         comment = ArtifactComment(
             artifact_id=artifact_id,
             anchor_id=resolved_anchor_id,
+            document_revision_id=artifact.document.revision_id if artifact.document is not None else None,
             author_type=AuthorType.HUMAN,
             author_label=self._reviewer_name,
             category=AgentCategory.HUMAN,
@@ -173,6 +175,10 @@ def _require_thread_for_anchor(artifact: AnalysisArtifact, anchor_id: str) -> Ar
         raise NotFoundError(f"Anchor {anchor_id} not found")
     thread = next((item for item in artifact.threads if item.anchor.id == anchor_id), None)
     if thread is None:
-        thread = ArtifactThread(anchor=anchor, comments=[])
+        thread = ArtifactThread(
+            document_revision_id=anchor.document_revision_id,
+            anchor=anchor,
+            comments=[],
+        )
         artifact.threads.append(thread)
     return thread

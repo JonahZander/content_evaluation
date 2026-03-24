@@ -9,13 +9,13 @@ The top-level output produced by the backend and rendered by the UI.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `schema_version` | `str` | Currently `"1.3"`. Bump when breaking changes are made to the export schema. |
+| `schema_version` | `str` | Currently `"1.4"`. Bump when breaking changes are made to the export schema. |
 | `artifact_id` | `UUID` | Stable identifier for the artifact. Used in all API routes and exports. |
 | `status` | `RunStatus` | Current lifecycle state. See RunStatus transitions below. |
 | `created_at` | `datetime` | UTC timestamp of artifact creation. |
 | `updated_at` | `datetime` | UTC timestamp of last mutation. |
 | `source` | `ArtifactSource` | Where the content came from. |
-| `document` | `ArtifactDocument \| None` | Normalized content. `None` until normalization completes. |
+| `document` | `ArtifactDocument \| None` | Normalized content. `None` until normalization completes. Includes the current `revision_id`. |
 | `run_config` | `RunConfig` | Agent selection, persistence mode, debug trace flag. |
 | `agent_plan` | `list[ArtifactAgentPlanItem]` | Execution status of each agent. |
 | `agent_results` | `list[ArtifactAgentResult]` | Structured output per agent. |
@@ -23,8 +23,9 @@ The top-level output produced by the backend and rendered by the UI.
 | `threads` | `list[ArtifactThread]` | Anchor → comments grouping. |
 | `summary` | `ArtifactSummary \| None` | Aggregate overview and score data. `None` until assembly completes. |
 | `review_summary` | `ArtifactReviewSummary \| None` | Narrative review context for the panel above the text pane. Optional and backward-compatible. |
-| `revised_document` | `ArtifactRevisedDocument \| None` | Candidate revised markdown generated after review-state acceptance. |
-| `diff_review` | `ArtifactDiffReview \| None` | Structured diff-review payload between canonical cleaner output and candidate revised markdown. |
+| `revised_document` | `ArtifactRevisedDocument \| None` | Candidate revised markdown generated after review-state acceptance, including revision mode and source revision provenance. |
+| `diff_review` | `ArtifactDiffReview \| None` | Structured diff-review payload between canonical cleaner output and candidate revised markdown, including revision mode and source revision provenance. |
+| `previous_draft_snapshot` | `ArtifactPreviousDraftSnapshot \| None` | Archived immediately previous draft used to preserve historical fact-check/research honestly after a revision apply. |
 | `events` | `list[ArtifactEvent]` | Chronological run log for the SSE stream and UI timeline. |
 | `debug` | `ArtifactDebug \| None` | Verbose trace data. Present only when `include_debug_trace` is true. |
 | `error_message` | `str \| None` | Human-readable error description for failed runs. |
@@ -68,6 +69,7 @@ The canonical normalized article after conservative pre-analysis cleaning.
 
 | Field | Type | Description |
 |-------|------|-------------|
+| `revision_id` | `str` | Stable identifier for the current canonical draft revision. |
 | `raw_content` | `str` | Cleaner-output markdown/plain text used as canonical analysis input. |
 | `text` | `str` | Joined plain-text view of the normalized source blocks. |
 | `blocks` | `list[ArtifactBlock]` | Reviewable source blocks after normalization and oversized-block splitting. |
@@ -103,6 +105,7 @@ A text-range reference pointing into one or more adjacent document blocks.
 | Field | Type | Description |
 |-------|------|-------------|
 | `id` | `str` | Stable anchor identifier (e.g. `anchor-<uuid>`). |
+| `document_revision_id` | `str \| None` | Revision the anchor originally belonged to. Historical preserved anchors keep the previous revision id even when they remap inline into the new draft. |
 | `block_id` | `str` | Primary block ID. Mirrors `segments[0].block_id` for import compatibility. |
 | `start_offset` | `int` | Char offset into the primary block's `text`. Mirrors `segments[0].start_offset`. |
 | `end_offset` | `int` | Char offset end in the primary block. Mirrors `segments[0].end_offset`. |
@@ -130,6 +133,12 @@ One block-local slice within a multi-block anchor.
 ### Why the legacy fields exist
 
 `block_id`, `start_offset`, and `end_offset` at the anchor level were the original single-block anchor shape. `segments` was added to support multi-paragraph agent findings. A `model_validator` keeps the legacy fields in sync with `segments[0]` so older exports can still be imported correctly. Do not write code that assumes only one of these shapes is present — both are always populated.
+
+## Revision Provenance
+
+- `ArtifactComment.document_revision_id`, `ArtifactThread.document_revision_id`, `AgentFinding.document_revision_id`, and `ArtifactAgentResult.document_revision_id` identify which draft revision produced that finding surface.
+- Current-revision workflows such as revised-markdown generation and summary building must scope to the active `document.revision_id`; preserved historical fact-check/research results are intentionally excluded from current-draft revision eligibility and current-draft summaries.
+- Historical preserved results may still remain visible in the live artifact, but they are presentation-only context unless a caller explicitly asks for archived previous-draft data.
 
 ## ArtifactEvent
 
@@ -216,15 +225,16 @@ The queued request payload used by the worker and API routes.
 
 ## Revised Markdown Contracts
 
-- `ArtifactRevisedDocument` stores the generated candidate markdown plus the accepted comment ids that informed it.
-- `ArtifactDiffReview` stores `original_markdown`, `candidate_markdown`, and `diff_items`.
+- `ArtifactRevisedDocument` stores the generated candidate markdown plus the accepted comment ids that informed it, the explicit revision `mode`, the `source_revision_id`, and an optional rewrite `direction_prompt`.
+- `ArtifactDiffReview` stores the same revision provenance plus `original_markdown`, `candidate_markdown`, and `diff_items`.
+- `ArtifactPreviousDraftSnapshot` stores the archived prior `document`, its preserved `anchors`, preserved fact-check/research `threads`, preserved fact-check/research `agent_results`, and the archived `document_revision_id`.
 - Each `ArtifactDiffItem` carries a `change_type`, `before_text`, `after_text`, and reviewer `decision`.
 - Diff items also preserve original and candidate line ranges so selective application can rebuild the next working markdown deterministically.
-- Applying reviewed diffs promotes a newly normalized document, clears prior agent results/anchors/threads, and leaves the artifact ready for a follow-up analysis run on the revised draft.
+- Applying reviewed diffs promotes a newly normalized document, preserves only historical fact-check/research context from the immediately previous draft, and leaves the artifact ready for a follow-up analysis run on the revised draft.
 
 ## Export Schema Stability
 
-- `schema_version` is `"1.3"`. Code that reads exported JSON should handle missing optional fields gracefully.
+- `schema_version` is `"1.4"`. Code that reads exported JSON should handle missing optional fields gracefully.
 - `review_summary` is optional. Older exports may omit it entirely.
 - `document.cleaner_audit` is optional. Older exports may omit it entirely.
 - `revised_document` and `diff_review` are optional. Older exports may omit them entirely.

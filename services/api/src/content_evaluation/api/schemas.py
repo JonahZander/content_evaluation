@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from content_evaluation.domain.models import (
     AnalysisArtifact,
     PersistenceMode,
+    RevisionMode,
     RevisedMarkdownDiffDecision,
     ReviewState,
     SourceType,
@@ -45,6 +46,13 @@ class ResearchRequest(BaseModel):
     prompt: str = Field(min_length=1)
     anchor_id: str | None = None
     comment_id: str | None = None
+
+
+class GenerateRevisedMarkdownRequest(BaseModel):
+    """Store a request to generate revised markdown."""
+
+    mode: RevisionMode
+    direction_prompt: str | None = None
 
 
 class ImportArtifactRequest(BaseModel):

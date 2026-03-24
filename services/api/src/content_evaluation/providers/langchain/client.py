@@ -19,6 +19,7 @@ from content_evaluation.domain.models import (
     AnalysisProviderFamily,
     ArtifactBlock,
     ProviderRoute,
+    RevisionMode,
 )
 
 
@@ -37,6 +38,19 @@ class _StructuredAgentResponse(BaseModel):
 
     findings: list[_StructuredFinding] = Field(default_factory=list)
     summary: str | None = None
+
+
+class _SurgicalRevisionReplacement(BaseModel):
+    """Validate one surgical revision replacement."""
+
+    anchor: str
+    replacement: str
+
+
+class _StructuredSurgicalRevisionResponse(BaseModel):
+    """Validate the surgical revision response envelope."""
+
+    replacements: list[_SurgicalRevisionReplacement] = Field(default_factory=list)
 
 
 class LangChainAnalysisProvider:
@@ -105,42 +119,70 @@ class LangChainAnalysisProvider:
         self,
         original_markdown: str,
         accepted_suggestions: list[dict[str, object]],
+        mode: RevisionMode,
+        direction_prompt: str | None = None,
         route: ProviderRoute | None = None,
     ) -> dict[str, object]:
         """Rewrite markdown from accepted suggestions using the routed chat model."""
 
         resolved_route = self._resolve_route(route)
-        model = self._get_chat_model(resolved_route)
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    "You revise markdown articles. Return only the full revised markdown document with no preamble.",
-                ),
-                (
-                    "human",
-                    "{request}",
-                ),
-            ]
-        )
-        request = self._build_rewrite_prompt(original_markdown, accepted_suggestions)
         handler = UsageMetadataCallbackHandler()
-        try:
-            response = await (prompt | model).ainvoke({"request": request}, config={"callbacks": [handler]})
-        except Exception as error:  # pragma: no cover - framework exception types vary
-            raise self._classify_provider_error(error) from error
-
-        content = getattr(response, "content", response)
-        if isinstance(content, list):
-            text = "".join(
-                item.get("text", "") for item in content if isinstance(item, dict)
-            ).strip()
+        if mode is RevisionMode.SURGICAL:
+            prompt = ChatPromptTemplate.from_messages(
+                [
+                    (
+                        "system",
+                        "You prepare surgical markdown edits. Return only structured replacements. "
+                        "Each replacement must target an exact anchor quote from the original document.",
+                    ),
+                    ("human", "{request}"),
+                ]
+            )
+            request = self._build_surgical_rewrite_prompt(original_markdown, accepted_suggestions)
+            try:
+                response = await (
+                    prompt | self._get_chat_model(resolved_route).with_structured_output(_StructuredSurgicalRevisionResponse)
+                ).ainvoke({"request": request}, config={"callbacks": [handler]})
+            except Exception as error:  # pragma: no cover - framework exception types vary
+                raise self._classify_provider_error(error) from error
+            parsed = getattr(response, "parsed", response)
+            validated = _StructuredSurgicalRevisionResponse.model_validate(
+                parsed.model_dump() if hasattr(parsed, "model_dump") else parsed
+            )
+            payload: dict[str, object] = {
+                "replacements": [item.model_dump(mode="json") for item in validated.replacements],
+            }
         else:
-            text = str(content).strip()
-        if not text:
-            raise ProviderError("Revised markdown response was empty", kind="invalid_response")
+            model = self._get_chat_model(resolved_route)
+            prompt = ChatPromptTemplate.from_messages(
+                [
+                    (
+                        "system",
+                        "You revise markdown articles. Return only the full revised markdown document with no preamble.",
+                    ),
+                    ("human", "{request}"),
+                ]
+            )
+            request = self._build_rewrite_prompt(
+                original_markdown,
+                accepted_suggestions,
+                direction_prompt=direction_prompt,
+            )
+            try:
+                response = await (prompt | model).ainvoke({"request": request}, config={"callbacks": [handler]})
+            except Exception as error:  # pragma: no cover - framework exception types vary
+                raise self._classify_provider_error(error) from error
 
-        payload: dict[str, object] = {"markdown": text}
+            content = getattr(response, "content", response)
+            if isinstance(content, list):
+                text = "".join(
+                    item.get("text", "") for item in content if isinstance(item, dict)
+                ).strip()
+            else:
+                text = str(content).strip()
+            if not text:
+                raise ProviderError("Revised markdown response was empty", kind="invalid_response")
+            payload = {"markdown": text}
         usage = self._extract_usage_from_handler(handler)
         if usage is not None:
             payload["usage"] = usage
@@ -315,15 +357,40 @@ class LangChainAnalysisProvider:
         )
 
     @staticmethod
-    def _build_rewrite_prompt(
+    def _build_surgical_rewrite_prompt(
         original_markdown: str,
         accepted_suggestions: list[dict[str, object]],
     ) -> str:
-        """Build the prompt body for revised-markdown generation."""
+        """Build the prompt body for surgical revised-markdown generation."""
 
         return (
+            "Return JSON with a `replacements` array.\n"
+            "Each replacement must contain an exact `anchor` quote copied from the original markdown and a "
+            "`replacement` string that should replace only that quote.\n"
+            "Skip suggestions that should not produce a direct surgical replacement.\n\n"
+            f"Accepted suggestions:\n{accepted_suggestions}\n\n"
+            f"Original markdown:\n{original_markdown}"
+        )
+
+    @staticmethod
+    def _build_rewrite_prompt(
+        original_markdown: str,
+        accepted_suggestions: list[dict[str, object]],
+        *,
+        direction_prompt: str | None = None,
+    ) -> str:
+        """Build the prompt body for revised-markdown generation."""
+
+        prompt = (
             "Revise the following markdown article using only the accepted review suggestions.\n"
             "Preserve markdown structure where it still fits. Apply the accepted suggestions, but do not add commentary.\n\n"
             f"Accepted suggestions:\n{accepted_suggestions}\n\n"
             f"Original markdown:\n{original_markdown}"
         )
+        if direction_prompt and direction_prompt.strip():
+            prompt = (
+                "Follow this rewrite direction while applying the accepted suggestions.\n"
+                f"Direction: {direction_prompt.strip()}\n\n"
+                f"{prompt}"
+            )
+        return prompt

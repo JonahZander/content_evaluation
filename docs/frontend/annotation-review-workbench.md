@@ -86,7 +86,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Paragraphs with comments should reserve the vertical space needed for those comments before the next paragraph begins.
 - Export and import actions should be visible from the main toolbar.
 - The toolbar should expose JSON, Markdown, and compact Markdown todo exports from the main action row.
-- The toolbar should expose revised-markdown generation only when accepted agent suggestions exist and no diff review is already active.
+- The toolbar should expose revision actions only when current-revision accepted agent suggestions exist and no diff review is already active.
 - The toolbar should expose a stop-run action for queued/running work and a new-analysis reset action.
 - The toolbar should keep the pasted-text composer in its own full-width source row beneath source selection controls.
 - Invalid review actions should be disabled when no real artifact is loaded.
@@ -125,6 +125,12 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - The `New analysis` button should only appear once a real artifact exists.
 - Todo export should include only accepted agent suggestions, ordered by where they appear in the article, with a compact checklist followed by short context that includes both the original agent comment and the suggested change.
 - Revised markdown should remain a post-run, reviewer-triggered workflow; the canonical draft changes only after reviewed diff decisions are applied.
+- The old single `Generate revised markdown` action is replaced by two explicit actions:
+  - `Apply changes` for surgical mode
+  - `Rewrite draft` for full-document mode with an optional/required direction prompt in the UI before submit
+- Phase 4 should label which mode produced the candidate revision and surface the rewrite direction when one was supplied.
+- Preserved historical fact-check and research findings should stay visible after apply, but they must be clearly marked as `original draft` findings and must not count as current-draft accepted suggestions.
+- When preserved historical findings still map honestly into the revised draft they may render inline with an original-draft indicator; otherwise they should appear in a separate clearly labeled original-draft section backed by the archived previous snapshot.
 - Debug visibility should be toggleable when the artifact includes debug trace data.
 - Empty states are shown when no artifact or no comment threads are present.
 - Synthetic unmatched-reference blocks should render with visibly distinct fallback styling so reviewers can tell they are not original article text.

@@ -1,9 +1,10 @@
 import { AnalysisArtifact } from "@/lib/types";
 
 const timestamp = new Date().toISOString();
+const currentRevisionId = "revision-demo-current";
 
 export const mockArtifact: AnalysisArtifact = {
-  schema_version: "1.2",
+  schema_version: "1.4",
   artifact_id: "run-demo",
   status: "completed",
   created_at: timestamp,
@@ -16,6 +17,7 @@ export const mockArtifact: AnalysisArtifact = {
   },
   document: {
     id: "doc-demo",
+    revision_id: currentRevisionId,
     title: "How Editorial Teams Can Evaluate AI-Written Posts",
     source_type: "text",
     source_label: "Demo draft",
@@ -152,11 +154,13 @@ export const mockArtifact: AnalysisArtifact = {
   agent_results: [
     {
       agent_id: "fact_check",
+      document_revision_id: currentRevisionId,
       category: "fact_check",
       status: "completed",
       findings: [
         {
           id: "finding-fact-1",
+          document_revision_id: currentRevisionId,
           category: "fact_check",
           agent_name: "fact_check",
           anchor_ids: ["anchor-1"],
@@ -213,11 +217,13 @@ export const mockArtifact: AnalysisArtifact = {
     },
     {
       agent_id: "ai_likelihood",
+      document_revision_id: currentRevisionId,
       category: "ai_likelihood",
       status: "completed",
       findings: [
         {
           id: "finding-ai-1",
+          document_revision_id: currentRevisionId,
           category: "ai_likelihood",
           agent_name: "ai_likelihood",
           anchor_ids: ["anchor-3"],
@@ -238,11 +244,13 @@ export const mockArtifact: AnalysisArtifact = {
     },
     {
       agent_id: "editorial",
+      document_revision_id: currentRevisionId,
       category: "editorial",
       status: "completed",
       findings: [
         {
           id: "finding-edit-1",
+          document_revision_id: currentRevisionId,
           category: "editorial",
           agent_name: "editorial",
           anchor_ids: ["anchor-2"],
@@ -265,6 +273,7 @@ export const mockArtifact: AnalysisArtifact = {
   anchors: [
     {
       id: "anchor-1",
+      document_revision_id: currentRevisionId,
       block_id: "block-1",
       start_offset: 0,
       end_offset: 64,
@@ -274,6 +283,7 @@ export const mockArtifact: AnalysisArtifact = {
     },
     {
       id: "anchor-2",
+      document_revision_id: currentRevisionId,
       block_id: "block-2",
       start_offset: 4,
       end_offset: 89,
@@ -283,6 +293,7 @@ export const mockArtifact: AnalysisArtifact = {
     },
     {
       id: "anchor-3",
+      document_revision_id: currentRevisionId,
       block_id: "block-3",
       start_offset: 0,
       end_offset: 76,
@@ -293,8 +304,10 @@ export const mockArtifact: AnalysisArtifact = {
   ],
   threads: [
     {
+      document_revision_id: currentRevisionId,
       anchor: {
         id: "anchor-1",
+        document_revision_id: currentRevisionId,
         block_id: "block-1",
         start_offset: 0,
         end_offset: 64,
@@ -307,6 +320,7 @@ export const mockArtifact: AnalysisArtifact = {
           id: "comment-fact-1",
           artifact_id: "run-demo",
           anchor_id: "anchor-1",
+          document_revision_id: currentRevisionId,
           author_type: "agent",
           author_label: "Fact Check agent",
           category: "fact_check",
@@ -331,6 +345,7 @@ export const mockArtifact: AnalysisArtifact = {
           id: "comment-1",
           artifact_id: "run-demo",
           anchor_id: "anchor-1",
+          document_revision_id: currentRevisionId,
           author_type: "agent",
           author_label: "editorial agent",
           category: "editorial",
@@ -354,8 +369,10 @@ export const mockArtifact: AnalysisArtifact = {
       ],
     },
     {
+      document_revision_id: currentRevisionId,
       anchor: {
         id: "anchor-2",
+        document_revision_id: currentRevisionId,
         block_id: "block-2",
         start_offset: 4,
         end_offset: 89,
@@ -368,6 +385,7 @@ export const mockArtifact: AnalysisArtifact = {
           id: "comment-2",
           artifact_id: "run-demo",
           anchor_id: "anchor-2",
+          document_revision_id: currentRevisionId,
           author_type: "agent",
           author_label: "editorial agent",
           category: "editorial",

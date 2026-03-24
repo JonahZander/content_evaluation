@@ -74,9 +74,13 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
    - Export the artifact as JSON
    - Export Markdown derived from the artifact
    - Export accepted agent suggestions as a compact Markdown todo list ordered by source position, including both the agent comment text and the suggestion
-   - Generate candidate revised markdown only after accepted suggestions exist
+   - Generate candidate revised markdown only after current-revision accepted suggestions exist
+   - Revised markdown generation now takes an explicit request body with `mode: surgical | rewrite` and an optional rewrite `direction_prompt`
+   - Surgical mode produces targeted replacement instructions and a narrow diff; rewrite mode produces a full candidate draft
    - Compute diff-review items deterministically from whole-document markdown comparison
    - Replace the canonical markdown only after reviewed diff decisions are applied
+   - On apply, keep one live mutable artifact, archive the immediately previous draft as `previous_draft_snapshot`, preserve only fact-check and targeted-research findings against that prior revision, and clear current-draft summaries/revision suggestions
+   - Preserved fact-check and research remain tagged to the previous document revision; only findings that remap honestly into the new draft stay inline, and unmatched preserved findings remain inspectable in the archived previous-draft section
    - Reopen a saved artifact without rerunning the pipeline
 
 ## Artifact-First Rules

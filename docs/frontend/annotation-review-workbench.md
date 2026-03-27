@@ -58,6 +58,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 
 - Selecting a text span opens a reviewer comment composer for a new standalone human comment.
 - URL sources should be imported and previewed before analysis starts so the reviewer can inspect the normalized draft first.
+- Pasted-text intake should expose a lightweight preview toggle before analysis starts so the reviewer can inspect the raw submission without leaving Phase 1.
 - Imported URL previews should support reversible per-block removal before analysis so boilerplate or irrelevant sections can be excluded without editing the raw draft.
 - Imported URL previews should keep removed blocks in place with muted styling and a remove/restore toggle so the layout does not shift while the reviewer prunes the draft.
 - URL preview pruning stays in Phase 1 so the reviewer can normalize the draft before the first run.
@@ -89,6 +90,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - The toolbar should expose revision actions only when current-revision accepted agent suggestions exist and no diff review is already active.
 - The toolbar should expose a stop-run action for queued/running work and a new-analysis reset action.
 - The toolbar should keep the pasted-text composer in its own full-width source row beneath source selection controls.
+- Pasted-text runs should keep that composer visible in later phases as a dimmed read-only reference instead of removing it once the run begins.
 - Invalid review actions should be disabled when no real artifact is loaded.
 - Similarity research is no longer a selectable top-level agent in new runs; overlap research is surfaced through fact-check.
 

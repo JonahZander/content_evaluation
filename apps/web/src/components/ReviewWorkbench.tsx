@@ -101,6 +101,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     isGeneratingRevision,
     isSavingDiffReview,
     isApplyingRevision,
+    showTextPreview,
     selectedFile,
     fileInputKey,
     importInputKey,
@@ -464,6 +465,25 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   const isProgressActive = artifact !== null && (artifact.status === "queued" || artifact.status === "running");
   const showRunningPanel = isRunningPhase;
 
+  const handleFormChange = useCallback((updater: (current: ReviewFormState) => ReviewFormState) => {
+    const nextFormState = updater(formState);
+    const resolvedFormState = nextFormState.selectedAgents !== formState.selectedAgents
+      ? {
+          ...nextFormState,
+          selectedAgents: resolveSelectedAgents(nextFormState.selectedAgents, agents),
+        }
+      : nextFormState;
+
+    if (
+      showTextPreview
+      && (resolvedFormState.sourceType !== "text" || resolvedFormState.text.trim().length === 0)
+    ) {
+      dispatch({ type: "TOGGLE_TEXT_PREVIEW" });
+    }
+
+    dispatch({ type: "SET_FORM_STATE", formState: resolvedFormState });
+  }, [agents, formState, showTextPreview]);
+
   async function maybeReplaceCurrentAnalysis(resetForm: boolean) {
     const hasCurrentAnalysis = artifact !== null || previewDocument !== null;
     if (!hasCurrentAnalysis) {
@@ -669,6 +689,13 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     } finally {
       dispatch({ type: "SET_IS_PREVIEWING", value: false });
     }
+  }
+
+  function handlePreviewText() {
+    if (formState.sourceType !== "text" || formState.text.trim().length === 0) {
+      return;
+    }
+    dispatch({ type: "TOGGLE_TEXT_PREVIEW" });
   }
 
   async function handleImportFile(file: File | null) {
@@ -997,21 +1024,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
               importInputKey={importInputKey}
               showUrlImportGuidance={showUrlImportGuidance}
               hasLoadedContent={false}
-              onFormChange={(updater) =>
-                dispatch({
-                  type: "UPDATE_FORM_STATE",
-                  updater: (current) => {
-                    const next = updater(current);
-                    if (next.selectedAgents !== current.selectedAgents) {
-                      return {
-                        ...next,
-                        selectedAgents: resolveSelectedAgents(next.selectedAgents, agents),
-                      };
-                    }
-                    return next;
-                  },
-                })
-              }
+              onFormChange={handleFormChange}
               onFileChange={(file) => {
                 dispatch({ type: "SET_SELECTED_FILE", file });
                 dispatch({ type: "BUMP_FILE_INPUT_KEY" });
@@ -1024,6 +1037,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
                 });
               }}
               onImportFileChange={handleImportFile}
+              onPreviewText={handlePreviewText}
               onPreviewUrl={handlePreviewUrl}
               onSubmit={handleSubmit}
               onGenerateRevision={() => void handleGenerateRevision("surgical")}
@@ -1031,6 +1045,15 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
               onStartNewAnalysis={handleStartNewAnalysis}
               onExport={handleExport}
             />
+
+            {showTextPreview && formState.sourceType === "text" && formState.text.trim().length > 0 ? (
+              <section
+                className={`${styles.reviewSummaryCard} ${styles.textPreviewSection}`}
+                data-testid="text-preview-section"
+              >
+                <pre data-testid="text-preview-body">{formState.text}</pre>
+              </section>
+            ) : null}
 
             {displayDocument !== null ? (
               <section className={styles.intakePreviewShell} data-testid="intake-preview-shell">
@@ -1110,21 +1133,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
               importInputKey={importInputKey}
               showUrlImportGuidance={false}
               hasLoadedContent={true}
-              onFormChange={(updater) =>
-                dispatch({
-                  type: "UPDATE_FORM_STATE",
-                  updater: (current) => {
-                    const next = updater(current);
-                    if (next.selectedAgents !== current.selectedAgents) {
-                      return {
-                        ...next,
-                        selectedAgents: resolveSelectedAgents(next.selectedAgents, agents),
-                      };
-                    }
-                    return next;
-                  },
-                })
-              }
+              onFormChange={handleFormChange}
               onFileChange={(file) => {
                 dispatch({ type: "SET_SELECTED_FILE", file });
                 dispatch({ type: "BUMP_FILE_INPUT_KEY" });
@@ -1137,6 +1146,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
                 });
               }}
               onImportFileChange={handleImportFile}
+              onPreviewText={handlePreviewText}
               onPreviewUrl={handlePreviewUrl}
               onSubmit={handleSubmit}
               onGenerateRevision={() => void handleGenerateRevision("surgical")}

@@ -91,6 +91,23 @@ describe("ReviewWorkbench", () => {
     expect(screen.queryByTestId("revised-markdown-panel")).not.toBeInTheDocument();
   });
 
+  it("toggles a pasted-text preview before analysis starts", () => {
+    render(<ReviewWorkbench initialArtifact={null} />);
+
+    fireEvent.change(screen.getByTestId("draft-text-input"), {
+      target: { value: "Preview this draft before running analysis." },
+    });
+
+    fireEvent.click(screen.getByTestId("preview-text-button"));
+
+    expect(screen.getByTestId("text-preview-section")).toBeInTheDocument();
+    expect(screen.getByTestId("text-preview-body")).toHaveTextContent("Preview this draft before running analysis.");
+
+    fireEvent.click(screen.getByTestId("preview-text-button"));
+
+    expect(screen.queryByTestId("text-preview-section")).not.toBeInTheDocument();
+  });
+
   it("renders the running shell for a fresh in-flight run", () => {
     render(<ReviewWorkbench initialArtifact={buildRunningArtifact()} />);
 
@@ -106,6 +123,16 @@ describe("ReviewWorkbench", () => {
 
     await waitFor(() => expect(screen.getByTestId("agent-toggle-fact_check")).toBeDisabled());
     expect(screen.getByTestId("agent-lock-fact_check")).toHaveTextContent("Already run");
+  });
+
+  it("keeps pasted text visible as a read-only reference after content loads", () => {
+    render(<ReviewWorkbench initialArtifact={mockArtifact} />);
+
+    const textInput = screen.getByTestId("draft-text-input");
+
+    expect(textInput).toBeInTheDocument();
+    expect(textInput).toHaveAttribute("readonly");
+    expect(textInput).toHaveValue(mockArtifact.document?.raw_content ?? "");
   });
 
   it("cycles through partial findings in the running preview card", () => {
@@ -208,6 +235,7 @@ describe("ReviewWorkbench", () => {
 
     try {
       render(<ReviewWorkbench initialArtifact={null} />);
+      fireEvent.change(screen.getByTestId("source-type-select"), { target: { value: "artifact" } });
 
       const file = {
         text: async () => JSON.stringify(importedRunningArtifact),
@@ -427,10 +455,24 @@ describe("ReviewWorkbench", () => {
     expect(screen.getByTestId("new-analysis-button")).toBeInTheDocument();
   });
 
-  it("defaults the persistence selector to workspace mode", () => {
+  it("defaults new analyses to workspace persistence mode", async () => {
+    vi.mocked(api.createRun).mockResolvedValueOnce(mockArtifact);
+
     render(<ReviewWorkbench initialArtifact={null} />);
 
-    expect(screen.getByTestId("persistence-mode-select")).toHaveValue("workspace");
+    fireEvent.change(screen.getByTestId("draft-text-input"), {
+      target: { value: "Persist this in the default mode." },
+    });
+    fireEvent.click(screen.getByTestId("analyze-button"));
+
+    await waitFor(() =>
+      expect(api.createRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          persistenceMode: "workspace",
+        }),
+        expect.any(AbortSignal),
+      ),
+    );
   });
 
   it("restores a persisted workspace run by refetching the artifact", async () => {
@@ -499,7 +541,6 @@ describe("ReviewWorkbench", () => {
         "Previous session run is no longer available from the backend. Restored the draft only.",
       ),
     );
-    expect(screen.getByTestId("draft-title-input")).toHaveValue("Recovered draft");
     expect(screen.getByTestId("draft-text-input")).toHaveValue("Recovered body");
     expect(screen.queryByTestId("new-analysis-button")).not.toBeInTheDocument();
   });
@@ -511,7 +552,7 @@ describe("ReviewWorkbench", () => {
 
     await waitFor(() => expect(api.fetchAgents).toHaveBeenCalled());
     expect(api.fetchArtifact).not.toHaveBeenCalled();
-    expect(screen.getByTestId("draft-title-input")).toHaveValue("");
+    expect(screen.getByTestId("draft-text-input")).toHaveValue("");
   });
 
   it("hides export buttons when no artifact exists", () => {

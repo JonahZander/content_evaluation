@@ -37,6 +37,7 @@ interface ReviewToolbarProps {
   onFormChange: (updater: (current: ReviewFormState) => ReviewFormState) => void;
   onFileChange: (file: File | null) => void;
   onImportFileChange: (file: File | null) => void;
+  onPreviewText: () => void;
   onPreviewUrl: () => void;
   onSubmit: () => void;
   onGenerateRevision: () => void;
@@ -70,6 +71,7 @@ export function ReviewToolbar({
   onFormChange,
   onFileChange,
   onImportFileChange,
+  onPreviewText,
   onPreviewUrl,
   onSubmit,
   onGenerateRevision,
@@ -77,6 +79,10 @@ export function ReviewToolbar({
   onStartNewAnalysis,
   onExport,
 }: ReviewToolbarProps) {
+  const showReadOnlyTextComposer = hasLoadedContent && formState.sourceType === "text";
+  const shouldRenderSourceComposer = !hasLoadedContent || showReadOnlyTextComposer;
+  const canPreviewText = !hasLoadedContent && formState.sourceType === "text" && formState.text.trim().length > 0;
+
   return (
     <section className={styles.toolbar}>
       {!hasLoadedContent ? (
@@ -132,8 +138,10 @@ export function ReviewToolbar({
         })}
       </div>
 
-      {!hasLoadedContent ? (
-        <div className={styles.sourceComposer}>
+      {shouldRenderSourceComposer ? (
+        <div
+          className={`${styles.sourceComposer} ${showReadOnlyTextComposer ? styles.sourceComposerReadOnly : ""}`.trim()}
+        >
           {formState.sourceType === "url" ? (
             <>
               <div className={styles.urlInputStack}>
@@ -184,6 +192,7 @@ export function ReviewToolbar({
               className={styles.toolbarTextarea}
               data-testid="draft-text-input"
               value={formState.text}
+              readOnly={showReadOnlyTextComposer}
               onChange={(event) => onFormChange((current) => ({ ...current, text: event.target.value }))}
               placeholder="Paste draft text"
             />
@@ -225,6 +234,16 @@ export function ReviewToolbar({
         >
           {submitting ? "Submitting..." : analyzeButtonLabel}
         </button>
+        {canPreviewText ? (
+          <button
+            className={styles.ghostButton}
+            data-testid="preview-text-button"
+            type="button"
+            onClick={onPreviewText}
+          >
+            Preview
+          </button>
+        ) : null}
         {canStopRun ? (
           <button
             className={styles.ghostButton}

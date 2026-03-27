@@ -154,6 +154,20 @@
   align-items: start;
 }
 
+.sourceComposerReadOnly {
+  opacity: 0.6;
+}
+
+.sourceComposerReadOnly :is(input, textarea, button, label) {
+  pointer-events: none;
+}
+
+.sourceComposerReadOnly textarea {
+  resize: none;
+  cursor: default;
+  background: var(--bg-panel);
+}
+
 .urlInputStack {
   display: grid;
   gap: 8px;
@@ -173,26 +187,72 @@
 .agentChip {
   display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 8px 14px;
   border-radius: 0;
   background: var(--bg-card);
   border: 1px solid var(--line);
+  cursor: pointer;
   font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
-  font-size: 12px;
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
   color: var(--ink);
+  transition: background 140ms ease, border-color 140ms ease;
+  user-select: none;
+}
+
+.agentChip:hover {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: var(--ink);
+}
+
+.agentChip input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  border: 1.5px solid var(--muted);
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.agentChip input[type="checkbox"]:checked {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.agentChip input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  top: 1px;
+  left: 4px;
+  width: 4px;
+  height: 8px;
+  border: solid #fff;
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+
+.agentChip input[type="checkbox"]:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .agentChipBadge {
   padding: 2px 6px;
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.5);
+  background: transparent;
   color: var(--muted);
-  font-size: 10px;
-  letter-spacing: 0.12em;
+  font-size: 9px;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   white-space: nowrap;
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
 }
 
 .toolbarInput,
@@ -211,6 +271,12 @@
   min-height: 160px;
   width: 100%;
   resize: vertical;
+}
+
+.toolbarSelect {
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
 }
 
 .fileInputWrap {
@@ -328,6 +394,24 @@
   border-radius: 0;
   background: var(--bg-card);
   border: 1px solid var(--line);
+}
+
+.textPreviewSection {
+  padding: 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  max-height: 400px;
+  overflow-y: auto;
+  margin: 0 22px 20px;
+}
+
+.textPreviewSection pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 0.95rem;
+  line-height: 1.7;
+  color: var(--ink);
 }
 
 .reviewSummaryText {

@@ -862,6 +862,169 @@
   background: transparent;
 }
 
+.diffReviewPanel {
+  display: grid;
+  gap: 16px;
+}
+
+.diffReviewHeader {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+}
+
+.diffReviewHeaderText {
+  display: grid;
+  gap: 10px;
+}
+
+.diffReviewHeaderText .sectionTitle,
+.diffReviewHeaderText .reviewSummaryText {
+  margin: 0;
+}
+
+.diffReviewHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.diffViewToggle {
+  display: inline-flex;
+  border: 1px solid var(--line);
+}
+
+.diffViewToggleButton {
+  padding: 6px 14px;
+  background: transparent;
+  border: none;
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.diffViewToggleButton:hover {
+  color: var(--ink);
+}
+
+.diffViewToggleActive {
+  background: var(--ink);
+  color: #fff;
+}
+
+.diffMarkdownPreview {
+  margin: 10px 0 0;
+  white-space: pre-wrap;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.diffApplyRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.inlineDiffView {
+  margin: 10px 0 0;
+  padding: 20px;
+  white-space: pre-wrap;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.9rem;
+  line-height: 1.7;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+}
+
+.inlineDiffRemoved {
+  text-decoration: line-through;
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+.inlineDiffAdded {
+  background: rgba(0, 0, 0, 0.06);
+  padding: 1px 2px;
+}
+
+.inlineDiffActions {
+  display: inline-flex;
+  gap: 4px;
+  margin: 0 4px;
+  vertical-align: middle;
+  align-items: center;
+}
+
+.inlineDiffButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--muted);
+  transition: background 100ms ease, color 100ms ease;
+}
+
+.inlineDiffButton:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--ink);
+}
+
+.inlineDiffButtonActive {
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
+}
+
+.diffItemList {
+  display: grid;
+  gap: 12px;
+}
+
+.diffItemHeader {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.diffItemTitle {
+  margin-top: 8px;
+  font-weight: 600;
+}
+
+.diffItemGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.diffSnippetPreview {
+  margin: 8px 0 0;
+  padding: 12px 14px;
+  white-space: pre-wrap;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.88rem;
+  line-height: 1.6;
+  background: rgba(35, 28, 20, 0.06);
+}
+
 .runningStageActions {
   display: flex;
   justify-content: flex-end;

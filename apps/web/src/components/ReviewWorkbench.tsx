@@ -994,6 +994,28 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     }
   }
 
+  async function handleRejectAllDiffs() {
+    if (artifact === null || diffReview === null || diffReview.diffItems.length === 0) {
+      return;
+    }
+    dispatch({ type: "SET_IS_SAVING_DIFF_REVIEW", value: true });
+    try {
+      const updatedArtifact = await updateRevisedMarkdownDiffReview(
+        artifact.artifact_id,
+        diffReview.diffItems.map((item) => ({ diffId: item.id, decision: "rejected" as const })),
+      );
+      dispatch({ type: "SET_ARTIFACT", artifact: updatedArtifact });
+      dispatch({ type: "SET_STATUS_MESSAGE", message: "Marked the revised markdown candidate as discarded." });
+    } catch (error) {
+      dispatch({
+        type: "SET_STATUS_MESSAGE",
+        message: error instanceof Error ? error.message : "Could not discard the revised markdown candidate.",
+      });
+    } finally {
+      dispatch({ type: "SET_IS_SAVING_DIFF_REVIEW", value: false });
+    }
+  }
+
   return (
     <main className={styles.page}>
       <div className={styles.shell}>
@@ -1341,6 +1363,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
               savingDecision={isSavingDiffReview}
               applyingRevision={isApplyingRevision}
               onDecisionChange={handleDiffDecision}
+              onRejectAll={handleRejectAllDiffs}
               onApply={handleApplyRevision}
             />
           </section>

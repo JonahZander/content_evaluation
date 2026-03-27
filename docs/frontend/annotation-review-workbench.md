@@ -23,7 +23,9 @@ Provide a high-legibility review surface where users can inspect source text, wa
   - Prefills from suggested fact-check research prompts when available, otherwise opens empty
 - Revised markdown panel
   - Lives in an isolated Phase 4 shell once a candidate revision exists
-  - Shows original cleaner-output markdown, candidate revised markdown, deterministic diff items, and per-diff reviewer decisions before the working draft is replaced
+  - Supports both side-by-side and inline review modes, with the default view matching the revision mode
+  - Full rewrites should read as a clean original-vs-candidate comparison with one apply/discard choice
+  - Partial rewrites should read as one flowing document with inline keep/discard controls for each changed section before the working draft is replaced
 - Source text pane
   - Selectable text with highlighted spans in paragraph rows
   - Supports lightweight markdown presentation for headings, inline emphasis, inline links, and fenced code blocks
@@ -132,6 +134,9 @@ Provide a high-legibility review surface where users can inspect source text, wa
   - `Apply changes` for surgical mode
   - `Rewrite draft` for full-document mode with an optional/required direction prompt in the UI before submit
 - Phase 4 should label which mode produced the candidate revision and surface the rewrite direction when one was supplied.
+- Phase 4 should let reviewers switch between side-by-side and inline diff views without changing the underlying candidate revision.
+- Full-document rewrites should default to side-by-side review with one discard action that marks every diff rejected without applying the candidate draft.
+- Surgical revisions should default to inline review with removed text struck through, added text highlighted, and the apply action blocked until every change has a decision.
 - Preserved historical fact-check and research findings should stay visible after apply, but they must be clearly marked as `original draft` findings and must not count as current-draft accepted suggestions.
 - When preserved historical findings still map honestly into the revised draft they may render inline with an original-draft indicator; otherwise they should appear in a separate clearly labeled original-draft section backed by the archived previous snapshot.
 - Debug visibility should be toggleable when the artifact includes debug trace data.

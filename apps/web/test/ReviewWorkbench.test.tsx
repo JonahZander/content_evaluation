@@ -623,7 +623,9 @@ describe("ReviewWorkbench", () => {
       }),
     );
     expect(await screen.findByTestId("revised-markdown-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("diff-view-toggle-inline").className).toContain("diffViewToggleActive");
     expect(screen.getByTestId("diff-item-status-diff-1")).toHaveTextContent("pending");
+    expect(screen.getByTestId("inline-diff-view")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Apply reviewed markdown" })).toBeDisabled();
   });
 
@@ -648,6 +650,14 @@ describe("ReviewWorkbench", () => {
     );
     expect(await screen.findByText("Rewrite draft")).toBeInTheDocument();
     expect(screen.getByText("Direction: Lead with the strongest finding.")).toBeInTheDocument();
+    expect(screen.getByTestId("diff-view-toggle-side-by-side").className).toContain("diffViewToggleActive");
+    expect(screen.getByRole("button", { name: "Apply full revision" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Discard revision" })).toBeInTheDocument();
+    expect(screen.queryByTestId("diff-item-diff-1")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("diff-view-toggle-inline"));
+
+    expect(screen.getByTestId("diff-item-diff-1")).toBeInTheDocument();
   });
 
   it("saves diff decisions and applies the reviewed revision", async () => {
@@ -674,6 +684,23 @@ describe("ReviewWorkbench", () => {
     await waitFor(() => expect(api.applyRevisedMarkdown).toHaveBeenCalledWith(artifactWithDiff.artifact_id));
     expect(screen.queryByTestId("diff-review-shell")).not.toBeInTheDocument();
     expect(screen.getByTestId("review-workbench")).toBeInTheDocument();
+  });
+
+  it("discards a side-by-side revision by rejecting every diff without applying", async () => {
+    const rewriteArtifact = buildArtifactWithRewriteDiffReview();
+    vi.mocked(api.updateRevisedMarkdownDiffReview).mockResolvedValueOnce(buildArtifactWithRejectedDiffs());
+
+    render(<ReviewWorkbench initialArtifact={rewriteArtifact} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Discard revision" }));
+
+    await waitFor(() =>
+      expect(api.updateRevisedMarkdownDiffReview).toHaveBeenCalledWith(rewriteArtifact.artifact_id, [
+        { diffId: "diff-1", decision: "rejected" },
+      ]),
+    );
+    expect(api.applyRevisedMarkdown).not.toHaveBeenCalled();
+    expect(screen.getByTestId("diff-view-toggle-side-by-side")).toBeInTheDocument();
   });
 
   it("blocks additive analysis while revised markdown review is pending", () => {
@@ -1395,6 +1422,28 @@ function buildArtifactWithReviewedDiffs(): AnalysisArtifact {
           "The strongest value of this draft is that it turns vague editorial instincts into a review workflow with concrete review signals.",
         after_text: "Promote this framing into the introduction.",
         decision: "accepted",
+      },
+    ],
+  };
+  return artifact;
+}
+
+function buildArtifactWithRejectedDiffs(): AnalysisArtifact {
+  const artifact = buildArtifactWithDiffReview();
+  artifact.diff_review = {
+    ...artifact.diff_review!,
+    diff_items: [
+      {
+        id: "diff-1",
+        change_type: "replace",
+        original_start_line: 3,
+        original_end_line: 5,
+        candidate_start_line: 3,
+        candidate_end_line: 5,
+        before_text:
+          "The strongest value of this draft is that it turns vague editorial instincts into a review workflow with concrete review signals.",
+        after_text: "Promote this framing into the introduction.",
+        decision: "rejected",
       },
     ],
   };

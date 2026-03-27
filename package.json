@@ -15,7 +15,7 @@
     "test:e2e": "npm --workspace apps/web run test:e2e",
     "test:e2e:headed": "npm --workspace apps/web run test:e2e:headed",
     "test:e2e:ui": "npm --workspace apps/web run test:e2e:ui",
-    "dev:api": "uv run --directory services/api uvicorn content_evaluation.api.main:app --reload",
+    "dev:api": "uv run --directory services/api uvicorn content_evaluation.api.main:app --reload --reload-dir src",
     "test:api": "uv run --directory services/api pytest",
     "lint:api": "uv run --directory services/api ruff check .",
     "typecheck:api": "uv run --directory services/api mypy src",

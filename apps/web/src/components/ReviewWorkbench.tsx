@@ -1104,6 +1104,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
             agentPlan={artifact?.agent_plan ?? []}
             agentResults={artifact?.agent_results ?? []}
             events={artifact?.events ?? []}
+            sourceText={artifact?.document?.raw_content ?? artifact?.document?.text ?? formState.text}
             onStopRun={handleStopRun}
             canStopRun={canStopRun}
           />
@@ -1181,7 +1182,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
               <section className={styles.reviewInlineProgress} data-testid="follow-up-progress">
                 <div className={styles.reviewInlineProgressMeta}>
                   <span className={styles.pill}>{followUpRunLabel}</span>
-                  <span className={styles.reviewInlineProgressStatus}>{artifact.status}</span>
+                  <span className={styles.reviewInlineProgressStatus}>
+                    <RunningStatusLabel status={artifact.status} />
+                  </span>
                 </div>
                 <div
                   className={`${styles.progressTrack} ${isProgressActive ? styles.progressTrackActive : ""}`}
@@ -1484,6 +1487,7 @@ function RunningStagePanel({
   agentPlan,
   agentResults,
   events,
+  sourceText,
   onStopRun,
   canStopRun,
 }: {
@@ -1493,9 +1497,11 @@ function RunningStagePanel({
   agentPlan: AnalysisArtifact["agent_plan"];
   agentResults: AnalysisArtifact["agent_results"];
   events: AnalysisArtifact["events"];
+  sourceText: string;
   onStopRun: () => void;
   canStopRun: boolean;
 }) {
+  const [sourceCollapsed, setSourceCollapsed] = useState(false);
   const findings = useMemo(
     () =>
           agentResults.flatMap((result) =>
@@ -1504,8 +1510,6 @@ function RunningStagePanel({
               category: result.category,
               rationale: finding.rationale,
               suggestion: finding.suggestion,
-              confidence: finding.confidence,
-              sources: finding.sources ?? [],
               metadata: finding.metadata,
             })),
           ),
@@ -1528,7 +1532,7 @@ function RunningStagePanel({
       </div>
       <div className={styles.progressMeta}>
         <span>{Math.round(progress * 100)}% complete</span>
-        <span>{status}</span>
+        <span><RunningStatusLabel status={status} /></span>
       </div>
       {latestResumeEvent ? (
         <div className={styles.progressNote} data-testid="run-resumed-note">
@@ -1546,13 +1550,32 @@ function RunningStagePanel({
           </article>
         ))}
       </div>
-      <hr className={styles.runDetailsDivider} />
-      <AgentUsageSummary agentResults={agentResults} agentPlan={agentPlan} />
-      <hr className={styles.runDetailsDivider} />
+      <details className={styles.runLogDetails}>
+        <summary className={styles.runLogToggle}>Token usage</summary>
+        <AgentUsageSummary agentResults={agentResults} agentPlan={agentPlan} />
+      </details>
       <details className={styles.runLogDetails}>
         <summary className={styles.runLogToggle}>Run log ({events.length} events)</summary>
         <CommentRail events={events} />
       </details>
+      {sourceText ? (
+        <section className={styles.runningSourcePreview} data-testid="running-source-preview">
+          <button
+            type="button"
+            className={styles.runningSourceToggle}
+            data-testid="running-source-toggle"
+            onClick={() => setSourceCollapsed((current) => !current)}
+            aria-expanded={!sourceCollapsed}
+          >
+            {sourceCollapsed ? "Show submitted content" : "Hide submitted content"}
+          </button>
+          {!sourceCollapsed ? (
+            <div className={styles.runningSourceBody}>
+              <pre className={styles.runningSourceText}>{sourceText}</pre>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
       <div className={styles.runningStageActions}>
         <button className={styles.ghostButton} type="button" onClick={onStopRun} disabled={!canStopRun}>
           Stop run
@@ -1570,8 +1593,6 @@ function RunningFindingsPreview({
     category: AnalysisArtifact["agent_results"][number]["category"];
     rationale: string;
     suggestion: string | null | undefined;
-    confidence: number;
-    sources: string[];
     metadata: Record<string, unknown>;
   }>;
 }) {
@@ -1597,6 +1618,7 @@ function RunningFindingsPreview({
   if (!findings.length) {
     return (
       <article className={styles.runningPreviewCard} data-testid="running-preview-card">
+        <span className={styles.previewPlaceholderLabel}>Live preview</span>
         <div className={styles.metricLabel}>Partial findings</div>
         <p className={styles.reviewSummaryText}>Waiting for the first agent result.</p>
       </article>
@@ -1607,20 +1629,48 @@ function RunningFindingsPreview({
 
   return (
     <article className={styles.runningPreviewCard} data-testid="running-preview-card">
-      <div className={styles.runningPreviewMeta}>
-        <span className={styles.pill}>{item.category}</span>
-        <span className={styles.reviewBadge}>
-          Finding {index + 1} of {findings.length}
-        </span>
-      </div>
-      <p className={styles.runningPreviewText}>{item.rationale}</p>
-      {item.suggestion ? <p className={styles.runningPreviewSuggestion}>{item.suggestion}</p> : null}
-      <div className={styles.runningPreviewFootnote}>
-        <span>{item.confidence.toFixed(2)} confidence</span>
-        <span>{item.sources.length} sources</span>
+      <span className={styles.previewPlaceholderLabel}>Live preview</span>
+      <div key={index} className={styles.runningPreviewContent}>
+        <div className={styles.runningPreviewMeta}>
+          <span className={styles.pill}>{item.category}</span>
+          <span className={styles.reviewBadge}>
+            Finding {index + 1} of {findings.length}
+          </span>
+        </div>
+        <p className={styles.runningPreviewText}>{item.rationale}</p>
+        {item.suggestion ? <p className={styles.runningPreviewSuggestion}>{item.suggestion}</p> : null}
       </div>
     </article>
   );
+}
+
+function RunningStatusLabel({ status }: { status: string }) {
+  const label = status.toUpperCase();
+
+  if (label !== "RUNNING") {
+    return label;
+  }
+
+  return (
+    <>
+      {label}
+      <AnimatedDots />
+    </>
+  );
+}
+
+function AnimatedDots() {
+  const [dots, setDots] = useState("");
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setDots((current) => (current.length >= 3 ? "" : `${current}.`));
+    }, 400);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
+  return <span className={styles.animatedDots} aria-hidden="true">{dots}</span>;
 }
 
 function resolveSelectedAgents(selectedAgents: string[], agents: AgentCatalogEntry[]): string[] {

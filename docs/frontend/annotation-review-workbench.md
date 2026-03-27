@@ -32,6 +32,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
   - Agent comment cards should stay compact when multiple comments target the same section
 - Token usage panel (`AgentUsageSummary`)
   - Per-agent table of input tokens, output tokens, and estimated USD cost; only rendered when usage data is present
+  - In Phase 2 it should sit behind the same collapsible disclosure pattern as the run log
   - Multi-model deep research runs should show `mixed` in the model column with a compact per-model token and cost breakdown underneath
 - Optional debug panel
   - Downloadable trace details when debug output is enabled
@@ -120,6 +121,8 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Queued or running progress bars should animate even while the percentage is unchanged so the reviewer can see that work is still active.
 - Retry and resume events should be visible in both the run log and the per-agent status area.
 - Partial findings should rotate in a focused running preview card during Phase 2 rather than exposing the full workbench.
+- The rotating Phase 2 preview card should stay fixed-height, scroll long content, and clearly read as a live placeholder surface instead of a final comment card.
+- Phase 2 should keep the submitted source text visible in a collapsible panel so reviewers can reread the draft while analysis is still running.
 - Append-agent runs should keep the review shell visible and surface only a compact inline progress strip while they are active.
 - Targeted research runs should keep the review shell visible and use the same compact inline progress treatment as append-agent runs.
 - Terminal artifacts should switch the primary action to `Add selected analysis`, disable already completed agents, and queue only newly selected follow-up analysis.

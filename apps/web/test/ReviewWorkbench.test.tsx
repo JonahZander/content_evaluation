@@ -152,6 +152,22 @@ describe("ReviewWorkbench", () => {
     }
   });
 
+  it("keeps the running card focused and shows submitted content inline", () => {
+    render(<ReviewWorkbench initialArtifact={buildRunningArtifactWithFindings()} />);
+
+    const previewCard = screen.getByTestId("running-preview-card");
+    const sourcePreview = screen.getByTestId("running-source-preview");
+
+    expect(previewCard).toHaveTextContent("Live preview");
+    expect(within(previewCard).queryByText(/confidence/i)).not.toBeInTheDocument();
+    expect(sourcePreview).toHaveTextContent("Editorial teams need a fast way to decide whether a post is original");
+
+    fireEvent.click(screen.getByTestId("running-source-toggle"));
+
+    expect(sourcePreview).not.toHaveTextContent("Editorial teams need a fast way to decide whether a post is original");
+    expect(screen.getByTestId("running-source-toggle")).toHaveTextContent("Show submitted content");
+  });
+
   it("keeps append-agent runs in the review shell with compact progress", () => {
     render(<ReviewWorkbench initialArtifact={buildFollowUpRunningArtifact()} />);
 

@@ -130,7 +130,7 @@ export const mockArtifact: AnalysisArtifact = {
     },
     {
       agent_id: "ai_likelihood",
-      display_name: "AI Likelihood",
+      display_name: "Human Voice",
       category: "ai_likelihood",
       depends_on: ["fact_check"],
       provider_kind: "analysis",

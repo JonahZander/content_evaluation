@@ -13,7 +13,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Run log
   - Full-width activity list inside the running view so users can inspect retries, resumptions, and failures without leaving Phase 2
 - Analysis summary
-  - Overall score, novelty, AI-likelihood, TL;DR, and article-length overview metrics shown only in the terminal review phase
+  - Overall score, novelty, Human voice, TL;DR, and article-length overview metrics shown only in the terminal review phase
 - Review summary panel
   - Lives above the source text pane in Phase 3 only
   - Shows TL;DR, article profile, structural completeness, inferred audience, research summary, and overlap links from fact-check-backed artifact data

@@ -60,7 +60,7 @@ export function RunMetrics({ summary }: RunMetricsProps) {
         <div className={styles.metricValue}>{formatScore(summaryMetrics?.novelty_score)}</div>
       </article>
       <article className={styles.metricCard}>
-        <div className={styles.metricLabel}>AI likelihood</div>
+        <div className={styles.metricLabel}>Human voice</div>
         <div className={styles.metricValue}>{formatScore(summaryMetrics?.ai_likelihood)}</div>
       </article>
     </section>

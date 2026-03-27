@@ -100,8 +100,8 @@ _AGENTS: tuple[AgentDefinition, ...] = (
     ),
     AgentDefinition(
         agent_id="ai_likelihood",
-        display_name="AI Likelihood",
-        description="Estimates whether the writing appears AI-generated.",
+        display_name="Human Voice",
+        description="Identifies AI-writing patterns and suggests ways to make prose sound more human.",
         category=AgentCategory.AI_LIKELIHOOD,
         depends_on=(),
         provider_kind=ProviderKind.ANALYSIS,

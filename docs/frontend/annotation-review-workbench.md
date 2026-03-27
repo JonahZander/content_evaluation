@@ -80,8 +80,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Hovering or selecting a summary finding should highlight linked spans in the source text.
 - Highlighted spans should stay visually continuous even when the underlying text contains inline markdown links.
 - Fact-check findings should render as regular comment-rail cards with structured claim, verdict, evidence, and source details instead of separate paragraph-side claim chips.
-- Connector lines should visually link each comment card to the relevant highlight.
-- Connector lines should recalculate after thread/document/layout changes and should avoid resize-jank during rapid window resizing.
+- Direct hover and focus highlighting should be the primary way to connect each comment card to the relevant source highlight.
 - Multiple comments on the same span should stack vertically while connecting back to the same text selection.
 - Overlapping anchors must render from one shared set of text segments so source text is never duplicated in the document pane.
 - Multi-block anchors must render continuation highlights in later adjacent rows without duplicating the same thread card.
@@ -98,7 +97,6 @@ Provide a high-legibility review surface where users can inspect source text, wa
 ## Target Behaviors
 
 - Highlighted text should stay neutral by default so dense clusters remain legible, with agent color becoming prominent on hover or focus from the linked thread.
-- Connector lines should stay subtle by default and bring forward the linked agent color on hover or focus.
 - When multiple agents or anchor ranges overlap on the same visible text, render one neutral highlight fill rather than layered color overlays.
 - Fact-check evidence should stay lightweight inside the comment card: one compact structured block with a few source links.
 - Completed fact-check should stay visible in the selector but show a clear `Already run` lock state instead of behaving like a generic disabled option.

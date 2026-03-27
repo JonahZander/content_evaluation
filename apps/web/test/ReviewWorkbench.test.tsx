@@ -271,13 +271,13 @@ describe("ReviewWorkbench", () => {
     }
   });
 
-  it("renders text, threads, and connector paths", async () => {
+  it("renders text and threads without connector overlays", async () => {
     render(<ReviewWorkbench initialArtifact={mockArtifact} />);
 
     expect(screen.getByText("How Editorial Teams Can Evaluate AI-Written Posts")).toBeInTheDocument();
     expect(screen.getByTestId("thread-anchor-2")).toBeInTheDocument();
-    expect(screen.getAllByTestId("connector-canvas").length).toBeGreaterThan(0);
-    expect(await screen.findByTestId("connector-comment-2")).toBeInTheDocument();
+    expect(screen.queryByTestId("connector-canvas")).not.toBeInTheDocument();
+    expect(await screen.findByTestId("comment-comment-2")).toBeInTheDocument();
   });
 
   it("shows review buttons and reply controls", () => {

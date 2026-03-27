@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
+import { useMemo, useRef, type MutableRefObject, type ReactNode } from "react";
 
 import styles from "@/components/ReviewWorkbench.module.css";
-import { ConnectorCanvas } from "@/components/review/ConnectorCanvas";
-import { categoryColors, colorForCategory } from "@/components/review/category-colors";
+import { colorForCategory } from "@/components/review/category-colors";
 import {
   anchorPrimarySegment,
   anchorSegments,
@@ -697,12 +696,7 @@ export function DocumentPane({
   onCancelEdit,
   onDeleteComment,
 }: DocumentPaneProps) {
-  const paneRef = useRef<HTMLDivElement | null>(null);
-  const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const hiddenBlockIdSet = useMemo(() => new Set(hiddenBlockIds), [hiddenBlockIds]);
-  const [pathsByBlockId, setPathsByBlockId] = useState<
-    Record<string, Array<{ id: string; path: string; color: string; active: boolean }>>
-  >({});
 
   const blockThreads = useMemo(() => {
     const grouped = new Map<string, ArtifactThread[]>();
@@ -732,144 +726,8 @@ export function DocumentPane({
     return grouped;
   }, [threads]);
 
-  useEffect(() => {
-    if (!document) {
-      setPathsByBlockId({});
-      return;
-    }
-
-    const updatePaths = () => {
-      const nextPathsByBlockId: Record<string, Array<{ id: string; path: string; color: string; active: boolean }>> = {};
-
-      document.blocks.forEach((block) => {
-        if (hiddenBlockIdSet.has(block.id)) {
-          return;
-        }
-        const row = rowRefs.current[block.id];
-        const rowThreads = blockThreads.get(block.id) ?? [];
-        if (!row || rowThreads.length === 0) {
-          return;
-        }
-
-        const rowRect = row.getBoundingClientRect();
-        nextPathsByBlockId[block.id] = rowThreads.flatMap((thread) => {
-          const anchorElement = anchorRefs.current[thread.anchor.id];
-          if (!anchorElement) {
-            return [];
-          }
-          const anchorRect = anchorElement.getBoundingClientRect();
-          const startX = anchorRect.right - rowRect.left;
-          const startY = anchorRect.top - rowRect.top + anchorRect.height / 2;
-
-          return thread.comments.flatMap((comment) => {
-            const commentElement = commentRefs.current[comment.id];
-            if (!commentElement) {
-              return [];
-            }
-            const commentRect = commentElement.getBoundingClientRect();
-            const endX = commentRect.left - rowRect.left;
-            const endY = commentRect.top - rowRect.top + commentRect.height / 2;
-            const controlOffset = Math.max(32, (endX - startX) / 2);
-            return {
-              id: comment.id,
-              color:
-                hoveredAnchorId === thread.anchor.id
-                  ? categoryColors[comment.category] ?? "var(--ink)"
-                  : "rgba(102, 109, 118, 0.55)",
-              active: hoveredAnchorId === thread.anchor.id,
-              path: `M ${startX} ${startY} C ${startX + controlOffset} ${startY}, ${endX - controlOffset} ${endY}, ${endX} ${endY}`,
-            };
-          });
-        });
-      });
-
-      setPathsByBlockId(nextPathsByBlockId);
-    };
-
-    let animationFrameId: number | null = null;
-    let resizeTimeoutId: number | null = null;
-    let resizeObserver: ResizeObserver | null = null;
-
-    const observeCurrentNodes = () => {
-      if (resizeObserver === null) {
-        return;
-      }
-      resizeObserver.disconnect();
-      if (paneRef.current) {
-        resizeObserver.observe(paneRef.current);
-      }
-      Object.values(rowRefs.current).forEach((element) => {
-        if (element) {
-          resizeObserver?.observe(element);
-        }
-      });
-      Object.values(anchorRefs.current).forEach((element) => {
-        if (element) {
-          resizeObserver?.observe(element);
-        }
-      });
-      Object.values(commentRefs.current).forEach((element) => {
-        if (element) {
-          resizeObserver?.observe(element);
-        }
-      });
-    };
-
-    const schedulePathUpdate = () => {
-      if (animationFrameId !== null) {
-        window.cancelAnimationFrame(animationFrameId);
-      }
-      animationFrameId = window.requestAnimationFrame(() => {
-        animationFrameId = null;
-        observeCurrentNodes();
-        updatePaths();
-      });
-    };
-
-    const handleResize = () => {
-      if (resizeTimeoutId !== null) {
-        window.clearTimeout(resizeTimeoutId);
-      }
-      resizeTimeoutId = window.setTimeout(() => {
-        resizeTimeoutId = null;
-        schedulePathUpdate();
-      }, 80);
-    };
-
-    const mutationObserver = new MutationObserver(() => {
-      schedulePathUpdate();
-    });
-
-    if (typeof ResizeObserver !== "undefined") {
-      resizeObserver = new ResizeObserver(() => {
-        schedulePathUpdate();
-      });
-      observeCurrentNodes();
-    }
-    if (paneRef.current) {
-      mutationObserver.observe(paneRef.current, {
-        childList: true,
-        subtree: true,
-      });
-    }
-
-    schedulePathUpdate();
-    window.addEventListener("resize", handleResize);
-    return () => {
-      if (animationFrameId !== null) {
-        window.cancelAnimationFrame(animationFrameId);
-      }
-      if (resizeTimeoutId !== null) {
-        window.clearTimeout(resizeTimeoutId);
-      }
-      mutationObserver.disconnect();
-      resizeObserver?.disconnect();
-      window.removeEventListener("resize", handleResize);
-    };
-  }, [anchorRefs, commentRefs, blockThreads, document, hoveredAnchorId, hiddenBlockIdSet]);
-
   return (
-    <div className={styles.documentPane} ref={paneRef}>
+    <div className={styles.documentPane}>
       <div className={styles.sectionTitle}>Text under review</div>
       <h2 className={styles.documentTitle} data-testid="document-title">{document?.title ?? "No document loaded"}</h2>
       {previewPruningEnabled && hiddenBlockIds.length > 0 ? (
@@ -897,13 +755,9 @@ export function DocumentPane({
             return (
               <div
                 key={block.id}
-                ref={(element) => {
-                  rowRefs.current[block.id] = element;
-                }}
                 className={styles.paragraphRow}
                 data-testid={`document-block-${block.index}`}
               >
-                <ConnectorCanvas paths={pathsByBlockId[block.id] ?? []} />
                 <div
                   className={`${styles.documentBlock} ${
                     block.origin === "synthetic_unmatched"

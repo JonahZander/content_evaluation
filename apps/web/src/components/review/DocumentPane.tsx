@@ -443,6 +443,9 @@ function ThreadCards({
               && comment.document_revision_id !== activeDocumentRevisionId
             );
           const factCheckDetails = comment.category === "fact_check" ? getFactCheckDetails(comment.metadata) : null;
+          const factCheckSources = factCheckDetails === null
+            ? []
+            : dedupeStrings([...factCheckDetails.sourceLinks, ...(comment.sources ?? [])]);
           return (
             <article
               key={comment.id}
@@ -479,7 +482,9 @@ function ThreadCards({
                   </div>
                 </div>
               ) : (
-                <p className={styles.cardBody}>{comment.body}</p>
+                <p className={styles.cardBody}>
+                  {factCheckDetails !== null ? inlineUrlsToLinks(comment.body) : comment.body}
+                </p>
               )}
               {factCheckDetails !== null ? (
                 <div className={styles.factCheckDetails} data-testid={`fact-check-details-${comment.id}`}>
@@ -492,18 +497,24 @@ function ThreadCards({
                   {factCheckDetails.evidenceSummary ? (
                     <p className={styles.factCheckEvidence}>{factCheckDetails.evidenceSummary}</p>
                   ) : null}
-                  {factCheckDetails.sourceLinks.length > 0 ? (
-                    <div className={styles.sources}>
-                      <span className={styles.sourcesLabel}>Sources:</span>
-                      <ul className={styles.sourcesList}>
-                        {factCheckDetails.sourceLinks.map((url) => (
+                  {factCheckSources.length > 0 ? (
+                    <div className={styles.factCheckSources}>
+                      <span className={styles.factCheckSourcesLabel}>Sources</span>
+                      <ol className={styles.factCheckSourceList}>
+                        {factCheckSources.map((url) => (
                           <li key={url}>
-                            <a href={url} target="_blank" rel="noopener noreferrer" className={styles.sourceLink}>
-                              {url}
+                            <a
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={styles.factCheckSourceLink}
+                              title={url}
+                            >
+                              {formatHostnameLabel(url)}
                             </a>
                           </li>
                         ))}
-                      </ul>
+                      </ol>
                     </div>
                   ) : null}
                 </div>
@@ -635,6 +646,8 @@ interface FactCheckDetails {
   sourceLinks: string[];
 }
 
+const INLINE_URL_PATTERN = /https?:\/\/[^\s<>"']+/g;
+
 function getFactCheckDetails(metadata: Record<string, unknown> | undefined): FactCheckDetails | null {
   if (metadata === undefined) {
     return null;
@@ -662,6 +675,90 @@ function extractStringArray(value: unknown): string[] {
 
 function dedupeStrings(values: string[]): string[] {
   return [...new Set(values)];
+}
+
+function formatHostnameLabel(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "") || url;
+  } catch {
+    return url;
+  }
+}
+
+function splitTrailingUrlPunctuation(rawMatch: string): { url: string; suffix: string } {
+  let url = rawMatch;
+  let suffix = "";
+
+  while (url.length > 0) {
+    const trailingCharacter = url.at(-1);
+    if (!trailingCharacter) {
+      break;
+    }
+    if (/[.,;:!?]/.test(trailingCharacter)) {
+      suffix = `${trailingCharacter}${suffix}`;
+      url = url.slice(0, -1);
+      continue;
+    }
+    if (trailingCharacter === ")") {
+      const openParens = (url.match(/\(/g) ?? []).length;
+      const closedParens = (url.match(/\)/g) ?? []).length;
+      if (closedParens > openParens) {
+        suffix = `${trailingCharacter}${suffix}`;
+        url = url.slice(0, -1);
+        continue;
+      }
+    }
+    break;
+  }
+
+  return { url, suffix };
+}
+
+function inlineUrlsToLinks(body: string): ReactNode {
+  const nodes: ReactNode[] = [];
+  let lastIndex = 0;
+
+  for (const match of body.matchAll(INLINE_URL_PATTERN)) {
+    const rawMatch = match[0];
+    const startIndex = match.index ?? 0;
+    if (startIndex > lastIndex) {
+      nodes.push(body.slice(lastIndex, startIndex));
+    }
+
+    const { url, suffix } = splitTrailingUrlPunctuation(rawMatch);
+    if (url.length > 0 && isSafeHref(url)) {
+      nodes.push(
+        <a
+          key={`${url}-${startIndex}`}
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={styles.factCheckInlineLink}
+          title={url}
+          onClick={(event) => event.stopPropagation()}
+        >
+          {formatHostnameLabel(url)}
+        </a>,
+      );
+      if (suffix.length > 0) {
+        nodes.push(suffix);
+      }
+    } else {
+      nodes.push(rawMatch);
+    }
+
+    lastIndex = startIndex + rawMatch.length;
+  }
+
+  if (lastIndex === 0) {
+    return body;
+  }
+
+  if (lastIndex < body.length) {
+    nodes.push(body.slice(lastIndex));
+  }
+
+  return nodes;
 }
 
 export function DocumentPane({

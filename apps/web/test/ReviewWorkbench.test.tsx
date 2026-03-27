@@ -756,7 +756,54 @@ describe("ReviewWorkbench", () => {
     expect(within(factCheckCard).getByText("Claim: Editorial teams need a fast way to decide whether a post is original, useful, and worth reader attention.")).toBeInTheDocument();
     expect(within(factCheckCard).getByText("Verdict: SUPPORTED")).toBeInTheDocument();
     expect(within(factCheckCard).getByText("Supported by public examples of editorial review workflows and citation-backed evaluation guidance.")).toBeInTheDocument();
-    expect(within(factCheckCard).getByRole("link", { name: "https://example.com/editorial-review" })).toBeInTheDocument();
+    const sourceLink = within(factCheckCard).getByRole("link", { name: "example.com" });
+    expect(sourceLink).toBeInTheDocument();
+    expect(sourceLink).toHaveAttribute("href", "https://example.com/editorial-review");
+    expect(sourceLink).toHaveAttribute("target", "_blank");
+  });
+
+  it("replaces inline fact-check URLs with hostname links while preserving the surrounding copy", () => {
+    const artifact = structuredClone(mockArtifact) as AnalysisArtifact;
+    const factCheckComment = artifact.threads
+      .flatMap((thread) => thread.comments)
+      .find((comment) => comment.id === "comment-fact-1");
+
+    if (!factCheckComment) {
+      throw new Error("Missing fact-check comment in mock artifact");
+    }
+
+    factCheckComment.body = "Cross-check Reuters at https://www.reuters.com/world and the workflow note at https://example.com/editorial-review before publishing.";
+    factCheckComment.sources = [
+      "https://www.reuters.com/world",
+      "https://example.com/editorial-review",
+    ];
+    factCheckComment.metadata = {
+      ...factCheckComment.metadata,
+      source_links: [
+        "https://www.reuters.com/world",
+        "https://example.com/editorial-review",
+      ],
+    };
+
+    render(<ReviewWorkbench initialArtifact={artifact} />);
+
+    const commentCard = screen.getByTestId("comment-comment-fact-1");
+    const body = commentCard.querySelector("p");
+
+    expect(body).not.toBeNull();
+    expect(body).toHaveTextContent(
+      "Cross-check Reuters at reuters.com and the workflow note at example.com before publishing.",
+    );
+
+    const reutersLink = within(body as HTMLParagraphElement).getByRole("link", { name: "reuters.com" });
+    const exampleLink = within(body as HTMLParagraphElement).getByRole("link", { name: "example.com" });
+
+    expect(reutersLink).toHaveAttribute("href", "https://www.reuters.com/world");
+    expect(reutersLink).toHaveAttribute("target", "_blank");
+    expect(exampleLink).toHaveAttribute("href", "https://example.com/editorial-review");
+    expect(exampleLink).toHaveAttribute("target", "_blank");
+    expect(within(commentCard).queryByText(/https:\/\/www\.reuters\.com\/world/)).not.toBeInTheDocument();
+    expect(within(commentCard).queryByText(/https:\/\/example\.com\/editorial-review/)).not.toBeInTheDocument();
   });
 
   it("adds active progress styling while a run is live", () => {

@@ -81,7 +81,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Partial findings should appear as each agent finishes instead of waiting for the full run.
 - Hovering or selecting a summary finding should highlight linked spans in the source text.
 - Highlighted spans should stay visually continuous even when the underlying text contains inline markdown links.
-- Fact-check findings should render as regular comment-rail cards with structured claim, verdict, evidence, and source details instead of separate paragraph-side claim chips.
+- Fact-check findings should render as regular comment-rail cards with structured claim, verdict, evidence, and a compact hostname-based source list instead of separate paragraph-side claim chips.
 - Direct hover and focus highlighting should be the primary way to connect each comment card to the relevant source highlight.
 - Multiple comments on the same span should stack vertically while connecting back to the same text selection.
 - Overlapping anchors must render from one shared set of text segments so source text is never duplicated in the document pane.
@@ -100,7 +100,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 
 - Highlighted text should stay neutral by default so dense clusters remain legible, with agent color becoming prominent on hover or focus from the linked thread.
 - When multiple agents or anchor ranges overlap on the same visible text, render one neutral highlight fill rather than layered color overlays.
-- Fact-check evidence should stay lightweight inside the comment card: one compact structured block with a few source links.
+- Fact-check evidence should stay lightweight inside the comment card: one compact structured block with a few hostname-labeled source links, and any raw URLs in fact-check body copy should collapse into the same lightweight hostname links.
 - Completed fact-check should stay visible in the selector but show a clear `Already run` lock state instead of behaving like a generic disabled option.
 - Supported markdown rendering is intentionally narrow in v1:
   - headings

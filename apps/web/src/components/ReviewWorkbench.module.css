@@ -1356,6 +1356,20 @@
   line-height: 1.5;
 }
 
+.factCheckInlineLink,
+.factCheckSourceLink {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--line);
+  transition: text-decoration-color 120ms ease;
+}
+
+.factCheckInlineLink:hover,
+.factCheckSourceLink:hover {
+  text-decoration-color: var(--ink);
+}
+
 .factCheckClaim,
 .factCheckVerdict {
   font-weight: 600;
@@ -1366,6 +1380,28 @@
   letter-spacing: 0.06em;
   font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
   font-size: 11px;
+}
+
+.factCheckSources {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.factCheckSourcesLabel {
+  display: block;
+  font-size: 10px;
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.factCheckSourceList {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 0.85rem;
+  line-height: 1.6;
 }
 
 .suggestion {

@@ -187,4 +187,15 @@ class FallbackExtractionProvider:
 def _should_try_fallback(message: str) -> bool:
     """Return whether a direct extraction error should trigger fallback."""
 
-    return any(status in message for status in ("status 403", "status 429", "status 500", "status 502", "status 503", "status 504")) or "no readable article text" in message
+    status_codes = (
+        "status 403",
+        "status 429",
+        "status 500",
+        "status 502",
+        "status 503",
+        "status 504",
+    )
+    return (
+        any(status in message for status in status_codes)
+        or "no readable article text" in message
+    )

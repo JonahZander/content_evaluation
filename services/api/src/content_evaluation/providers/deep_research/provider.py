@@ -217,7 +217,11 @@ class LiveDeepResearchProvider:
         if token_limit is not None:
             paragraph_budget = min(paragraph_budget, max(1, token_limit))
 
-        paragraphs = [paragraph.strip() for paragraph in re.split(r"\n\s*\n", article_text.strip()) if paragraph.strip()]
+        paragraphs = [
+            paragraph.strip()
+            for paragraph in re.split(r"\n\s*\n", article_text.strip())
+            if paragraph.strip()
+        ]
         if not paragraphs:
             return article_text[:paragraph_budget]
 

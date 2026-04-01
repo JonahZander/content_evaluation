@@ -20,7 +20,6 @@ from content_evaluation.providers.extraction.client import (
     TrafilaturaExtractionProvider,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -47,7 +46,12 @@ async def test_trafilatura_successful_extraction() -> None:
     provider = TrafilaturaExtractionProvider(timeout_seconds=5.0)
     try:
         with _patch_validate_url(), respx.mock(assert_all_called=True) as router:
-            router.get(_SAFE_URL).mock(return_value=Response(200, text="<html><body><p>Article body text.</p></body></html>"))
+            router.get(_SAFE_URL).mock(
+                return_value=Response(
+                    200,
+                    text="<html><body><p>Article body text.</p></body></html>",
+                )
+            )
 
             with patch(
                 "content_evaluation.providers.extraction.client.trafilatura.extract",

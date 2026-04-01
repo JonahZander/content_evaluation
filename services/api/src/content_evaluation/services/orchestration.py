@@ -38,23 +38,23 @@ from content_evaluation.domain.models import (
     ArtifactBlockKind,
     ArtifactBlockOrigin,
     ArtifactComment,
+    ArtifactDebug,
     ArtifactDiffItem,
     ArtifactDiffReview,
     ArtifactDocument,
-    ArtifactDebug,
     ArtifactEvent,
     ArtifactOverlapItem,
     ArtifactPreviousDraftSnapshot,
-    ArtifactRevisedDocument,
     ArtifactReviewSummary,
-    ArtifactStructuralCompleteness,
-    ArtifactThread,
-    ContentFormat,
-    ExtractedContent,
+    ArtifactRevisedDocument,
     ArtifactSource,
+    ArtifactStructuralCompleteness,
     ArtifactSummary,
+    ArtifactThread,
     AuthorType,
+    ContentFormat,
     EventType,
+    ExtractedContent,
     GraphCheckpoint,
     GraphNodeResult,
     GraphRunState,
@@ -62,9 +62,9 @@ from content_evaluation.domain.models import (
     PersistenceMode,
     ProviderKind,
     ProviderRoute,
-    RevisionMode,
     ReviewState,
     RevisedMarkdownDiffDecision,
+    RevisionMode,
     RunConfig,
     RunInput,
     RunMode,
@@ -496,7 +496,11 @@ class RunOrchestrator:
             applied_markdown = _apply_diff_review(artifact.diff_review)
             previous_document = artifact.document.model_copy(deep=True)
             previous_revision_id = previous_document.revision_id
-            revised_document = artifact.revised_document.model_copy(deep=True) if artifact.revised_document is not None else None
+            revised_document = (
+                artifact.revised_document.model_copy(deep=True)
+                if artifact.revised_document is not None
+                else None
+            )
             preserved_categories = {AgentCategory.FACT_CHECK, AgentCategory.RESEARCH}
             previous_snapshot = _build_previous_draft_snapshot(
                 artifact,
@@ -1444,7 +1448,9 @@ class RunOrchestrator:
             research_summary = _fact_check_research_summary(raw_output)
             tl_dr = _coerce_str(raw_output.get("tl_dr")) or _coerce_str(raw_output.get("tldr"))
             main_claims = _coerce_dict_list(raw_output.get("main_claims"))
-            suggested_research_prompt = _coerce_str(metadata.get("suggested_research_prompt")) or _suggest_research_prompt(
+            suggested_research_prompt = _coerce_str(
+                metadata.get("suggested_research_prompt")
+            ) or _suggest_research_prompt(
                 claim_findings[0]["claim_text"] if claim_findings else ""
             )
             findings = [
@@ -1762,7 +1768,9 @@ class RunOrchestrator:
             extracted_title=_coerce_str(updates.get("extracted_title")) or state.get("extracted_title"),
             extracted_content_format=cast(
                 ContentFormat,
-                updates.get("extracted_content_format") or state.get("extracted_content_format") or ContentFormat.PLAIN_TEXT,
+                updates.get("extracted_content_format")
+                or state.get("extracted_content_format")
+                or ContentFormat.PLAIN_TEXT,
             ),
             extracted_metadata={
                 **cast(dict[str, object], state.get("extracted_metadata", {})),
@@ -2392,7 +2400,11 @@ def _build_overview_data(
             "structural_completeness": ArtifactStructuralCompleteness(),
         }
 
-    source_blocks = [block for block in document.blocks if block.origin is ArtifactBlockOrigin.SOURCE and block.text.strip()]
+    source_blocks = [
+        block
+        for block in document.blocks
+        if block.origin is ArtifactBlockOrigin.SOURCE and block.text.strip()
+    ]
     word_count = sum(len(block.text.split()) for block in source_blocks)
     estimated_reading_time_minutes = max(1, math.ceil(word_count / 220)) if word_count else 0
     fact_check_metadata = fact_check_result.metadata if fact_check_result is not None else {}
@@ -2694,7 +2706,14 @@ def _apply_diff_review(diff_review: ArtifactDiffReview) -> str:
     original_lines = diff_review.original_markdown.splitlines()
     applied_lines: list[str] = []
     cursor = 0
-    for item in sorted(diff_review.diff_items, key=lambda diff: (diff.original_start_line, diff.original_end_line, diff.id)):
+    for item in sorted(
+        diff_review.diff_items,
+        key=lambda diff: (
+            diff.original_start_line,
+            diff.original_end_line,
+            diff.id,
+        ),
+    ):
         start = max(0, item.original_start_line - 1)
         end = max(start, item.original_end_line)
         applied_lines.extend(original_lines[cursor:start])
@@ -2947,7 +2966,9 @@ def _guess_article_format(document: ArtifactDocument) -> str:
 
     title = document.title.lower()
     text = document.text.lower()
-    if "how to" in title or "tutorial" in title or any(block.kind is ArtifactBlockKind.CODE for block in document.blocks):
+    if "how to" in title or "tutorial" in title or any(
+        block.kind is ArtifactBlockKind.CODE for block in document.blocks
+    ):
         return "tutorial"
     if "announcing" in title or "launch" in title or "release" in title:
         return "announcement"
@@ -2975,7 +2996,11 @@ def _estimate_reading_difficulty(blocks: list[ArtifactBlock]) -> str:
 def _structural_completeness(document: ArtifactDocument) -> ArtifactStructuralCompleteness:
     """Return lightweight structural completeness signals."""
 
-    source_blocks = [block for block in document.blocks if block.origin is ArtifactBlockOrigin.SOURCE and block.text.strip()]
+    source_blocks = [
+        block
+        for block in document.blocks
+        if block.origin is ArtifactBlockOrigin.SOURCE and block.text.strip()
+    ]
     headings = [block for block in source_blocks if block.kind is ArtifactBlockKind.HEADING]
     intro_text = source_blocks[0].text.lower() if source_blocks else ""
     closing_text = source_blocks[-1].text.lower() if source_blocks else ""

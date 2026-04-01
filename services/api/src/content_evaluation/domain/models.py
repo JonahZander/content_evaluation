@@ -295,7 +295,7 @@ class ArtifactAnchor(BaseModel):
     end_offset: int = 0
     quote: str
     match_kind: ArtifactAnchorMatchKind = ArtifactAnchorMatchKind.SOURCE
-    segments: list["ArtifactAnchorSegment"] = Field(default_factory=list)
+    segments: list[ArtifactAnchorSegment] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _sync_legacy_fields(self) -> ArtifactAnchor:

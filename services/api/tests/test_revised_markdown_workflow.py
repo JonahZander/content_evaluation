@@ -9,9 +9,9 @@ from content_evaluation.domain.models import (
     ArtifactDiffItem,
     ArtifactDiffReview,
     OrchestratorBackend,
-    RevisionMode,
-    RevisedMarkdownDiffDecision,
     ReviewState,
+    RevisedMarkdownDiffDecision,
+    RevisionMode,
     RunInput,
     RuntimeMode,
     SourceType,
@@ -292,7 +292,11 @@ async def test_apply_diff_review_preserves_historical_fact_check_only_for_previo
     assert applied.previous_draft_snapshot.document.revision_id == previous_revision_id
     assert all(result.category.value in {"fact_check", "research"} for result in applied.agent_results)
     assert all(result.document_revision_id == previous_revision_id for result in applied.agent_results)
-    assert all(comment.document_revision_id == previous_revision_id for thread in applied.threads for comment in thread.comments)
+    assert all(
+        comment.document_revision_id == previous_revision_id
+        for thread in applied.threads
+        for comment in thread.comments
+    )
 
     with pytest.raises(ValidationError):
         await orchestrator.generate_revised_markdown(applied.artifact_id, mode=RevisionMode.SURGICAL)

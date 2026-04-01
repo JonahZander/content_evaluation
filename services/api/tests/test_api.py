@@ -208,7 +208,11 @@ def test_revised_markdown_diff_review_and_apply_flow(monkeypatch: pytest.MonkeyP
         assert applied_payload["previous_draft_snapshot"] is not None
         assert applied_payload["previous_draft_snapshot"]["threads"]
         if applied_payload["threads"]:
-            assert any(comment["category"] == "fact_check" for thread in applied_payload["threads"] for comment in thread["comments"])
+            assert any(
+                comment["category"] == "fact_check"
+                for thread in applied_payload["threads"]
+                for comment in thread["comments"]
+            )
             assert all(
                 comment["document_revision_id"] != applied_payload["document"]["revision_id"]
                 for thread in applied_payload["threads"]
@@ -553,7 +557,9 @@ def test_cancel_run_stops_inflight_execution(monkeypatch: pytest.MonkeyPatch) ->
         assert run_payload["status"] == "canceled"
 
 
-def test_generate_revised_markdown_requires_accepted_suggestions(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_generate_revised_markdown_requires_accepted_suggestions_for_editorial_only_runs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Reject revised-markdown generation until an agent suggestion is accepted."""
 
     monkeypatch.setattr("content_evaluation.api.main.build_services", lambda: AppServices(_mock_settings()))

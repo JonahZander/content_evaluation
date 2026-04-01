@@ -6,8 +6,14 @@ from typing import Protocol
 
 import pytest
 
+from content_evaluation.agents.registry import (
+    agent_catalog,
+    get_agent_definition,
+    load_instruction_text,
+)
 from content_evaluation.domain.models import (
     AgentCategory,
+    AgentExecutionMode,
     AnalysisProviderFamily,
     ArtifactBlock,
     ArtifactBlockKind,
@@ -107,11 +113,6 @@ async def test_mock_provider_targeted_research_returns_valid_findings():
     assert isinstance(result["findings"], list)
     assert result["metadata"]["targeted_prompt"] == "Check the lead claim."
     assert isinstance(result["metadata"]["suggested_research_prompt"], str)
-
-
-from content_evaluation.agents.registry import get_agent_definition, load_instruction_text
-from content_evaluation.agents.registry import agent_catalog
-from content_evaluation.domain.models import AgentExecutionMode
 
 
 def test_fact_check_agent_is_registered():
@@ -302,7 +303,11 @@ async def test_live_deep_research_provider_retries_once_on_token_limit(monkeypat
             return self.graph
 
     monkeypatch.setattr(dr_module, "deep_researcher_builder", FakeBuilder())
-    monkeypatch.setattr(dr_module, "is_token_limit_exceeded", lambda error, model_name=None: isinstance(error, _TokenLimitError))
+    monkeypatch.setattr(
+        dr_module,
+        "is_token_limit_exceeded",
+        lambda error, model_name=None: isinstance(error, _TokenLimitError),
+    )
     monkeypatch.setattr(dr_module, "get_model_token_limit", lambda model_name: 130)
 
     prov = LiveDeepResearchProvider(Settings(openai_api_key="key", tavily_api_key="key"))

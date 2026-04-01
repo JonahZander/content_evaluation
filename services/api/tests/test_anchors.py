@@ -18,8 +18,14 @@ def test_create_anchor_from_excerpt_finds_offsets() -> None:
 def test_create_anchor_from_excerpt_collapses_whitespace() -> None:
     """Match excerpts even when line breaks and spaces differ."""
 
-    block = ArtifactBlock(index=0, text="This isn’t an AI wrapper.\nThis isn’t an agent that gets replaced next year.")
-    anchor = create_anchor_from_excerpt([block], "This isn’t an AI wrapper. This isn’t an agent that gets replaced next year.")
+    block = ArtifactBlock(
+        index=0,
+        text="This isn’t an AI wrapper.\nThis isn’t an agent that gets replaced next year.",
+    )
+    anchor = create_anchor_from_excerpt(
+        [block],
+        "This isn’t an AI wrapper. This isn’t an agent that gets replaced next year.",
+    )
 
     assert anchor is not None
     assert anchor.block_id == block.id
@@ -78,7 +84,10 @@ def test_create_anchor_from_excerpt_handles_ellipses() -> None:
     assert anchor is not None
     assert anchor.block_id == block.id
     assert anchor.start_offset == 0
-    assert "Scale the Provider Network Without Breaking Price Integrity" in block.text[anchor.start_offset : anchor.end_offset]
+    assert (
+        "Scale the Provider Network Without Breaking Price Integrity"
+        in block.text[anchor.start_offset : anchor.end_offset]
+    )
 
 
 def test_create_anchor_from_excerpt_ignores_leading_ellipsis_fragment() -> None:
@@ -162,7 +171,12 @@ def test_create_anchor_from_excerpt_resolves_ellipsis_across_adjacent_blocks() -
     assert anchor.segments[0].block_id == blocks[0].id
     assert blocks[0].text[anchor.segments[0].start_offset : anchor.segments[0].end_offset] == "abc"
     assert anchor.segments[1].block_id == blocks[1].id
-    assert blocks[1].text[anchor.segments[1].start_offset : anchor.segments[1].end_offset] == "Second block starts with 123"
+    assert (
+        blocks[1].text[
+            anchor.segments[1].start_offset : anchor.segments[1].end_offset
+        ]
+        == "Second block starts with 123"
+    )
 
 
 def test_create_anchor_from_excerpt_returns_none_when_ellipsis_requires_non_adjacent_blocks() -> None:

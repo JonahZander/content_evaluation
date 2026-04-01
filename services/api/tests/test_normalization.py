@@ -60,7 +60,12 @@ def test_normalize_markdown_preserves_inline_links() -> None:
     assert len(document.blocks[0].marks) == 1
     assert document.blocks[0].marks[0].kind.value == "link"
     assert document.blocks[0].marks[0].href == "https://example.com/source"
-    assert document.blocks[0].text[document.blocks[0].marks[0].start_offset:document.blocks[0].marks[0].end_offset] == "Example"
+    assert (
+        document.blocks[0].text[
+            document.blocks[0].marks[0].start_offset : document.blocks[0].marks[0].end_offset
+        ]
+        == "Example"
+    )
 
 
 def test_normalize_markdown_preserves_links_with_other_inline_marks() -> None:

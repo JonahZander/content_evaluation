@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from content_evaluation.domain.exceptions import ProviderError
@@ -25,8 +27,8 @@ from content_evaluation.providers.mock.providers import (
     MockSimilaritySearchProvider,
 )
 from content_evaluation.repositories.in_memory import InMemoryRunRepository
-from content_evaluation.services.orchestration import RunOrchestrator, _result_context_payload
 from content_evaluation.services.comments import CommentService
+from content_evaluation.services.orchestration import RunOrchestrator, _result_context_payload
 
 
 class CrossParagraphAnalysisProvider(MockAnalysisProvider):
@@ -136,6 +138,59 @@ class FailingAnalysisProvider(MockAnalysisProvider):
         del context
         del route
         raise AssertionError("provider should not be called when the checkpoint already completed the agent")
+
+
+class _ConcurrentRootBarrier:
+    """Coordinate two root providers so the test can observe real overlap."""
+
+    def __init__(self, participants: int = 2) -> None:
+        self._participants = participants
+        self._started = 0
+        self.started_event = asyncio.Event()
+        self.release_event = asyncio.Event()
+        self.started_order: list[str] = []
+
+    async def arrive(self, name: str) -> None:
+        """Record that one provider started and wait until the barrier is released."""
+
+        self.started_order.append(name)
+        self._started += 1
+        if self._started >= self._participants:
+            self.started_event.set()
+        await self.release_event.wait()
+
+
+class BarrierDeepResearchProvider(MockDeepResearchProvider):
+    """Block fact-check until the test has observed the second root agent start."""
+
+    def __init__(self, barrier: _ConcurrentRootBarrier) -> None:
+        super().__init__()
+        self._barrier = barrier
+
+    async def fact_check(self, brief: str, article_text: str) -> dict[str, object]:
+        await self._barrier.arrive("fact_check")
+        return await super().fact_check(brief, article_text)
+
+
+class BarrierAnalysisProvider(MockAnalysisProvider):
+    """Block ai_likelihood until the test has observed the second root agent start."""
+
+    def __init__(self, barrier: _ConcurrentRootBarrier) -> None:
+        super().__init__()
+        self._barrier = barrier
+
+    async def analyze(
+        self,
+        agent_id: str,
+        instruction: str,
+        title: str,
+        blocks: list[ArtifactBlock],
+        context: dict[str, object] | None = None,
+        route: ProviderRoute | None = None,
+    ) -> dict[str, object]:
+        if agent_id == "ai_likelihood":
+            await self._barrier.arrive("ai_likelihood")
+        return await super().analyze(agent_id, instruction, title, blocks, context, route)
 
 
 @pytest.mark.asyncio
@@ -363,6 +418,55 @@ async def test_langgraph_resume_skips_agent_when_checkpoint_marks_it_completed()
     assert updated.status.value == "completed"
     assert [result.agent_id for result in updated.agent_results].count("ai_likelihood") == 1
     assert await repository.get_graph_checkpoint(artifact.artifact_id) is None
+
+
+@pytest.mark.asyncio
+async def test_langgraph_root_agents_overlap_and_merge_checkpoint_state() -> None:
+    """Root agents should run concurrently and preserve both completions in checkpoints."""
+
+    repository = InMemoryRunRepository()
+    barrier = _ConcurrentRootBarrier()
+    captured_completed_agents: list[list[str]] = []
+    original_save_graph_checkpoint = repository.save_graph_checkpoint
+
+    async def capturing_save_graph_checkpoint(checkpoint: GraphCheckpoint) -> GraphCheckpoint:
+        captured_completed_agents.append(list(checkpoint.state.completed_agents))
+        return await original_save_graph_checkpoint(checkpoint)
+
+    repository.save_graph_checkpoint = capturing_save_graph_checkpoint  # type: ignore[assignment]
+
+    orchestrator = RunOrchestrator(
+        repository,
+        BarrierAnalysisProvider(barrier),
+        MockSimilaritySearchProvider(),
+        MockContentExtractionProvider(),
+        RuntimeMode.MOCK,
+        False,
+        OrchestratorBackend.LANGGRAPH,
+        deep_research_provider=BarrierDeepResearchProvider(barrier),
+    )
+    input_data = RunInput(
+        source_type=SourceType.TEXT,
+        source_label="Draft",
+        title="Draft",
+        text="Alpha paragraph.\n\nBeta paragraph.",
+        selected_agents=["fact_check", "ai_likelihood"],
+    )
+    artifact = await orchestrator.create_run(input_data)
+
+    run_task = asyncio.create_task(orchestrator.process_run(artifact.artifact_id, input_data))
+    await asyncio.wait_for(barrier.started_event.wait(), timeout=5)
+    assert set(barrier.started_order) == {"fact_check", "ai_likelihood"}
+
+    barrier.release_event.set()
+    await asyncio.wait_for(run_task, timeout=5)
+
+    updated = await repository.get_artifact(artifact.artifact_id)
+    assert updated is not None
+    assert updated.status.value == "completed"
+    assert [result.agent_id for result in updated.agent_results].count("fact_check") == 1
+    assert [result.agent_id for result in updated.agent_results].count("ai_likelihood") == 1
+    assert any({"fact_check", "ai_likelihood"} <= set(snapshot) for snapshot in captured_completed_agents)
 
 
 @pytest.mark.asyncio

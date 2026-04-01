@@ -54,6 +54,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
   - Fact-check and targeted research pass the full normalized article text into deep research by default
   - If a deep-research model rejects the full article for token length, retry once with a deterministic paragraph-preserving reduced article body and record that fallback in metadata
   - LangGraph agent nodes re-check the latest durable checkpoint before commit so a worker retry can reuse already-persisted agent output without duplicating comments or losing human replies
+  - Independent LangGraph agent providers execute outside the artifact commit lock; only short preflight and commit/checkpoint sections stay serialized
    - Emit progress events and partial artifact updates as each agent completes
    - Capture token usage (`input_tokens`, `output_tokens`) in `AgentExecutionResult.usage` after each LLM call; populated by the LangChain, deep research, and mock providers
    - Use LangChain chat-model adapters for analysis nodes
@@ -119,7 +120,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
   - Full-text-first deep research wrapper with single-shot token-limit fallback for oversized article prompts
 - `providers/langchain/client.py`
   - LangChain-backed provider routing across OpenAI, Anthropic, and Gemini
-  - Chat models are cached per (family, model_name) pair for the lifetime of the provider
+  - Chat models are cached per fully resolved route signature (`family`, `model_name`, `temperature`, `timeout_seconds`, `max_retries`) for the lifetime of the provider
   - Analysis prompts keep agent instructions in the system message and send article blocks plus upstream context as structured user payload marked as untrusted content
 - `providers/tavily/client.py`
   - Tavily search with a shared `httpx.AsyncClient` created at startup

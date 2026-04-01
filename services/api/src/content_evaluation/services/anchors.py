@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
-import re
 
 from content_evaluation.domain.models import (
     ArtifactAnchor,
@@ -13,7 +13,6 @@ from content_evaluation.domain.models import (
     ArtifactBlock,
     ArtifactBlockOrigin,
 )
-
 
 ELLIPSIS_PATTERN = re.compile(r"(?:\.\.\.|…)+")
 ATTRIBUTION_PATTERN = re.compile(

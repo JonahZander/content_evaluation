@@ -3,9 +3,8 @@
 import asyncio
 import logging
 import os
-import warnings
-from datetime import datetime, timedelta, timezone
-from typing import Annotated, Any, Dict, List, Literal, Optional
+from datetime import datetime
+from typing import Annotated, Literal
 
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
@@ -17,10 +16,7 @@ from langchain_core.messages import (
 )
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import (
-    BaseTool,
     InjectedToolArg,
-    StructuredTool,
-    ToolException,
     tool,
 )
 from tavily import AsyncTavilyClient
@@ -38,7 +34,7 @@ TAVILY_SEARCH_DESCRIPTION = (
 )
 @tool(description=TAVILY_SEARCH_DESCRIPTION)
 async def tavily_search(
-    queries: List[str],
+    queries: list[str],
     max_results: Annotated[int, InjectedToolArg] = 5,
     topic: Annotated[Literal["general", "news", "finance"], InjectedToolArg] = "general",
     config: RunnableConfig = None
@@ -114,7 +110,8 @@ async def tavily_search(
         for url, result, summary in zip(
             unique_results.keys(),
             unique_results.values(),
-            summaries
+            summaries,
+            strict=False,
         )
     }
 
@@ -199,7 +196,7 @@ async def summarize_webpage(model: BaseChatModel, webpage_content: str) -> str:
 
         return formatted_summary
 
-    except asyncio.TimeoutError:
+    except TimeoutError:
         # Timeout during summarization - return original content
         logging.warning("Summarization timed out after 60 seconds, returning original content")
         return webpage_content

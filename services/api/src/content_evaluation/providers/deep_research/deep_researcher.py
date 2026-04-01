@@ -1,5 +1,7 @@
 """Main LangGraph implementation for the Deep Research agent."""
 
+# ruff: noqa: E501
+
 import asyncio
 from typing import Literal
 
@@ -255,7 +257,11 @@ async def supervisor_tools(state: SupervisorState, config: RunnableConfig) -> Co
 
             tool_results = await asyncio.gather(*research_tasks)
 
-            for observation, tool_call in zip(tool_results, allowed_conduct_research_calls):
+            for observation, tool_call in zip(
+                tool_results,
+                allowed_conduct_research_calls,
+                strict=False,
+            ):
                 all_tool_messages.append(ToolMessage(
                     content=observation.get("compressed_research", "Error synthesizing research report: Maximum retries exceeded"),
                     name=tool_call["name"],
@@ -389,7 +395,11 @@ async def researcher_tools(state: ResearcherState, config: RunnableConfig) -> Co
             name=tool_call["name"],
             tool_call_id=tool_call["id"]
         )
-        for observation, tool_call in zip(observations, tool_calls)
+        for observation, tool_call in zip(
+            observations,
+            tool_calls,
+            strict=False,
+        )
     ]
 
     exceeded_iterations = state.get("tool_call_iterations", 0) >= configurable.max_react_tool_calls

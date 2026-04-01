@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 import re
+from collections.abc import Iterable
 
 from markdown_it import MarkdownIt
 from markdown_it.token import Token
@@ -17,8 +17,8 @@ from content_evaluation.domain.models import (
     ArtifactDocument,
     ArtifactInlineMark,
     ArtifactInlineMarkKind,
-    ContentFormat,
     CleanerRemovalReason,
+    ContentFormat,
     RunInput,
 )
 

@@ -61,7 +61,7 @@ class LangChainAnalysisProvider:
         """Store runtime settings for route resolution."""
 
         self._settings = settings
-        self._model_cache: dict[tuple[AnalysisProviderFamily, str], Any] = {}
+        self._model_cache: dict[tuple[AnalysisProviderFamily, str, float, float, int], Any] = {}
 
     def resolve_model_name(self, route: ProviderRoute | None = None) -> str:
         """Return the resolved model name for one analysis request."""
@@ -135,7 +135,10 @@ class LangChainAnalysisProvider:
             request = self._build_surgical_rewrite_prompt(original_markdown, accepted_suggestions)
             try:
                 response = await (
-                    prompt | self._get_chat_model(resolved_route).with_structured_output(_StructuredSurgicalRevisionResponse)
+                    prompt
+                    | self._get_chat_model(resolved_route).with_structured_output(
+                        _StructuredSurgicalRevisionResponse
+                    )
                 ).ainvoke({"request": request}, config={"callbacks": [handler]})
             except Exception as error:  # pragma: no cover - framework exception types vary
                 raise self._classify_provider_error(error) from error
@@ -152,7 +155,8 @@ class LangChainAnalysisProvider:
                 [
                     (
                         "system",
-                        "You revise markdown articles. Return only the full revised markdown document with no preamble.",
+                        "You revise markdown articles. Return only the full revised markdown document "
+                        "with no preamble.",
                     ),
                     ("human", "{request}"),
                 ]
@@ -185,7 +189,7 @@ class LangChainAnalysisProvider:
     def _get_chat_model(self, route: ProviderRoute) -> Any:
         """Return a cached chat model for the given route, building one on first access."""
 
-        key = (route.family, route.model_name)
+        key = self._route_cache_key(route)
         if key not in self._model_cache:
             self._model_cache[key] = self._build_chat_model(route)
         return self._model_cache[key]
@@ -279,6 +283,18 @@ class LangChainAnalysisProvider:
                 ),
             )
         raise ProviderError(f"Unsupported analysis provider family: {route.family}")
+
+    @staticmethod
+    def _route_cache_key(route: ProviderRoute) -> tuple[AnalysisProviderFamily, str, float, float, int]:
+        """Build the cache key for one fully resolved model route."""
+
+        return (
+            route.family,
+            route.model_name,
+            route.temperature,
+            route.timeout_seconds,
+            route.max_retries,
+        )
 
     def _resolve_route(self, route: ProviderRoute | None) -> ProviderRoute:
         """Resolve a route override against global settings defaults."""
@@ -404,7 +420,8 @@ class LangChainAnalysisProvider:
 
         prompt = (
             "Revise the following markdown article using only the accepted review suggestions.\n"
-            "Preserve markdown structure where it still fits. Apply the accepted suggestions, but do not add commentary.\n\n"
+            "Preserve markdown structure where it still fits. Apply the accepted suggestions, but do not "
+            "add commentary.\n\n"
             f"Accepted suggestions:\n{accepted_suggestions}\n\n"
             f"Original markdown:\n{original_markdown}"
         )

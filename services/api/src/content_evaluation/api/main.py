@@ -11,11 +11,11 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile, status
-from fastapi.routing import APIRoute
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
-from sse_starlette.sse import EventSourceResponse
+from fastapi.routing import APIRoute
 from pydantic import TypeAdapter
+from sse_starlette.sse import EventSourceResponse
 from starlette.routing import Match
 
 from content_evaluation.api.dependencies import (

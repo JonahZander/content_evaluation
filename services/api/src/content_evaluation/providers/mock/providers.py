@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from content_evaluation.domain.models import (
     ArtifactBlock,
     ContentFormat,
@@ -197,12 +199,21 @@ class MockDeepResearchProvider:
             _mock_claim_entry(
                 claim_text=secondary_excerpt,
                 verdict="MIXED",
-                evidence_summary="The broader framing is plausible, but the article would benefit from a more specific source.",
+                evidence_summary=(
+                    "The broader framing is plausible, but the article would "
+                    "benefit from a more specific source."
+                ),
                 source_links=[official_source_links[1]],
                 anchor_excerpt=secondary_excerpt,
                 confidence=0.68,
-                suggestion="Name the most relevant primary source directly in this section.",
-                value_add="Adds value by clarifying where the article should lean on original reporting versus interpretation.",
+                suggestion=(
+                    "Name the most relevant primary source directly in this "
+                    "section."
+                ),
+                value_add=(
+                    "Adds value by clarifying where the article should lean on "
+                    "original reporting versus interpretation."
+                ),
                 official_source_links=[official_source_links[1]],
                 related_post_links=[related_post_links[1]],
             ),
@@ -211,7 +222,10 @@ class MockDeepResearchProvider:
             {
                 "title": "Related framing on agentic evaluation",
                 "url": related_post_links[0],
-                "overlap_note": "Moderate overlap in framing, but the article still adds useful editorial workflow detail.",
+                "overlap_note": (
+                    "Moderate overlap in framing, but the article still adds "
+                    "useful editorial workflow detail."
+                ),
                 "score": 0.58,
             },
             {
@@ -256,9 +270,18 @@ class MockDeepResearchProvider:
                 for item in claim_findings
             ],
             "overlap_items": overlap_items,
-            "summary": "Claims are broadly supported and the article still brings a reasonably differentiated angle.",
-            "research_summary": "Claims are broadly supported, and overlap research suggests the piece still adds useful editorial workflow detail.",
-            "tl_dr": "The article is directionally sound, useful, and differentiated enough to keep with better source support.",
+            "summary": (
+                "Claims are broadly supported and the article still brings a "
+                "reasonably differentiated angle."
+            ),
+            "research_summary": (
+                "Claims are broadly supported, and overlap research suggests "
+                "the piece still adds useful editorial workflow detail."
+            ),
+            "tl_dr": (
+                "The article is directionally sound, useful, and "
+                "differentiated enough to keep with better source support."
+            ),
             "metadata": {
                 "sources": [
                     "https://example.com/mock-1",
@@ -344,7 +367,10 @@ class MockDeepResearchProvider:
                 for item in claim_findings
             ],
             "summary": "Targeted research returned one source-backed follow-up note.",
-            "research_summary": "Targeted follow-up research confirms the prompt-scoped issue is worth a small inline note.",
+            "research_summary": (
+                "Targeted follow-up research confirms the prompt-scoped issue "
+                "is worth a small inline note."
+            ),
             "tl_dr": "A scoped follow-up question was answered with one anchored research note.",
             "metadata": {
                 "sources": source_links,

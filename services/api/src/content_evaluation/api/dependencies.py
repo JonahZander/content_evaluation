@@ -9,12 +9,14 @@ from fastapi import Request
 from content_evaluation.config import Settings, get_settings
 from content_evaluation.domain.models import ReadinessReport
 from content_evaluation.logging import get_logger
+from content_evaluation.providers.deep_research.provider import LiveDeepResearchProvider
 from content_evaluation.providers.extraction.client import (
     FallbackExtractionProvider,
     TavilyExtractionProvider,
     TrafilaturaExtractionProvider,
 )
 from content_evaluation.providers.interfaces.analysis import AnalysisProvider
+from content_evaluation.providers.interfaces.deep_research import DeepResearchProvider
 from content_evaluation.providers.interfaces.extraction import ContentExtractionProvider
 from content_evaluation.providers.interfaces.search import SimilaritySearchProvider
 from content_evaluation.providers.langchain.client import LangChainAnalysisProvider
@@ -24,8 +26,6 @@ from content_evaluation.providers.mock.providers import (
     MockDeepResearchProvider,
     MockSimilaritySearchProvider,
 )
-from content_evaluation.providers.deep_research.provider import LiveDeepResearchProvider
-from content_evaluation.providers.interfaces.deep_research import DeepResearchProvider
 from content_evaluation.providers.tavily.client import TavilySearchProvider
 from content_evaluation.repositories.base import RunRepository
 from content_evaluation.repositories.in_memory import InMemoryRunRepository

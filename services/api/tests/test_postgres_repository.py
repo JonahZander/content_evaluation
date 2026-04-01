@@ -7,10 +7,8 @@ requiring a running Postgres instance.
 
 from __future__ import annotations
 
-import json
-from copy import deepcopy
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
@@ -30,7 +28,6 @@ from content_evaluation.domain.models import (
     SourceType,
 )
 from content_evaluation.repositories.postgres import PostgresRunRepository
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -75,7 +72,7 @@ class FakeCursor:
     async def fetchall(self) -> list[dict[str, Any]]:
         return self._rows
 
-    async def __aenter__(self) -> "FakeCursor":
+    async def __aenter__(self) -> FakeCursor:
         return self
 
     async def __aexit__(self, *_: object) -> None:
@@ -85,7 +82,7 @@ class FakeCursor:
 class FakeTransaction:
     """Minimal async transaction context manager."""
 
-    async def __aenter__(self) -> "FakeTransaction":
+    async def __aenter__(self) -> FakeTransaction:
         return self
 
     async def __aexit__(self, *_: object) -> None:
@@ -107,7 +104,7 @@ class FakeConnection:
     async def commit(self) -> None:
         pass
 
-    async def __aenter__(self) -> "FakeConnection":
+    async def __aenter__(self) -> FakeConnection:
         return self
 
     async def __aexit__(self, *_: object) -> None:

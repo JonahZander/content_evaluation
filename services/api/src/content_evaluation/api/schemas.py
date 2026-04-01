@@ -9,9 +9,9 @@ from pydantic import BaseModel, Field
 from content_evaluation.domain.models import (
     AnalysisArtifact,
     PersistenceMode,
-    RevisionMode,
-    RevisedMarkdownDiffDecision,
     ReviewState,
+    RevisedMarkdownDiffDecision,
+    RevisionMode,
     SourceType,
 )
 

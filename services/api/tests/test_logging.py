@@ -25,7 +25,7 @@ def test_configure_logging_injects_default_request_id() -> None:
     finally:
         request_id_context.reset(token)
 
-    assert getattr(record, "request_id") == "req-test-123"
+    assert record.request_id == "req-test-123"
 
 
 def test_get_logger_does_not_overwrite_request_id() -> None:

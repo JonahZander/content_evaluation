@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import warnings
+from types import SimpleNamespace
 
 import pytest
 from langchain_core.callbacks import UsageMetadataCallbackHandler
-from langchain_core.runnables import RunnableLambda
 
 from content_evaluation.agents.registry import get_agent_definition, load_instruction_text
 from content_evaluation.config import Settings
-from content_evaluation.domain.models import AnalysisProviderFamily, ArtifactBlock, ProviderRoute
+from content_evaluation.domain.models import AnalysisProviderFamily, ArtifactBlock, ProviderRoute, RevisionMode
 from content_evaluation.providers.langchain.client import LangChainAnalysisProvider
 
 
@@ -41,6 +41,44 @@ class _ParsedStructuredResponse:
         self.parsed = _StructuredResponse()
 
 
+class _FakePrompt:
+    """Return the runnable/model that is piped into the prompt."""
+
+    def __or__(self, other: object) -> object:
+        return other
+
+
+class _FakeStructuredRunnable:
+    """Return one deterministic structured response through the analysis path."""
+
+    def __init__(self, response: object | None = None) -> None:
+        self._response = response if response is not None else _StructuredResponse()
+
+    def __call__(self, input_: object) -> object:
+        del input_
+        return self._response
+
+    async def ainvoke(self, input_: object, config: dict | None = None) -> object:
+        del config
+        return self.__call__(input_)
+
+
+class _FakeChatModel:
+    """Return deterministic results for both analysis and rewrite paths."""
+
+    def with_structured_output(self, schema: object) -> _FakeStructuredRunnable:
+        del schema
+        return _FakeStructuredRunnable()
+
+    def __call__(self, input_: object) -> SimpleNamespace:
+        del input_
+        return SimpleNamespace(content="Updated markdown")
+
+    async def ainvoke(self, input_: object, config: dict | None = None) -> SimpleNamespace:
+        del config
+        return self.__call__(input_)
+
+
 @pytest.mark.asyncio
 async def test_langchain_provider_parses_structured_findings(monkeypatch: pytest.MonkeyPatch) -> None:
     """Return structured findings through the LangChain provider contract."""
@@ -48,7 +86,7 @@ async def test_langchain_provider_parses_structured_findings(monkeypatch: pytest
     provider = LangChainAnalysisProvider(
         Settings(openai_api_key="openai-key", tavily_api_key="tavily-key")
     )
-    monkeypatch.setattr(provider, "_build_runnable", lambda route: RunnableLambda(lambda _: _StructuredResponse()))
+    monkeypatch.setattr(provider, "_build_runnable", lambda route: _FakeStructuredRunnable(_ParsedStructuredResponse()))
 
     findings = await provider.analyze(
         "editorial",
@@ -118,7 +156,7 @@ async def test_langchain_provider_normalizes_parsed_wrapper_without_warnings(
     provider = LangChainAnalysisProvider(
         Settings(openai_api_key="openai-key", tavily_api_key="tavily-key")
     )
-    monkeypatch.setattr(provider, "_build_runnable", lambda route: RunnableLambda(lambda _: _ParsedStructuredResponse()))
+    monkeypatch.setattr(provider, "_build_runnable", lambda route: _FakeStructuredRunnable())
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("error")
@@ -131,6 +169,100 @@ async def test_langchain_provider_normalizes_parsed_wrapper_without_warnings(
 
     assert payload["summary"] == "Structured summary"
     assert caught == []
+
+
+@pytest.mark.asyncio
+async def test_langchain_provider_reuses_cached_model_across_analysis_and_rewrite_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both public paths should share the same cached route-specific model instance."""
+
+    import content_evaluation.providers.langchain.client as client_module
+
+    provider = LangChainAnalysisProvider(
+        Settings(openai_api_key="openai-key", tavily_api_key="tavily-key")
+    )
+    route = ProviderRoute(
+        family=AnalysisProviderFamily.OPENAI,
+        model_name="gpt-4.1-mini",
+        temperature=0.25,
+        timeout_seconds=12.0,
+        max_retries=4,
+    )
+    build_calls: list[ProviderRoute] = []
+
+    def fake_build_chat_model(route: ProviderRoute) -> _FakeChatModel:
+        build_calls.append(route)
+        return _FakeChatModel()
+
+    monkeypatch.setattr(provider, "_build_chat_model", fake_build_chat_model)
+    monkeypatch.setattr(client_module.ChatPromptTemplate, "from_messages", lambda messages: _FakePrompt())
+
+    analysis_result = await provider.analyze(
+        "editorial",
+        "Analyze editorial issues",
+        "Title",
+        [ArtifactBlock(index=0, text="Alpha text")],
+        route=route,
+    )
+    rewrite_result = await provider.generate_revised_markdown(
+        "Original markdown",
+        [],
+        RevisionMode.REWRITE,
+        route=route,
+    )
+
+    cached_model = provider._get_chat_model(route)
+    assert cached_model is provider._get_chat_model(route)
+    assert len(build_calls) == 1
+    assert analysis_result["summary"] == "Structured summary"
+    assert rewrite_result["markdown"] == "Updated markdown"
+
+
+@pytest.mark.parametrize(
+    ("variant_kwargs", "expected_field"),
+    [
+        ({"temperature": 0.5}, "temperature"),
+        ({"timeout_seconds": 22.0}, "timeout_seconds"),
+        ({"max_retries": 7}, "max_retries"),
+    ],
+)
+def test_langchain_provider_cache_key_includes_route_settings(
+    monkeypatch: pytest.MonkeyPatch,
+    variant_kwargs: dict[str, float | int],
+    expected_field: str,
+) -> None:
+    """Changing route settings should create a distinct cached model instance."""
+
+    provider = LangChainAnalysisProvider(
+        Settings(openai_api_key="openai-key", tavily_api_key="tavily-key")
+    )
+    build_calls: list[ProviderRoute] = []
+
+    def fake_build_chat_model(route: ProviderRoute) -> object:
+        build_calls.append(route)
+        return object()
+
+    monkeypatch.setattr(provider, "_build_chat_model", fake_build_chat_model)
+
+    base_route = ProviderRoute(
+        family=AnalysisProviderFamily.OPENAI,
+        model_name="gpt-4.1-mini",
+        temperature=0.25,
+        timeout_seconds=12.0,
+        max_retries=4,
+    )
+    variant_route = base_route.model_copy(update=variant_kwargs)
+
+    base_model = provider._get_chat_model(base_route)
+    repeat_base_model = provider._get_chat_model(base_route)
+    variant_model = provider._get_chat_model(variant_route)
+
+    assert base_model is repeat_base_model
+    assert base_model is not variant_model
+    assert len(build_calls) == 2
+    assert provider._route_cache_key(base_route) != provider._route_cache_key(variant_route)
+    assert expected_field in variant_kwargs
 
 
 def test_extract_usage_from_handler_returns_none_when_empty() -> None:

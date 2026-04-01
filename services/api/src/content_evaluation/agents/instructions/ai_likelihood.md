@@ -34,6 +34,11 @@ Avoiding AI patterns is only half the job. Sterile, voiceless writing is just as
 - No humor, no edge, no personality
 - Reads like a Wikipedia article or press release
 
+### Prioritization
+- Return only the strongest few signals that most clearly explain why the piece feels machine-made.
+- Prefer concrete, observable patterns over generic "sounds AI-ish" impressions.
+- Avoid stacking several findings on the same stylistic issue unless they add distinct value.
+
 ### How to add voice:
 
 **Have opinions.** Don't just report facts - react to them. "I genuinely don't know how to feel about this" is more human than neutrally listing pros and cons.

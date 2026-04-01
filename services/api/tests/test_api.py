@@ -7,11 +7,12 @@ import time
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from content_evaluation.api.dependencies import AppServices
 from content_evaluation.api.main import app
 from content_evaluation.config import Settings
-from content_evaluation.domain.models import RunMode
+from content_evaluation.domain.models import ArtifactSummary, RunMode
 
 
 def _mock_settings() -> Settings:
@@ -19,6 +20,7 @@ def _mock_settings() -> Settings:
 
     return Settings(
         app_env="test",
+        database_url=None,
         analysis_provider_family="mock",
         openai_api_key=None,
         anthropic_api_key=None,
@@ -176,22 +178,18 @@ def test_revised_markdown_diff_review_and_apply_flow(monkeypatch: pytest.MonkeyP
 
         generate_response = client.post(
             f"/api/v1/runs/{run_id}/revised-markdown",
-            json={"mode": "surgical"},
+            json={"mode": "rewrite", "direction_prompt": "Lead with the strongest finding."},
         )
         assert generate_response.status_code == 200
         revised_payload = generate_response.json()
-        assert revised_payload["revised_document"]["mode"] == "surgical"
+        assert revised_payload["revised_document"]["mode"] == "rewrite"
+        assert revised_payload["revised_document"]["direction_prompt"] == "Lead with the strongest finding."
         assert set(revised_payload["revised_document"]["accepted_comment_ids"]) == set(accepted_comment_ids)
         assert revised_payload["diff_review"]["diff_items"]
 
         diff_items = revised_payload["diff_review"]["diff_items"]
-        decisions = [
-            {
-                "diff_id": item["id"],
-                "decision": "accepted" if index % 2 == 0 else "rejected",
-            }
-            for index, item in enumerate(diff_items)
-        ]
+        assert len(diff_items) >= 2
+        decisions = [{"diff_id": diff_items[0]["id"], "decision": "accepted"}]
         update_response = client.patch(
             f"/api/v1/runs/{run_id}/revised-markdown/diff-review",
             json={"decisions": decisions},
@@ -199,10 +197,8 @@ def test_revised_markdown_diff_review_and_apply_flow(monkeypatch: pytest.MonkeyP
         assert update_response.status_code == 200
         updated_diff_review = update_response.json()["diff_review"]
         updated_diff_items = updated_diff_review["diff_items"]
-        assert [item["decision"] for item in updated_diff_items] == [
-            "accepted" if index % 2 == 0 else "rejected"
-            for index in range(len(updated_diff_items))
-        ]
+        assert updated_diff_items[0]["decision"] == "accepted"
+        assert any(item["decision"] == "pending" for item in updated_diff_items[1:])
         expected_applied_markdown = _render_applied_markdown(updated_diff_review)
 
         apply_response = client.post(f"/api/v1/runs/{run_id}/revised-markdown/apply")
@@ -233,6 +229,52 @@ def test_api_rejects_invalid_upload_type(monkeypatch: pytest.MonkeyPatch) -> Non
         )
 
     assert response.status_code == 415
+
+
+def test_api_run_accepts_multipart_options(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Accept multipart run creation with the same run options as JSON submissions."""
+
+    monkeypatch.setattr("content_evaluation.api.main.build_services", lambda: AppServices(_mock_settings()))
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/runs",
+            data={
+                "title": "Uploaded draft",
+                "selected_agents": ["ai_likelihood", "editorial"],
+                "persistence_mode": "session",
+                "include_debug_trace": "true",
+            },
+            files={"file": ("draft.md", b"Alpha paragraph.\n\nBeta paragraph.", "text/markdown")},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source"]["source_type"] == "file"
+    assert payload["source"]["source_label"] == "draft.md"
+    assert payload["source"]["title"] == "Uploaded draft"
+    assert payload["run_config"]["selected_agents"] == ["ai_likelihood", "editorial"]
+    assert payload["run_config"]["persistence_mode"] == "session"
+    assert payload["run_config"]["include_debug_trace"] is True
+
+
+def test_artifact_summary_rejects_out_of_range_scores() -> None:
+    """Reject scores outside the 0-100 range."""
+
+    with pytest.raises(ValidationError):
+        ArtifactSummary(
+            overall_score=-1,
+            verdict="ok",
+            novelty_score=0.5,
+            ai_likelihood=0.4,
+        )
+
+    with pytest.raises(ValidationError):
+        ArtifactSummary(
+            overall_score=101,
+            verdict="ok",
+            novelty_score=0.5,
+            ai_likelihood=0.4,
+        )
 
 
 def test_ready_endpoint_reports_mock_mode(monkeypatch: pytest.MonkeyPatch) -> None:

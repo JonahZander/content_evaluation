@@ -21,6 +21,7 @@ vi.mock("@/lib/api", () => ({
     },
   ]),
   createRun: vi.fn(),
+  createRunFromFile: vi.fn(),
   previewSource: vi.fn(),
   fetchArtifact: vi.fn(),
   appendAgents: vi.fn(),
@@ -64,6 +65,8 @@ beforeEach(() => {
   window.sessionStorage.clear();
   vi.spyOn(window, "confirm").mockReturnValue(true);
   vi.mocked(api.fetchArtifact).mockResolvedValue(mockArtifact);
+  vi.mocked(api.createRunFromFile).mockResolvedValue(mockArtifact);
+  vi.mocked(api.importArtifact).mockResolvedValue(mockArtifact);
   vi.mocked(api.previewSource).mockResolvedValue(mockArtifact.document!);
   vi.mocked(api.appendAgents).mockResolvedValue(mockArtifact);
   vi.mocked(api.queueResearch).mockResolvedValue(mockArtifact);
@@ -108,6 +111,16 @@ describe("ReviewWorkbench", () => {
     expect(screen.queryByTestId("text-preview-section")).not.toBeInTheDocument();
   });
 
+  it("opens the guided demo artifact from the intake shell", async () => {
+    render(<ReviewWorkbench initialArtifact={null} />);
+
+    fireEvent.click(screen.getByTestId("open-demo-artifact-button"));
+
+    await waitFor(() => expect(api.importArtifact).toHaveBeenCalledWith(mockArtifact));
+    await waitFor(() => expect(screen.getByTestId("review-workbench")).toBeInTheDocument());
+    expect(screen.getByText("How Editorial Teams Can Evaluate AI-Written Posts")).toBeInTheDocument();
+  });
+
   it("renders the running shell for a fresh in-flight run", () => {
     render(<ReviewWorkbench initialArtifact={buildRunningArtifact()} />);
 
@@ -143,13 +156,23 @@ describe("ReviewWorkbench", () => {
       expect(screen.getByTestId("running-preview-card")).toHaveTextContent("First running finding");
 
       act(() => {
-        vi.advanceTimersByTime(3000);
+        vi.advanceTimersByTime(5000);
       });
 
       expect(screen.getByTestId("running-preview-card")).toHaveTextContent("Second running finding");
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("keeps the running status label stable while the dot slots animate", () => {
+    render(<ReviewWorkbench initialArtifact={buildRunningArtifact()} />);
+
+    const label = screen.getByTestId("running-status-label");
+    const dots = within(label).getByTestId("running-status-dots");
+
+    expect(label).toHaveTextContent("RUNNING");
+    expect(within(dots).getAllByTestId("running-status-dot")).toHaveLength(3);
   });
 
   it("keeps the running card focused and shows submitted content inline", () => {
@@ -491,6 +514,84 @@ describe("ReviewWorkbench", () => {
     );
   });
 
+  it("sends file uploads through the multipart createRunFromFile path with form fields", async () => {
+    render(<ReviewWorkbench initialArtifact={null} />);
+
+    fireEvent.change(screen.getByTestId("source-type-select"), { target: { value: "file" } });
+    await waitFor(() => expect(screen.getByTestId("agent-toggle-fact_check")).toBeChecked());
+
+    const uploadedFile = new File(["# Uploaded draft\n\nThis draft is ready for review."], "uploaded-draft.md", {
+      type: "text/markdown",
+    });
+
+    fireEvent.change(screen.getByTestId("draft-file-input"), {
+      target: { files: [uploadedFile] },
+    });
+    fireEvent.click(screen.getByTestId("analyze-button"));
+
+    await waitFor(() =>
+      expect(api.createRunFromFile).toHaveBeenCalledWith(
+        uploadedFile,
+        expect.objectContaining({
+          selectedAgents: ["fact_check"],
+          persistenceMode: "workspace",
+          includeDebugTrace: true,
+          title: "Uploaded draft",
+        }),
+        expect.any(AbortSignal),
+      ),
+    );
+  });
+
+  it("serializes multipart file runs with repeated agent fields and form values", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(mockArtifact), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+
+    try {
+      const { createRunFromFile } = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
+      const uploadedFile = new File(["# Multipart draft\n\nThis is the body."], "multipart-draft.md", {
+        type: "text/markdown",
+      });
+
+      await createRunFromFile(
+        uploadedFile,
+        {
+          selectedAgents: ["fact_check", "editorial"],
+          persistenceMode: "workspace",
+          includeDebugTrace: false,
+          title: "Multipart draft",
+        },
+        new AbortController().signal,
+      );
+
+      expect(fetchSpy).toHaveBeenCalledWith(
+        `${api.API_BASE_URL}/api/v1/runs`,
+        expect.objectContaining({
+          method: "POST",
+          body: expect.any(FormData),
+        }),
+      );
+
+      const requestInit = fetchSpy.mock.calls[0]?.[1] as RequestInit;
+      const body = requestInit.body as FormData;
+
+      expect(body).toBeInstanceOf(FormData);
+      expect(body.get("file")).toBe(uploadedFile);
+      expect(body.getAll("selected_agents")).toEqual(["fact_check", "editorial"]);
+      expect(body.get("persistence_mode")).toBe("workspace");
+      expect(body.get("include_debug_trace")).toBe("false");
+      expect(body.get("title")).toBe("Multipart draft");
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
   it("restores a persisted workspace run by refetching the artifact", async () => {
     window.sessionStorage.setItem(
       "content-evaluation:artifact",
@@ -561,6 +662,45 @@ describe("ReviewWorkbench", () => {
     expect(screen.queryByTestId("new-analysis-button")).not.toBeInTheDocument();
   });
 
+  it("restores stale diff-review state into the review shell when the backend artifact is gone", async () => {
+    vi.mocked(api.fetchArtifact).mockRejectedValueOnce(new Error("Run not found"));
+    window.sessionStorage.setItem(
+      "content-evaluation:artifact",
+      JSON.stringify({
+        version: 2,
+        artifactId: "run-missing",
+        artifactPersistenceMode: "workspace",
+        artifactStatus: "completed",
+        artifactTitle: "Saved revised draft",
+        artifactPhase: "diff_review",
+        previewDocument: null,
+        formState: {
+          sourceType: "text",
+          title: "Recovered draft",
+          sourceLabel: "Manual input",
+          text: "Recovered body",
+          url: "",
+          persistenceMode: "workspace",
+          includeDebugTrace: true,
+          selectedAgents: ["fact_check"],
+        },
+        hasDownloadedJson: false,
+      }),
+    );
+
+    render(<ReviewWorkbench initialArtifact={null} />);
+
+    await waitFor(() => expect(api.fetchArtifact).toHaveBeenCalledWith("run-missing"));
+    await waitFor(() =>
+      expect(screen.getByTestId("run-status")).toHaveTextContent(
+        "Previous revised markdown review is no longer available from the backend. Restored the review shell from the saved draft.",
+      ),
+    );
+    expect(screen.getByTestId("review-workbench")).toBeInTheDocument();
+    expect(screen.queryByTestId("source-type-select")).not.toBeInTheDocument();
+    expect(within(screen.getByTestId("document-block-0")).getByText("Recovered body")).toBeInTheDocument();
+  });
+
   it("ignores malformed stored state", async () => {
     window.sessionStorage.setItem("content-evaluation:artifact", JSON.stringify({ version: 2, artifactId: 123 }));
 
@@ -599,12 +739,14 @@ describe("ReviewWorkbench", () => {
 
     const { unmount } = render(<ReviewWorkbench initialArtifact={artifactWithoutAcceptedSuggestions} />);
 
-    expect(screen.queryByTestId("apply-changes-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("revision-cta-top")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("revision-cta-bottom")).not.toBeInTheDocument();
 
     unmount();
     render(<ReviewWorkbench initialArtifact={mockArtifact} />);
 
-    expect(screen.getByTestId("apply-changes-button")).toBeInTheDocument();
+    expect(screen.getByTestId("revision-cta-top")).toBeInTheDocument();
+    expect(screen.getByTestId("revision-cta-bottom")).toBeInTheDocument();
   });
 
   it("generates a revised markdown candidate and shows the diff review panel", async () => {
@@ -613,7 +755,7 @@ describe("ReviewWorkbench", () => {
 
     render(<ReviewWorkbench initialArtifact={mockArtifact} />);
 
-    fireEvent.click(screen.getByTestId("apply-changes-button"));
+    fireEvent.click(screen.getByTestId("apply-changes-button-bottom"));
 
     await waitFor(() =>
       expect(api.generateRevisedMarkdown).toHaveBeenCalledWith({
@@ -623,10 +765,16 @@ describe("ReviewWorkbench", () => {
       }),
     );
     expect(await screen.findByTestId("revised-markdown-panel")).toBeInTheDocument();
-    expect(screen.getByTestId("diff-view-toggle-inline").className).toContain("diffViewToggleActive");
+    expect(screen.queryByTestId("diff-view-toggle")).not.toBeInTheDocument();
     expect(screen.getByTestId("diff-item-status-diff-1")).toHaveTextContent("pending");
     expect(screen.getByTestId("inline-diff-view")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Apply reviewed markdown" })).toBeDisabled();
+    expect(screen.queryByTestId("diff-summary-diff-1")).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Accept at least one diff item to enable apply. Pending or unreviewed changes will remain unchanged until they are reviewed.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Apply accepted changes" })).toBeDisabled();
   });
 
   it("opens rewrite mode with a direction prompt and labels the diff review mode", async () => {
@@ -635,11 +783,11 @@ describe("ReviewWorkbench", () => {
 
     render(<ReviewWorkbench initialArtifact={mockArtifact} />);
 
-    fireEvent.click(screen.getByTestId("rewrite-draft-button"));
-    fireEvent.change(screen.getByTestId("rewrite-direction-input"), {
+    fireEvent.click(screen.getByTestId("rewrite-draft-button-top"));
+    fireEvent.change(screen.getByTestId("rewrite-direction-input-top"), {
       target: { value: "Lead with the strongest finding." },
     });
-    fireEvent.click(screen.getByTestId("submit-rewrite-draft-button"));
+    fireEvent.click(screen.getByTestId("submit-rewrite-draft-button-top"));
 
     await waitFor(() =>
       expect(api.generateRevisedMarkdown).toHaveBeenCalledWith({
@@ -660,9 +808,9 @@ describe("ReviewWorkbench", () => {
     expect(screen.getByTestId("diff-item-diff-1")).toBeInTheDocument();
   });
 
-  it("saves diff decisions and applies the reviewed revision", async () => {
-    const artifactWithDiff = buildArtifactWithDiffReview();
-    const reviewedArtifact = buildArtifactWithReviewedDiffs();
+  it("saves accepted diff changes and applies them while pending diffs stay untouched", async () => {
+    const artifactWithDiff = buildArtifactWithPartialReviewedDiffs();
+    const reviewedArtifact = buildArtifactWithAcceptedAndPendingDiffs();
     vi.mocked(api.updateRevisedMarkdownDiffReview).mockResolvedValueOnce(reviewedArtifact);
     vi.mocked(api.applyRevisedMarkdown).mockResolvedValueOnce(buildArtifactAfterAppliedRevision());
 
@@ -676,7 +824,14 @@ describe("ReviewWorkbench", () => {
       ]),
     );
 
-    const applyButton = await screen.findByRole("button", { name: "Apply reviewed markdown" });
+    expect(screen.getByTestId("diff-item-status-diff-2")).toHaveTextContent("pending");
+    expect(
+      screen.getByText(
+        "Apply will include 1 accepted change and leave 1 pending or unreviewed diff item unchanged.",
+      ),
+    ).toBeInTheDocument();
+
+    const applyButton = await screen.findByRole("button", { name: "Apply accepted changes" });
     expect(applyButton).toBeEnabled();
 
     fireEvent.click(applyButton);
@@ -686,9 +841,29 @@ describe("ReviewWorkbench", () => {
     expect(screen.getByTestId("review-workbench")).toBeInTheDocument();
   });
 
+  it("returns to the main review shell when a stale diff review cannot be applied", async () => {
+    const reviewedArtifact = buildArtifactWithReviewedDiffs();
+    vi.mocked(api.applyRevisedMarkdown).mockRejectedValueOnce(
+      new Error("No revised markdown diff is available to apply."),
+    );
+    vi.mocked(api.fetchArtifact).mockResolvedValueOnce(mockArtifact);
+
+    render(<ReviewWorkbench initialArtifact={reviewedArtifact} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Apply accepted changes" }));
+
+    await waitFor(() => expect(api.applyRevisedMarkdown).toHaveBeenCalledWith(reviewedArtifact.artifact_id));
+    await waitFor(() => expect(api.fetchArtifact).toHaveBeenCalledWith(reviewedArtifact.artifact_id));
+    await waitFor(() => expect(screen.getByTestId("review-workbench")).toBeInTheDocument());
+    expect(screen.queryByTestId("diff-review-shell")).not.toBeInTheDocument();
+    expect(screen.getByTestId("run-status")).toHaveTextContent(
+      "Revised markdown review is no longer available. Returned to the main review view.",
+    );
+  });
+
   it("discards a side-by-side revision by rejecting every diff without applying", async () => {
     const rewriteArtifact = buildArtifactWithRewriteDiffReview();
-    vi.mocked(api.updateRevisedMarkdownDiffReview).mockResolvedValueOnce(buildArtifactWithRejectedDiffs());
+    vi.mocked(api.updateRevisedMarkdownDiffReview).mockResolvedValueOnce(buildArtifactWithRejectedRewriteDiffs());
 
     render(<ReviewWorkbench initialArtifact={rewriteArtifact} />);
 
@@ -703,11 +878,49 @@ describe("ReviewWorkbench", () => {
     expect(screen.getByTestId("diff-view-toggle-side-by-side")).toBeInTheDocument();
   });
 
+  it("shares rewrite state between the top and bottom revision actions", () => {
+    render(<ReviewWorkbench initialArtifact={mockArtifact} />);
+
+    fireEvent.click(screen.getByTestId("rewrite-draft-button-bottom"));
+
+    const topInput = screen.getByTestId("rewrite-direction-input-top");
+    const bottomInput = screen.getByTestId("rewrite-direction-input-bottom");
+
+    fireEvent.change(bottomInput, {
+      target: { value: "Lead with the clearest argument first." },
+    });
+
+    expect(topInput).toHaveValue("Lead with the clearest argument first.");
+    expect(bottomInput).toHaveValue("Lead with the clearest argument first.");
+  });
+
+  it("renders surgical diffs as one inline article surface with word-level highlights", () => {
+    render(<ReviewWorkbench initialArtifact={buildArtifactWithWordLevelDiffReview()} />);
+
+    expect(screen.getByTestId("inline-diff-view")).toBeInTheDocument();
+    expect(screen.queryByTestId("diff-view-toggle")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("diff-summary-diff-word")).not.toBeInTheDocument();
+
+    const diffItem = screen.getByTestId("diff-item-diff-word");
+    const removed = diffItem.querySelector('[class*="inlineDiffRemoved"]') as HTMLElement | null;
+    const addedSegments = diffItem.querySelectorAll('[class*="inlineDiffAdded"]');
+    const added = Array.from(addedSegments).find((segment) => segment.textContent === "concrete ") as HTMLElement | undefined;
+
+    expect(removed).not.toBeNull();
+    expect(removed?.textContent).toBe("vague ");
+    expect(removed?.className).toContain("inlineDiffRemoved");
+    expect(added).toBeDefined();
+    expect(added?.className).toContain("inlineDiffAdded");
+    expect(screen.getByText("editorial instincts into a")).toBeInTheDocument();
+  });
+
   it("blocks additive analysis while revised markdown review is pending", () => {
     render(<ReviewWorkbench initialArtifact={buildArtifactWithDiffReview()} />);
 
     expect(screen.queryByTestId("analyze-button")).not.toBeInTheDocument();
     expect(screen.getByTestId("diff-review-shell")).toBeInTheDocument();
+    expect(screen.queryByTestId("revision-cta-top")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("revision-cta-bottom")).not.toBeInTheDocument();
     expect(api.appendAgents).not.toHaveBeenCalled();
   });
 
@@ -1475,6 +1688,72 @@ function buildArtifactWithReviewedDiffs(): AnalysisArtifact {
   return artifact;
 }
 
+function buildArtifactWithPartialReviewedDiffs(): AnalysisArtifact {
+  const artifact = buildArtifactWithDiffReview();
+  artifact.diff_review = {
+    ...artifact.diff_review!,
+    diff_items: [
+      {
+        id: "diff-1",
+        change_type: "replace",
+        original_start_line: 3,
+        original_end_line: 5,
+        candidate_start_line: 3,
+        candidate_end_line: 5,
+        before_text:
+          "The strongest value of this draft is that it turns vague editorial instincts into a review workflow with concrete review signals.",
+        after_text: "Promote this framing into the introduction.",
+        decision: "pending",
+      },
+      {
+        id: "diff-2",
+        change_type: "insert",
+        original_start_line: 8,
+        original_end_line: 8,
+        candidate_start_line: 8,
+        candidate_end_line: 9,
+        before_text: "",
+        after_text: "Add a follow-up example that stays grounded in the article's core argument.",
+        decision: "pending",
+      },
+    ],
+  };
+  return artifact;
+}
+
+function buildArtifactWithAcceptedAndPendingDiffs(): AnalysisArtifact {
+  const artifact = buildArtifactWithDiffReview();
+  artifact.diff_review = {
+    ...artifact.diff_review!,
+    diff_items: [
+      {
+        id: "diff-1",
+        change_type: "replace",
+        original_start_line: 3,
+        original_end_line: 5,
+        candidate_start_line: 3,
+        candidate_end_line: 5,
+        before_text:
+          "The strongest value of this draft is that it turns vague editorial instincts into a review workflow with concrete review signals.",
+        after_text: "Promote this framing into the introduction.",
+        decision: "accepted",
+      },
+      {
+        id: "diff-2",
+        change_type: "insert",
+        original_start_line: 8,
+        original_end_line: 8,
+        candidate_start_line: 8,
+        candidate_end_line: 9,
+        before_text: "",
+        after_text: "Add a follow-up example that stays grounded in the article's core argument.",
+        decision: "pending",
+      },
+    ],
+  };
+  return artifact;
+}
+
 function buildArtifactWithRejectedDiffs(): AnalysisArtifact {
   const artifact = buildArtifactWithDiffReview();
   artifact.diff_review = {
@@ -1495,6 +1774,65 @@ function buildArtifactWithRejectedDiffs(): AnalysisArtifact {
     ],
   };
   return artifact;
+}
+
+function buildArtifactWithRejectedRewriteDiffs(): AnalysisArtifact {
+  const artifact = buildArtifactWithRewriteDiffReview();
+  artifact.diff_review = {
+    ...artifact.diff_review!,
+    diff_items: [
+      {
+        id: "diff-1",
+        change_type: "replace",
+        original_start_line: 3,
+        original_end_line: 5,
+        candidate_start_line: 3,
+        candidate_end_line: 5,
+        before_text:
+          "The strongest value of this draft is that it turns vague editorial instincts into a review workflow with concrete review signals.",
+        after_text: "Promote this framing into the introduction.",
+        decision: "rejected",
+      },
+    ],
+  };
+  return artifact;
+}
+
+function buildArtifactWithWordLevelDiffReview(): AnalysisArtifact {
+  const artifact = structuredClone(mockArtifact) as AnalysisArtifact & Record<string, unknown>;
+  const updatedSentence =
+    "The strongest value of this draft is that it turns editorial instincts into a concrete review workflow with review signals.";
+  artifact.diff_review = {
+    mode: "surgical",
+    source_revision_id: artifact.document?.revision_id ?? "revision-demo-current",
+    original_markdown: artifact.document?.raw_content ?? "",
+    candidate_markdown: (artifact.document?.raw_content ?? "").replace(
+      "The strongest value of this draft is that it turns vague editorial instincts into a review workflow with concrete review signals.",
+      updatedSentence,
+    ),
+    diff_items: [
+      {
+        id: "diff-word",
+        change_type: "replace",
+        original_start_line: 3,
+        original_end_line: 3,
+        candidate_start_line: 3,
+        candidate_end_line: 3,
+        before_text:
+          "The strongest value of this draft is that it turns vague editorial instincts into a review workflow with concrete review signals.",
+        after_text: updatedSentence,
+        decision: "pending",
+      },
+    ],
+  };
+  artifact.revised_document = {
+    mode: "surgical",
+    source_revision_id: artifact.document?.revision_id ?? "revision-demo-current",
+    markdown: artifact.diff_review!.candidate_markdown,
+    accepted_comment_ids: ["comment-2"],
+    generated_at: new Date().toISOString(),
+  };
+  return artifact as AnalysisArtifact;
 }
 
 function buildArtifactAfterAppliedRevision(): AnalysisArtifact {

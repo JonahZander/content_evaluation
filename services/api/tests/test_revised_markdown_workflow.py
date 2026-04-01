@@ -6,6 +6,8 @@ import pytest
 
 from content_evaluation.domain.exceptions import ValidationError
 from content_evaluation.domain.models import (
+    ArtifactDiffItem,
+    ArtifactDiffReview,
     OrchestratorBackend,
     RevisionMode,
     RevisedMarkdownDiffDecision,
@@ -38,6 +40,28 @@ def _orchestrator() -> RunOrchestrator:
         OrchestratorBackend.LANGGRAPH,
         deep_research_provider=MockDeepResearchProvider(),
     )
+
+
+def _render_applied_markdown(diff_review: ArtifactDiffReview) -> str:
+    """Render the markdown produced by the stored diff decisions."""
+
+    original_lines = diff_review.original_markdown.splitlines()
+    applied_lines: list[str] = []
+    cursor = 0
+    for item in sorted(
+        diff_review.diff_items,
+        key=lambda diff: (diff.original_start_line, diff.original_end_line, diff.id),
+    ):
+        start = max(0, item.original_start_line - 1)
+        end = max(start, item.original_end_line)
+        applied_lines.extend(original_lines[cursor:start])
+        if item.decision is RevisedMarkdownDiffDecision.ACCEPTED:
+            applied_lines.extend(item.after_text.splitlines())
+        else:
+            applied_lines.extend(original_lines[start:end])
+        cursor = end
+    applied_lines.extend(original_lines[cursor:])
+    return "\n".join(applied_lines).strip()
 
 
 @pytest.mark.asyncio
@@ -152,8 +176,8 @@ async def test_generate_revised_markdown_persists_rewrite_mode_and_direction() -
 
 
 @pytest.mark.asyncio
-async def test_apply_diff_review_promotes_revised_markdown_only_after_decisions() -> None:
-    """Require reviewed diff decisions before replacing canonical markdown."""
+async def test_apply_diff_review_applies_only_accepted_diffs_when_some_remain_pending() -> None:
+    """Apply accepted diffs while keeping rejected and pending text unchanged."""
 
     orchestrator = _orchestrator()
     artifact = await orchestrator.create_run(
@@ -162,7 +186,7 @@ async def test_apply_diff_review_promotes_revised_markdown_only_after_decisions(
             source_label="Draft",
             title="Draft",
             text="Alpha paragraph.\n\nBeta paragraph.",
-            selected_agents=["editorial"],
+            selected_agents=["ai_likelihood", "editorial"],
         )
     )
     await orchestrator.process_run(
@@ -172,28 +196,49 @@ async def test_apply_diff_review_promotes_revised_markdown_only_after_decisions(
             source_label="Draft",
             title="Draft",
             text="Alpha paragraph.\n\nBeta paragraph.",
-            selected_agents=["editorial"],
+            selected_agents=["ai_likelihood", "editorial"],
         ),
     )
 
     stored = await orchestrator._require_artifact(artifact.artifact_id)  # noqa: SLF001
-    stored.threads[0].comments[0].review_state = ReviewState.ACCEPTED
+    for thread in stored.threads:
+        for comment in thread.comments:
+            if comment.suggestion:
+                comment.review_state = ReviewState.ACCEPTED
     await orchestrator._repository.update_artifact(stored)  # noqa: SLF001
-    await orchestrator.generate_revised_markdown(artifact.artifact_id, mode=RevisionMode.SURGICAL)
+    generated = await orchestrator.generate_revised_markdown(
+        artifact.artifact_id,
+        mode=RevisionMode.REWRITE,
+        direction_prompt="Lead with the strongest evidence.",
+    )
 
-    with pytest.raises(ValidationError):
-        await orchestrator.apply_diff_review(artifact.artifact_id)
+    assert generated.diff_review is not None
+    assert len(generated.diff_review.diff_items) >= 2
 
-    generated = await orchestrator._require_artifact(artifact.artifact_id)  # noqa: SLF001
     decisions = [
-        (item.id, RevisedMarkdownDiffDecision.ACCEPTED)
-        for item in generated.diff_review.diff_items
+        (generated.diff_review.diff_items[0].id, RevisedMarkdownDiffDecision.ACCEPTED),
+        (generated.diff_review.diff_items[1].id, RevisedMarkdownDiffDecision.REJECTED),
     ]
-    await orchestrator.update_diff_review(artifact.artifact_id, decisions)
+    reviewed = await orchestrator.update_diff_review(artifact.artifact_id, decisions)
+    line_count = len(reviewed.diff_review.original_markdown.splitlines())
+    reviewed.diff_review.diff_items.append(
+        ArtifactDiffItem(
+            change_type="insert",
+            original_start_line=line_count + 1,
+            original_end_line=line_count,
+            candidate_start_line=line_count + 1,
+            candidate_end_line=line_count + 1,
+            before_text="",
+            after_text="Synthetic pending insertion.",
+        )
+    )
+    await orchestrator._repository.update_artifact(reviewed)  # noqa: SLF001
+    assert any(item.decision is RevisedMarkdownDiffDecision.PENDING for item in reviewed.diff_review.diff_items)
 
     applied = await orchestrator.apply_diff_review(artifact.artifact_id)
-
     assert applied.document is not None
+    assert applied.document.raw_content == _render_applied_markdown(reviewed.diff_review)
+
     assert all(result.category.value in {"fact_check", "research"} for result in applied.agent_results)
     assert applied.agent_plan == []
     assert applied.summary is None

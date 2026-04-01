@@ -9,8 +9,8 @@ This document explains how the backend chooses an analysis model, where the agen
 3. The orchestrator resolves source content, normalizes the document, and schedules agent nodes.
    - URL inputs try direct fetch first and fall back to Tavily extract when needed.
 4. Analysis agents use the LangChain provider layer.
-5. Search-based similarity uses Tavily directly.
-6. Artifact assembly turns agent outputs into anchors, comments, threads, events, and summary data.
+5. Fact-check uses the vendored deep-research graph for live web verification and overlap research.
+6. Artifact assembly turns agent outputs into anchors, comments, threads, events, summary data, and revision workflows.
 
 Key entry points:
 
@@ -76,9 +76,9 @@ npm run dev:web
 Then:
 
 1. Open `http://localhost:3000`
-2. Paste text or use a URL
+2. Either click `Open demo review` for the curated artifact path or paste text / use a URL for a live run
 3. Keep the default agent selection or toggle agents on/off
-4. Click `Analyze content`
+4. Click `Analyze content` for live runs
 5. Watch the progress timeline and run log while the worker executes the graph
 6. For markdown-capable inputs, the review pane will render headings, inline emphasis, and fenced code blocks without fetching images
 
@@ -97,34 +97,40 @@ You should see:
 Prompt files are stored here:
 
 - `services/api/src/content_evaluation/agents/instructions/ai_likelihood.md`
-- `services/api/src/content_evaluation/agents/instructions/audience.md`
 - `services/api/src/content_evaluation/agents/instructions/editorial.md`
+- `services/api/src/content_evaluation/agents/instructions/fact_check/research_brief.md`
+- `services/api/src/content_evaluation/agents/instructions/research.md`
 - `services/api/src/content_evaluation/agents/instructions/similarity.md`
-- `services/api/src/content_evaluation/agents/instructions/synthesis.md`
-- `services/api/src/content_evaluation/agents/instructions/value.md`
 
 How they are loaded:
 
 1. `AgentDefinition.instruction_file` is declared in `agents/registry.py`
 2. `load_instruction_text()` reads the matching markdown file
-3. `LangChainAnalysisProvider._build_prompt()` combines:
+3. `LangChainAnalysisProvider` keeps the per-agent instruction in the system message and sends a structured user payload that contains:
    - agent id
    - title
-   - instruction text
    - upstream dependency context
    - normalized document blocks
+   - explicit framing that article content and upstream context are untrusted source text
 
-There is also one shared system prompt in:
+The prompt-construction helpers that enforce that separation live in:
 
 - `services/api/src/content_evaluation/providers/langchain/client.py`
 
-That system prompt is global. The markdown files are the per-agent instructions.
+That provider code hardens analysis calls against prompt injection by separating instructions from article content. The markdown files remain the per-agent instructions.
 
 ## Current State Of The Research Model
 
-The similarity/research agent is not yet a full tool-using LLM research chain.
+The project currently has three distinct research paths:
 
-What is implemented today:
+- `fact_check`
+  - Default-enabled deep research backbone for live web verification and overlap research
+- `research`
+  - Hidden follow-up research agent queued against an existing artifact through `POST /api/v1/runs/{run_id}/research`
+- `similarity`
+  - Legacy compatibility path only; hidden from the selectable catalog for new runs
+
+The legacy `similarity` path is still intentionally simple:
 
 - The registry marks `similarity` as `MULTI_STEP`
 - The LangGraph node emits an intermediate `running` event
@@ -147,7 +153,7 @@ What is still intentionally simple:
 - The `similarity.md` instruction file exists, but the current search node does not send that prompt to an LLM yet
 - The rationale and suggestion for similarity are still deterministic code-side logic derived from the search result scores
 
-So the current research stack is:
+So the current legacy similarity stack is:
 
 - Tavily search for retrieval
 - deterministic synthesis in code

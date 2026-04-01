@@ -1,8 +1,22 @@
 # Content Evaluation
 
-Agent-first monorepo for an artifact-first editorial review tool that evaluates blog posts and long-form text.
+Content Evaluation is an artifact-first editorial review tool for blog posts and long-form drafts. It turns a URL, pasted draft, uploaded text file, or saved artifact into one reviewable object with agent findings, evidence-backed comments, live progress, reviewer decisions, replies, and exports, so the product feels like a real editorial workflow instead of a pile of disconnected model calls.
 
 The backend's primary job is to produce a complete `AnalysisArtifact`. The web app renders that artifact, streams live progress while it is being built, and lets reviewers add replies and decisions on top of it. The same API/services should be usable without the frontend when someone wants to run the analysis pipeline directly and export the result.
+
+## Run The Demo
+
+1. Start the API with `npm run dev:api`.
+2. Start the web app with `npm run dev:web`.
+3. Open the app and click `Open demo review`.
+
+Recommended demo path:
+
+- Scan the review summary and metrics.
+- Open a few agent comments in the rail and inspect the linked evidence.
+- Mark a couple of findings `accepted` or `rejected`, then add a reply.
+- Export `Todo`, `Markdown`, or `JSON` from the toolbar.
+- If you want to show the live pipeline instead, start a fresh run from pasted text, URL import, or file upload after the demo artifact walkthrough.
 
 Current supported inputs:
 
@@ -16,14 +30,14 @@ Current analysis and review capabilities:
 - Select which agents should run for a given analysis
 - Fact-check key claims and surface overlapping public posts as linked research
 - Estimate whether content is likely AI-generated
-- Identify the post's main value and likely audience
-- Run editorial and synthesis/scoring steps with dependency-aware orchestration
+- Summarize the article with fact-check-backed TL;DR, audience, overlap, and overall review metrics
+- Run editorial review plus post-run revised-markdown generation with dependency-aware orchestration
 - Attach agent comments to anchored text spans
 - Render a review summary panel plus claim-by-claim evidence links above and beside the source text
 - Let a human reviewer reply to agent comments
 - Let a human reviewer mark agent comments as `accepted`, `rejected`, or `uncertain`
 - Let a human reviewer add standalone comments on new text selections
-- Export the full artifact as Markdown or JSON
+- Export the artifact as Todo Markdown, full Markdown, or JSON
 
 ## Repository Layout
 

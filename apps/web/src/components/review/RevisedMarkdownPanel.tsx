@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import styles from "@/components/ReviewWorkbench.module.css";
 
@@ -45,9 +45,15 @@ export function RevisedMarkdownPanel({
   onApply,
 }: RevisedMarkdownPanelProps) {
   const [viewMode, setViewMode] = useState<DiffViewMode>(mode === "rewrite" ? "side-by-side" : "inline");
+  useEffect(() => {
+    setViewMode(mode === "rewrite" ? "side-by-side" : "inline");
+  }, [mode]);
+  const acceptedItems = diffItems.filter((item) => item.decision === "accepted").length;
   const pendingItems = diffItems.filter((item) => item.decision === "pending").length;
-  const canApplyInline = !applied && pendingItems === 0 && diffItems.length > 0 && !savingDecision && !applyingRevision;
+  const canApplyInline = !applied && acceptedItems > 0 && !savingDecision && !applyingRevision;
   const canApplySideBySide = !applied && !savingDecision && !applyingRevision;
+  const activeViewMode = mode === "surgical" ? "inline" : viewMode;
+  const showViewToggle = mode === "rewrite";
   const inlineBlocks = useMemo(
     () => buildInlineBlocks(originalMarkdown, diffItems),
     [diffItems, originalMarkdown],
@@ -66,36 +72,42 @@ export function RevisedMarkdownPanel({
             <p className={styles.reviewSummaryText}>
               {applied
                 ? "The reviewed revision has been promoted to the working draft. Follow-up analysis is available again."
-                : viewMode === "inline" && pendingItems > 0
-                  ? `Review ${pendingItems} remaining diff ${pendingItems === 1 ? "item" : "items"} before applying the revision.`
-                  : viewMode === "side-by-side"
+                : activeViewMode === "inline" && acceptedItems > 0
+                  ? pendingItems > 0
+                    ? `Apply will include ${acceptedItems} accepted change${acceptedItems === 1 ? "" : "s"} and leave ${pendingItems} pending or unreviewed diff ${pendingItems === 1 ? "item" : "items"} unchanged.`
+                    : `Apply will include only the ${acceptedItems} accepted change${acceptedItems === 1 ? "" : "s"} and leave any rejected changes out of the revised draft.`
+                  : activeViewMode === "inline" && pendingItems > 0
+                    ? "Accept at least one diff item to enable apply. Pending or unreviewed changes will remain unchanged until they are reviewed."
+                  : activeViewMode === "side-by-side"
                     ? "Review the full revision side by side, then apply or discard it as one decision."
-                    : "Every diff has a decision. Apply the reviewed markdown when you are ready."}
+                    : "Accept at least one diff item to apply the reviewed markdown. Pending or unreviewed changes will remain unchanged."}
             </p>
           </div>
           <div className={styles.diffReviewHeaderActions}>
-            <div className={styles.diffViewToggle} data-testid="diff-view-toggle">
-              <button
-                className={`${styles.diffViewToggleButton} ${viewMode === "side-by-side" ? styles.diffViewToggleActive : ""}`}
-                data-testid="diff-view-toggle-side-by-side"
-                type="button"
-                onClick={() => setViewMode("side-by-side")}
-              >
-                Side by side
-              </button>
-              <button
-                className={`${styles.diffViewToggleButton} ${viewMode === "inline" ? styles.diffViewToggleActive : ""}`}
-                data-testid="diff-view-toggle-inline"
-                type="button"
-                onClick={() => setViewMode("inline")}
-              >
-                Inline
-              </button>
-            </div>
+            {showViewToggle ? (
+              <div className={styles.diffViewToggle} data-testid="diff-view-toggle">
+                <button
+                  className={`${styles.diffViewToggleButton} ${viewMode === "side-by-side" ? styles.diffViewToggleActive : ""}`}
+                  data-testid="diff-view-toggle-side-by-side"
+                  type="button"
+                  onClick={() => setViewMode("side-by-side")}
+                >
+                  Side by side
+                </button>
+                <button
+                  className={`${styles.diffViewToggleButton} ${viewMode === "inline" ? styles.diffViewToggleActive : ""}`}
+                  data-testid="diff-view-toggle-inline"
+                  type="button"
+                  onClick={() => setViewMode("inline")}
+                >
+                  Inline
+                </button>
+              </div>
+            ) : null}
           </div>
         </div>
 
-        {viewMode === "side-by-side" ? (
+        {activeViewMode === "side-by-side" ? (
           <>
             <div className={styles.reviewSummaryGrid}>
               <article className={styles.reviewSummaryCard}>
@@ -149,12 +161,40 @@ export function RevisedMarkdownPanel({
 
                   return (
                     <span key={block.diffId} data-testid={`diff-item-${block.diffId}`}>
-                      {block.removedText ? (
-                        <span className={styles.inlineDiffRemoved}>{block.removedText}</span>
-                      ) : null}
-                      {block.addedText ? (
-                        <span className={styles.inlineDiffAdded}>{block.addedText}</span>
-                      ) : null}
+                      {mode === "surgical"
+                        ? buildWordDiffSegments(block.removedText, block.addedText).map((segment, segmentIndex) => {
+                            if (segment.kind === "equal") {
+                              return <span key={`${block.diffId}-equal-${segmentIndex}`}>{segment.text}</span>;
+                            }
+                            if (segment.kind === "removed") {
+                              return (
+                                <span
+                                  key={`${block.diffId}-removed-${segmentIndex}`}
+                                  className={styles.inlineDiffRemoved}
+                                >
+                                  {segment.text}
+                                </span>
+                              );
+                            }
+                            return (
+                              <span
+                                key={`${block.diffId}-added-${segmentIndex}`}
+                                className={styles.inlineDiffAdded}
+                              >
+                                {segment.text}
+                              </span>
+                            );
+                          })
+                        : (
+                            <>
+                              {block.removedText ? (
+                                <span className={styles.inlineDiffRemoved}>{block.removedText}</span>
+                              ) : null}
+                              {block.addedText ? (
+                                <span className={styles.inlineDiffAdded}>{block.addedText}</span>
+                              ) : null}
+                            </>
+                          )}
                       {!applied ? (
                         <span className={styles.inlineDiffActions} data-diff-id={block.diffId}>
                           <span className={styles.reviewBadge} data-testid={`diff-item-status-${block.diffId}`}>
@@ -198,37 +238,39 @@ export function RevisedMarkdownPanel({
                   onClick={onApply}
                   disabled={!canApplyInline}
                 >
-                  {applyingRevision ? "Applying revision..." : "Apply reviewed markdown"}
+                  {applyingRevision ? "Applying revision..." : "Apply accepted changes"}
                 </button>
               </div>
             ) : null}
-            <div className={styles.diffItemList}>
-              {diffItems.map((item, index) => (
-                <article key={item.id} className={styles.reviewSummaryCard} data-testid={`diff-summary-${item.id}`}>
-                  <div className={styles.diffItemHeader}>
-                    <div>
-                      <div className={styles.metricLabel}>Diff {index + 1}</div>
-                      <div className={styles.diffItemTitle}>
-                        {item.changeType} lines {formatLineRange(item.originalStartLine, item.originalEndLine)}
-                        {" -> "}
-                        {formatLineRange(item.candidateStartLine, item.candidateEndLine)}
+            {mode === "rewrite" ? (
+              <div className={styles.diffItemList}>
+                {diffItems.map((item, index) => (
+                  <article key={item.id} className={styles.reviewSummaryCard} data-testid={`diff-summary-${item.id}`}>
+                    <div className={styles.diffItemHeader}>
+                      <div>
+                        <div className={styles.metricLabel}>Diff {index + 1}</div>
+                        <div className={styles.diffItemTitle}>
+                          {item.changeType} lines {formatLineRange(item.originalStartLine, item.originalEndLine)}
+                          {" -> "}
+                          {formatLineRange(item.candidateStartLine, item.candidateEndLine)}
+                        </div>
+                      </div>
+                      <span className={styles.pill}>{item.decision}</span>
+                    </div>
+                    <div className={styles.diffItemGrid}>
+                      <div>
+                        <div className={styles.metricLabel}>Before</div>
+                        <pre className={styles.diffSnippetPreview}>{item.beforeText || "(no content)"}</pre>
+                      </div>
+                      <div>
+                        <div className={styles.metricLabel}>After</div>
+                        <pre className={styles.diffSnippetPreview}>{item.afterText || "(no content)"}</pre>
                       </div>
                     </div>
-                    <span className={styles.pill}>{item.decision}</span>
-                  </div>
-                  <div className={styles.diffItemGrid}>
-                    <div>
-                      <div className={styles.metricLabel}>Before</div>
-                      <pre className={styles.diffSnippetPreview}>{item.beforeText || "(no content)"}</pre>
-                    </div>
-                    <div>
-                      <div className={styles.metricLabel}>After</div>
-                      <pre className={styles.diffSnippetPreview}>{item.afterText || "(no content)"}</pre>
-                    </div>
-                  </div>
-                </article>
-              ))}
-            </div>
+                  </article>
+                ))}
+              </div>
+            ) : null}
           </>
         )}
       </div>
@@ -239,6 +281,8 @@ export function RevisedMarkdownPanel({
 type InlineDiffBlock =
   | { kind: "unchanged"; text: string }
   | { kind: "changed"; diffId: string; removedText: string; addedText: string };
+
+type WordDiffSegment = { kind: "equal" | "added" | "removed"; text: string };
 
 function buildInlineBlocks(
   originalMarkdown: string,
@@ -323,4 +367,96 @@ function formatLineRange(start: number, end: number): string {
     return String(start);
   }
   return `${start}-${end}`;
+}
+
+function buildWordDiffSegments(beforeText: string, afterText: string): WordDiffSegment[] {
+  if (!beforeText && !afterText) {
+    return [];
+  }
+
+  const beforeTokens = tokenizeDiffText(beforeText);
+  const afterTokens = tokenizeDiffText(afterText);
+
+  if (beforeTokens.length === 0) {
+    return [{ kind: "added", text: afterText }];
+  }
+  if (afterTokens.length === 0) {
+    return [{ kind: "removed", text: beforeText }];
+  }
+  if (beforeTokens.length * afterTokens.length > 16000) {
+    return [
+      ...(beforeText ? [{ kind: "removed", text: beforeText } satisfies WordDiffSegment] : []),
+      ...(afterText ? [{ kind: "added", text: afterText } satisfies WordDiffSegment] : []),
+    ];
+  }
+
+  const matrix = Array.from({ length: beforeTokens.length + 1 }, () =>
+    Array.from({ length: afterTokens.length + 1 }, () => 0),
+  );
+
+  for (let beforeIndex = beforeTokens.length - 1; beforeIndex >= 0; beforeIndex -= 1) {
+    for (let afterIndex = afterTokens.length - 1; afterIndex >= 0; afterIndex -= 1) {
+      if (beforeTokens[beforeIndex] === afterTokens[afterIndex]) {
+        matrix[beforeIndex][afterIndex] = matrix[beforeIndex + 1][afterIndex + 1] + 1;
+      } else {
+        matrix[beforeIndex][afterIndex] = Math.max(
+          matrix[beforeIndex + 1][afterIndex],
+          matrix[beforeIndex][afterIndex + 1],
+        );
+      }
+    }
+  }
+
+  const segments: WordDiffSegment[] = [];
+  let beforeIndex = 0;
+  let afterIndex = 0;
+
+  while (beforeIndex < beforeTokens.length && afterIndex < afterTokens.length) {
+    if (beforeTokens[beforeIndex] === afterTokens[afterIndex]) {
+      segments.push({ kind: "equal", text: beforeTokens[beforeIndex] });
+      beforeIndex += 1;
+      afterIndex += 1;
+      continue;
+    }
+
+    if (matrix[beforeIndex + 1][afterIndex] >= matrix[beforeIndex][afterIndex + 1]) {
+      segments.push({ kind: "removed", text: beforeTokens[beforeIndex] });
+      beforeIndex += 1;
+      continue;
+    }
+
+    segments.push({ kind: "added", text: afterTokens[afterIndex] });
+    afterIndex += 1;
+  }
+
+  while (beforeIndex < beforeTokens.length) {
+    segments.push({ kind: "removed", text: beforeTokens[beforeIndex] });
+    beforeIndex += 1;
+  }
+
+  while (afterIndex < afterTokens.length) {
+    segments.push({ kind: "added", text: afterTokens[afterIndex] });
+    afterIndex += 1;
+  }
+
+  return mergeWordDiffSegments(segments);
+}
+
+function tokenizeDiffText(text: string): string[] {
+  return text.match(/\s+|[^\s]+/g) ?? [];
+}
+
+function mergeWordDiffSegments(segments: WordDiffSegment[]): WordDiffSegment[] {
+  const merged: WordDiffSegment[] = [];
+
+  segments.forEach((segment) => {
+    const previousSegment = merged.at(-1);
+    if (previousSegment && previousSegment.kind === segment.kind) {
+      previousSegment.text += segment.text;
+      return;
+    }
+    merged.push({ ...segment });
+  });
+
+  return merged;
 }

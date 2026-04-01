@@ -149,7 +149,7 @@ One durable event appended to the artifact during a run. Narrates run lifecycle,
 | `id` | `str` | Event identifier. |
 | `artifact_id` | `UUID` | Owning artifact. |
 | `event_type` | `EventType` | `run`, `artifact`, or `agent`. |
-| `stage` | `str` | Short label for the pipeline stage (e.g. `normalization`, `similarity`). |
+| `stage` | `str` | Short label for the pipeline stage (e.g. `normalization`, `fact_check`). |
 | `message` | `str` | Human-readable description. |
 | `status` | `str` | Stage status string (e.g. `started`, `completed`, `failed`, `resumed`). |
 | `progress` | `float \| None` | 0.0–1.0 overall progress. Present on run-level events. |

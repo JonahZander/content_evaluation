@@ -10,10 +10,13 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile, status
+from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile, status
+from fastapi.routing import APIRoute
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from sse_starlette.sse import EventSourceResponse
+from pydantic import TypeAdapter
+from starlette.routing import Match
 
 from content_evaluation.api.dependencies import (
     AppServices,
@@ -37,17 +40,57 @@ from content_evaluation.api.schemas import (
 )
 from content_evaluation.config import get_settings
 from content_evaluation.domain.exceptions import ContentEvaluationError, NotFoundError
-from content_evaluation.domain.models import AnalysisArtifact, ArtifactDocument, RunInput, RunJob, SourceType
+from content_evaluation.domain.models import (
+    AnalysisArtifact,
+    ArtifactDocument,
+    PersistenceMode,
+    RunInput,
+    RunJob,
+    SourceType,
+)
 from content_evaluation.logging import configure_logging, request_logging_middleware
 from content_evaluation.repositories.base import RunRepository
 from content_evaluation.repositories.postgres import PostgresRunRepository
 from content_evaluation.services.comments import CommentService
 from content_evaluation.services.exporting import build_json_export, build_markdown_export, build_todo_export
 
-UploadFileInput = Annotated[UploadFile | None, File()]
 ServicesDependency = Annotated[AppServices, Depends(get_services)]
 RepositoryDependency = Annotated[RunRepository, Depends(get_run_repository)]
 CommentServiceDependency = Annotated[CommentService, Depends(get_comment_service)]
+_BOOL_ADAPTER = TypeAdapter(bool)
+_PERSISTENCE_MODE_ADAPTER = TypeAdapter(PersistenceMode)
+
+
+def _content_type_matches(scope: dict[str, object], prefix: str) -> bool:
+    """Return whether one request content type starts with the requested prefix."""
+
+    headers = scope.get("headers")
+    if not isinstance(headers, list):
+        return False
+    for name, value in headers:
+        if name == b"content-type" and isinstance(value, bytes):
+            return value.decode("latin-1").startswith(prefix)
+    return False
+
+
+class _JsonRunRoute(APIRoute):
+    """Match JSON run submissions and ignore multipart uploads."""
+
+    def matches(self, scope: dict[str, object]) -> tuple[Match, dict[str, object]]:
+        match, child_scope = super().matches(scope)
+        if match == Match.FULL and not _content_type_matches(scope, "multipart/form-data"):
+            return match, child_scope
+        return Match.NONE, child_scope
+
+
+class _MultipartRunRoute(APIRoute):
+    """Match multipart run submissions and ignore JSON bodies."""
+
+    def matches(self, scope: dict[str, object]) -> tuple[Match, dict[str, object]]:
+        match, child_scope = super().matches(scope)
+        if match == Match.FULL and _content_type_matches(scope, "multipart/form-data"):
+            return match, child_scope
+        return Match.NONE, child_scope
 
 
 @asynccontextmanager
@@ -106,15 +149,47 @@ async def list_agents(services: ServicesDependency) -> object:
     return services.orchestrator.list_agents()
 
 
-@app.post("/api/v1/runs")
-async def create_run(
-    http_request: Request,
+async def create_run_json(
     services: ServicesDependency,
-    file: UploadFileInput = None,
+    payload: CreateRunRequest,
 ) -> AnalysisArtifact:
-    """Create one artifact from JSON or multipart input."""
+    """Create one artifact from JSON input."""
 
-    input_data = await _resolve_run_input(http_request, file, services)
+    input_data = RunInput.model_validate(payload.model_dump())
+    artifact = await services.orchestrator.create_run(input_data)
+    await services.repository.enqueue_run_job(RunJob(artifact_id=artifact.artifact_id, input_data=input_data))
+    return artifact
+
+
+async def create_run_multipart(
+    services: ServicesDependency,
+    request: Request,
+) -> AnalysisArtifact:
+    """Create one artifact from multipart input."""
+
+    form = await request.form()
+    file = form.get("file")
+    if file is None or not hasattr(file, "read"):
+        raise HTTPException(status_code=422, detail="A file upload is required")
+    title = form.get("title")
+    if title == "":
+        title = None
+    selected_agents = form.getlist("selected_agents") if hasattr(form, "getlist") else []
+    persistence_mode = _PERSISTENCE_MODE_ADAPTER.validate_python(
+        form.get("persistence_mode", PersistenceMode.SESSION)
+    )
+    include_debug_trace = _BOOL_ADAPTER.validate_python(form.get("include_debug_trace", False))
+
+    if file is None:
+        raise HTTPException(status_code=422, detail="A file upload is required")
+    input_data = await _run_input_from_file(
+        file,
+        services,
+        title=title,
+        selected_agents=selected_agents,
+        persistence_mode=persistence_mode,
+        include_debug_trace=include_debug_trace,
+    )
     artifact = await services.orchestrator.create_run(input_data)
     await services.repository.enqueue_run_job(RunJob(artifact_id=artifact.artifact_id, input_data=input_data))
     return artifact
@@ -365,25 +440,15 @@ async def handle_domain_errors(_: object, error: ContentEvaluationError) -> Resp
     return Response(content=str(error), media_type="text/plain", status_code=status_code)
 
 
-async def _resolve_run_input(
-    http_request: Request,
-    file: UploadFile | None,
+async def _run_input_from_file(
+    file: UploadFile,
     services: AppServices,
+    *,
+    title: str | None,
+    selected_agents: list[str],
+    persistence_mode: PersistenceMode,
+    include_debug_trace: bool,
 ) -> RunInput:
-    """Resolve incoming API input into one run input model."""
-
-    if file is not None:
-        return await _run_input_from_file(file, services)
-
-    content_type = http_request.headers.get("content-type", "")
-    if "application/json" not in content_type:
-        raise HTTPException(status_code=422, detail="Either JSON input or file upload is required")
-    payload = await http_request.json()
-    request_data = CreateRunRequest.model_validate(payload)
-    return RunInput.model_validate(request_data.model_dump())
-
-
-async def _run_input_from_file(file: UploadFile, services: AppServices) -> RunInput:
     """Validate and convert one uploaded file into a run input."""
 
     file_name = file.filename or "upload"
@@ -403,6 +468,27 @@ async def _run_input_from_file(file: UploadFile, services: AppServices) -> RunIn
     return RunInput(
         source_type=SourceType.FILE,
         source_label=file_name,
-        title=file_name,
+        title=title or file_name,
         text=decoded,
+        selected_agents=selected_agents,
+        persistence_mode=persistence_mode,
+        include_debug_trace=include_debug_trace,
     )
+
+
+app.router.add_api_route(
+    "/api/v1/runs",
+    create_run_json,
+    methods=["POST"],
+    response_model=AnalysisArtifact,
+    route_class_override=_JsonRunRoute,
+    name="create_run_json",
+)
+app.router.add_api_route(
+    "/api/v1/runs",
+    create_run_multipart,
+    methods=["POST"],
+    response_model=AnalysisArtifact,
+    route_class_override=_MultipartRunRoute,
+    name="create_run_multipart",
+)

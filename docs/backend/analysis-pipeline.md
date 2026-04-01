@@ -10,6 +10,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
    - Accept URL, uploaded `.txt`/`.md`, pasted text, and imported artifact JSON
    - Support source preview for URL imports before a run is queued
    - Validate upload type and size at the API boundary
+   - Accept the same run configuration on multipart uploads as on JSON submissions: `selected_agents`, `persistence_mode`, `include_debug_trace`, and optional `title`
 2. Session or workspace run creation
    - Create an artifact skeleton with run config, selected agents, and empty result slots
    - URL preview runs may submit a reviewer-pruned markdown draft derived from visible preview blocks instead of re-fetching the original URL content
@@ -78,7 +79,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
    - Revised markdown generation now takes an explicit request body with `mode: surgical | rewrite` and an optional rewrite `direction_prompt`
    - Surgical mode produces targeted replacement instructions and a narrow diff; rewrite mode produces a full candidate draft
    - Compute diff-review items deterministically from whole-document markdown comparison
-   - Replace the canonical markdown only after reviewed diff decisions are applied
+   - Replace the canonical markdown by applying explicitly accepted diff decisions while leaving rejected and pending diff text in place
    - On apply, keep one live mutable artifact, archive the immediately previous draft as `previous_draft_snapshot`, preserve only fact-check and targeted-research findings against that prior revision, and clear current-draft summaries/revision suggestions
    - Preserved fact-check and research remain tagged to the previous document revision; only findings that remap honestly into the new draft stay inline, and unmatched preserved findings remain inspectable in the archived previous-draft section
    - Reopen a saved artifact without rerunning the pipeline
@@ -106,7 +107,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 ## Current Implementation Notes
 
 - `api/main.py`
-  - HTTP routes, SSE event stream (with configurable timeout), upload validation, artifact endpoints
+  - HTTP routes, SSE event stream (with configurable timeout), content-type-aware JSON vs multipart run creation, upload validation, artifact endpoints
 - `api/dependencies.py`
   - Long-lived service container; `AppServices.stop()` closes provider HTTP clients on shutdown
 - `services/orchestration.py`
@@ -114,6 +115,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 - `providers/langchain/client.py`
   - LangChain-backed provider routing across OpenAI, Anthropic, and Gemini
   - Chat models are cached per (family, model_name) pair for the lifetime of the provider
+  - Analysis prompts keep agent instructions in the system message and send article blocks plus upstream context as structured user payload marked as untrusted content
 - `providers/tavily/client.py`
   - Tavily search with a shared `httpx.AsyncClient` created at startup
 - `providers/extraction/client.py`

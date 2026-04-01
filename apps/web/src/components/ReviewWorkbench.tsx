@@ -26,6 +26,7 @@ import {
   cancelRun,
   createComment,
   createRun,
+  createRunFromFile,
   deleteHumanComment,
   deleteReply,
   fetchAgents,
@@ -39,6 +40,7 @@ import {
   updateHumanComment,
   updateReviewState,
 } from "@/lib/api";
+import { mockArtifact } from "@/lib/mock-data";
 import type {
   AgentCatalogEntry,
   AnalysisArtifact,
@@ -64,6 +66,7 @@ interface StoredWorkbenchState {
   artifactPersistenceMode: ReviewFormState["persistenceMode"] | null;
   artifactStatus: RunStatus | null;
   artifactTitle: string | null;
+  artifactPhase?: WorkbenchPhase | null;
   previewDocument: ArtifactDocument | null;
   hiddenPreviewBlockIds?: string[];
   formState: ReviewFormState;
@@ -193,6 +196,19 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
           if (cancelled) {
             return;
           }
+          if (parsed.artifactPhase === "diff_review") {
+            dispatch({
+              type: "RESTORE_STORED_STATE",
+              artifact: buildRecoveredReviewArtifact(parsed),
+              previewDocument: null,
+              formState: parsed.formState,
+              hasDownloadedJson: parsed.hasDownloadedJson,
+              activeArtifactId: null,
+              statusMessage:
+                "Previous revised markdown review is no longer available from the backend. Restored the review shell from the saved draft.",
+            });
+            return;
+          }
           dispatch({
             type: "RESTORE_STORED_STATE",
             artifact: null,
@@ -238,6 +254,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       artifactPersistenceMode: artifact?.run_config.persistence_mode ?? null,
       artifactStatus: artifact?.status ?? null,
       artifactTitle: artifact?.document?.title ?? artifact?.source.title ?? null,
+      artifactPhase: artifact === null ? null : getWorkbenchPhase(artifact),
       previewDocument: artifact === null ? previewDocument : null,
       hiddenPreviewBlockIds: artifact === null ? hiddenPreviewBlockIds : [],
       formState,
@@ -589,19 +606,31 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         return;
       }
 
-      let payload;
       if (formState.sourceType === "file" && selectedFile !== null) {
-        const fileText = await selectedFile.text();
-        payload = {
-          sourceType: "file" as const,
-          sourceLabel: selectedFile.name,
-          title: extractTitleFromText(fileText) || selectedFile.name,
-          text: fileText,
-          selectedAgents: resolveSelectedAgents(formState.selectedAgents, agents),
-          persistenceMode: formState.persistenceMode,
-          includeDebugTrace: formState.includeDebugTrace,
-        };
-      } else if (formState.sourceType === "url" && previewDocument !== null) {
+        const fileText = await readFileText(selectedFile);
+        const createdArtifact = await createRunFromFile(
+          selectedFile,
+          {
+            selectedAgents: resolveSelectedAgents(formState.selectedAgents, agents),
+            persistenceMode: formState.persistenceMode,
+            includeDebugTrace: formState.includeDebugTrace,
+            title: extractTitleFromText(fileText) || selectedFile.name,
+          },
+          signal,
+        );
+        dispatch({ type: "SET_ARTIFACT", artifact: createdArtifact });
+        dispatch({ type: "SET_ACTIVE_ARTIFACT_ID", id: createdArtifact.artifact_id });
+        dispatch({ type: "SET_FORM_STATE", formState: hydrateFormStateFromArtifact(formState, createdArtifact) });
+        dispatch({ type: "SET_SELECTION_DRAFT", draft: null });
+        dispatch({ type: "SET_COMMENT_DRAFT", draft: "" });
+        dispatch({ type: "SET_EDITING_COMMENT", commentId: null, body: "" });
+        dispatch({ type: "SET_HAS_DOWNLOADED_JSON", value: false });
+        dispatch({ type: "SET_STATUS_MESSAGE", message: `Artifact ${createdArtifact.artifact_id} queued` });
+        return;
+      }
+
+      let payload: Parameters<typeof createRun>[0] | null = null;
+      if (formState.sourceType === "url" && previewDocument !== null) {
         payload = {
           sourceType: "url" as const,
           sourceLabel: formState.url,
@@ -622,6 +651,10 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
           persistenceMode: formState.persistenceMode,
           includeDebugTrace: formState.includeDebugTrace,
         };
+      }
+
+      if (payload === null) {
+        throw new Error("Could not build run payload");
       }
 
       const createdArtifact = await createRun(payload, signal);
@@ -725,6 +758,34 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not import artifact" });
     } finally {
       dispatch({ type: "BUMP_IMPORT_INPUT_KEY" });
+    }
+  }
+
+  async function handleOpenDemoArtifact() {
+    const replacingCurrentAnalysis = artifact !== null || previewDocument !== null;
+    if (replacingCurrentAnalysis) {
+      const replaced = await maybeReplaceCurrentAnalysis(false);
+      if (!replaced) {
+        return;
+      }
+    }
+
+    try {
+      dispatch({ type: "SET_IS_SUBMITTING", value: true });
+      const imported = await importArtifact(structuredClone(mockArtifact));
+      dispatch({ type: "SET_ARTIFACT", artifact: imported });
+      dispatch({ type: "SET_PREVIEW_DOCUMENT", document: null });
+      dispatch({ type: "SET_ACTIVE_ARTIFACT_ID", id: activeArtifactIdFor(imported) });
+      dispatch({ type: "SET_FORM_STATE", formState: hydrateFormStateFromArtifact(formState, imported) });
+      dispatch({ type: "SET_HAS_DOWNLOADED_JSON", value: false });
+      dispatch({ type: "SET_STATUS_MESSAGE", message: "Opened the demo review artifact." });
+    } catch (error) {
+      dispatch({
+        type: "SET_STATUS_MESSAGE",
+        message: error instanceof Error ? error.message : "Could not open the demo artifact.",
+      });
+    } finally {
+      dispatch({ type: "SET_IS_SUBMITTING", value: false });
     }
   }
 
@@ -956,6 +1017,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       dispatch({ type: "SET_ARTIFACT", artifact: updatedArtifact });
       dispatch({ type: "SET_STATUS_MESSAGE", message: "Saved revised markdown diff decision." });
     } catch (error) {
+      if (await recoverFromMissingDiffReview(artifact, error)) {
+        return;
+      }
       dispatch({
         type: "SET_STATUS_MESSAGE",
         message: error instanceof Error ? error.message : "Could not save the diff review decision.",
@@ -966,7 +1030,10 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   }
 
   async function handleApplyRevision() {
-    if (artifact === null || diffReview === null || isRevisedMarkdownPending(diffReview)) {
+    if (artifact === null || diffReview === null) {
+      return;
+    }
+    if (diffReview.mode === "surgical" && !hasAcceptedRevisedMarkdownChanges(diffReview)) {
       return;
     }
     dispatch({ type: "SET_IS_APPLYING_REVISION", value: true });
@@ -985,6 +1052,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         message: "Reviewed revised markdown promoted to the working draft.",
       });
     } catch (error) {
+      if (await recoverFromMissingDiffReview(artifact, error)) {
+        return;
+      }
       dispatch({
         type: "SET_STATUS_MESSAGE",
         message: error instanceof Error ? error.message : "Could not apply the revised markdown.",
@@ -1007,6 +1077,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       dispatch({ type: "SET_ARTIFACT", artifact: updatedArtifact });
       dispatch({ type: "SET_STATUS_MESSAGE", message: "Marked the revised markdown candidate as discarded." });
     } catch (error) {
+      if (await recoverFromMissingDiffReview(artifact, error)) {
+        return;
+      }
       dispatch({
         type: "SET_STATUS_MESSAGE",
         message: error instanceof Error ? error.message : "Could not discard the revised markdown candidate.",
@@ -1014,6 +1087,46 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     } finally {
       dispatch({ type: "SET_IS_SAVING_DIFF_REVIEW", value: false });
     }
+  }
+
+  async function recoverFromMissingDiffReview(
+    currentArtifact: AnalysisArtifact,
+    error: unknown,
+  ): Promise<boolean> {
+    const message = error instanceof Error ? error.message : "";
+    if (!MISSING_DIFF_REVIEW_ERRORS.has(message)) {
+      return false;
+    }
+
+    const fallbackMessage = "Revised markdown review is no longer available. Returned to the main review view.";
+
+    try {
+      const refreshedArtifact = await fetchArtifact(currentArtifact.artifact_id);
+      if (refreshedArtifact.diff_review === null) {
+        dispatch({ type: "SET_ARTIFACT", artifact: refreshedArtifact });
+        dispatch({
+          type: "SET_FORM_STATE",
+          formState: hydrateFormStateFromArtifact(formState, refreshedArtifact),
+        });
+        dispatch({ type: "SET_STATUS_MESSAGE", message: fallbackMessage });
+        return true;
+      }
+    } catch {
+      // Fall back to the current artifact snapshot when the backend copy is unavailable.
+    }
+
+    const artifactWithoutDiffReview: AnalysisArtifact = {
+      ...currentArtifact,
+      diff_review: null,
+      revised_document: null,
+    };
+    dispatch({ type: "SET_ARTIFACT", artifact: artifactWithoutDiffReview });
+    dispatch({
+      type: "SET_FORM_STATE",
+      formState: hydrateFormStateFromArtifact(formState, artifactWithoutDiffReview),
+    });
+    dispatch({ type: "SET_STATUS_MESSAGE", message: fallbackMessage });
+    return true;
   }
 
   return (
@@ -1024,6 +1137,29 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       <div className={styles.shell}>
         {isIntakePhase ? (
           <>
+            <section className={styles.demoArtifactPanel} data-testid="demo-artifact-panel">
+              <div className={styles.demoArtifactCopy}>
+                <span className={styles.chooseContentLabel}>Demo demo</span>
+                <h2 className={styles.demoArtifactTitle}>Open a finished review instantly.</h2>
+                <p className={styles.demoArtifactBody}>
+                  Load one curated article artifact and jump straight into the strongest path: review comments,
+                  accept or reject findings, reply inline, and export the result.
+                </p>
+              </div>
+              <div className={styles.demoArtifactActions}>
+                <button
+                  className={styles.button}
+                  data-testid="open-demo-artifact-button"
+                  type="button"
+                  onClick={() => void handleOpenDemoArtifact()}
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? "Opening demo..." : "Open demo review"}
+                </button>
+                <p className={styles.demoArtifactHint}>Or import your own URL, draft, file, or saved artifact below.</p>
+              </div>
+            </section>
+
             <ReviewToolbar
               formState={formState}
               agents={agents}
@@ -1348,6 +1484,20 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
                 />
               </section>
             ) : null}
+
+            {artifact !== null && !isFollowUpRunInProgress && isTerminalArtifact && hasAcceptedSuggestions && diffReview === null ? (
+              <RevisionActions
+                location="bottom"
+                canGenerateRevision={canGenerateRevision}
+                generatingRevision={isGeneratingRevision}
+                rewritePromptOpen={rewritePromptOpen}
+                rewriteDirectionPrompt={rewriteDirectionPrompt}
+                onRewriteDirectionPromptChange={setRewriteDirectionPrompt}
+                onToggleRewritePrompt={() => setRewritePromptOpen((current) => !current)}
+                onApplyChanges={() => void handleGenerateRevision("surgical")}
+                onRewriteDraft={() => void handleGenerateRevision("rewrite")}
+              />
+            ) : null}
           </>
         ) : null}
 
@@ -1458,7 +1608,7 @@ function RevisionActions({
       <div className={styles.revisionCtaActions}>
         <button
           className={styles.button}
-          data-testid="apply-changes-button"
+          data-testid={`apply-changes-button-${location}`}
           type="button"
           onClick={onApplyChanges}
           disabled={!canGenerateRevision || generatingRevision}
@@ -1467,7 +1617,7 @@ function RevisionActions({
         </button>
         <button
           className={styles.ghostButton}
-          data-testid="rewrite-draft-button"
+          data-testid={`rewrite-draft-button-${location}`}
           type="button"
           onClick={onToggleRewritePrompt}
           disabled={!canGenerateRevision || generatingRevision}
@@ -1479,7 +1629,7 @@ function RevisionActions({
         <div className={styles.rewriteComposer}>
           <textarea
             className={styles.researchPromptInput}
-            data-testid="rewrite-direction-input"
+            data-testid={`rewrite-direction-input-${location}`}
             aria-label="Rewrite direction"
             rows={3}
             value={rewriteDirectionPrompt}
@@ -1489,7 +1639,7 @@ function RevisionActions({
           <div className={styles.rewriteComposerActions}>
             <button
               className={styles.button}
-              data-testid="submit-rewrite-draft-button"
+              data-testid={`submit-rewrite-draft-button-${location}`}
               type="button"
               onClick={onRewriteDraft}
               disabled={!canGenerateRevision || generatingRevision || rewriteDirectionPrompt.trim().length === 0}
@@ -1628,7 +1778,7 @@ function RunningFindingsPreview({
     }
     const timer = window.setInterval(() => {
       setIndex((current) => (current + 1) % findings.length);
-    }, 3000);
+    }, 5000);
     return () => window.clearInterval(timer);
   }, [findings.length]);
 
@@ -1675,25 +1825,15 @@ function RunningStatusLabel({ status }: { status: string }) {
   }
 
   return (
-    <>
-      {label}
-      <AnimatedDots />
-    </>
+    <span className={styles.runningStatusLabel} data-testid="running-status-label">
+      <span>{label}</span>
+      <span className={styles.runningStatusDots} aria-hidden="true" data-testid="running-status-dots">
+        <span className={styles.runningStatusDot} data-testid="running-status-dot" />
+        <span className={styles.runningStatusDot} data-testid="running-status-dot" />
+        <span className={styles.runningStatusDot} data-testid="running-status-dot" />
+      </span>
+    </span>
   );
-}
-
-function AnimatedDots() {
-  const [dots, setDots] = useState("");
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setDots((current) => (current.length >= 3 ? "" : `${current}.`));
-    }, 400);
-
-    return () => window.clearInterval(timer);
-  }, []);
-
-  return <span className={styles.animatedDots} aria-hidden="true">{dots}</span>;
 }
 
 function resolveSelectedAgents(selectedAgents: string[], agents: AgentCatalogEntry[]): string[] {
@@ -1865,8 +2005,8 @@ function isDiffDecision(value: unknown): value is DiffDecision {
   return value === "pending" || value === "accepted" || value === "rejected";
 }
 
-function isRevisedMarkdownPending(diffReview: ArtifactDiffReviewView): boolean {
-  return diffReview.diffItems.some((item) => item.decision === "pending");
+function hasAcceptedRevisedMarkdownChanges(diffReview: ArtifactDiffReviewView): boolean {
+  return diffReview.diffItems.some((item) => item.decision === "accepted");
 }
 
 function isRevisedMarkdownApplied(artifact: AnalysisArtifact | null): boolean {
@@ -1877,6 +2017,11 @@ function isRevisedMarkdownApplied(artifact: AnalysisArtifact | null): boolean {
     .reverse()
     .some((event) => event.stage === "revised_markdown" && event.status === "applied");
 }
+
+const MISSING_DIFF_REVIEW_ERRORS = new Set([
+  "Generate revised markdown before reviewing diffs.",
+  "No revised markdown diff is available to apply.",
+]);
 
 function isStoredWorkbenchState(value: unknown): value is StoredWorkbenchState {
   if (typeof value !== "object" || value === null) {
@@ -1891,6 +2036,9 @@ function isStoredWorkbenchState(value: unknown): value is StoredWorkbenchState {
     && (!("hiddenPreviewBlockIds" in candidate)
       || candidate.hiddenPreviewBlockIds === undefined
       || (Array.isArray(candidate.hiddenPreviewBlockIds) && candidate.hiddenPreviewBlockIds.every((item) => typeof item === "string")))
+    && (!("artifactPhase" in candidate)
+      || candidate.artifactPhase === undefined
+      || isWorkbenchPhase(candidate.artifactPhase))
     && ("artifactId" in candidate)
     && ("previewDocument" in candidate)
   );
@@ -1913,6 +2061,7 @@ function parseStoredWorkbenchState(raw: string): StoredWorkbenchState | null {
         artifactPersistenceMode: parsed.run_config.persistence_mode,
         artifactStatus: parsed.status,
         artifactTitle: parsed.document?.title ?? parsed.source.title ?? null,
+        artifactPhase: getWorkbenchPhase(parsed),
         previewDocument: null,
         formState: hydrateFormStateFromArtifact(initialWorkbenchState.formState, parsed),
         hasDownloadedJson: false,
@@ -1983,6 +2132,23 @@ function extractTitleFromText(text: string): string {
   }
   const first = trimmed.split("\n").find((l) => l.trim().length > 0) ?? "";
   return first.length > 80 ? first.slice(0, 77) + "..." : first.trim();
+}
+
+async function readFileText(file: File): Promise<string> {
+  if (typeof file.text === "function") {
+    return file.text();
+  }
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      resolve(typeof reader.result === "string" ? reader.result : "");
+    };
+    reader.onerror = () => {
+      reject(reader.error ?? new Error("Could not read file"));
+    };
+    reader.readAsText(file);
+  });
 }
 
 function buildPreviewSubmissionText(document: ArtifactDocument, hiddenBlockIds: string[]): string {
@@ -2060,4 +2226,65 @@ function hasFormDraft(formState: ReviewFormState): boolean {
       || (formState.sourceType !== "text")
       || formState.sourceLabel !== initialWorkbenchState.formState.sourceLabel,
   );
+}
+
+function buildRecoveredReviewArtifact(parsed: StoredWorkbenchState): AnalysisArtifact {
+  const sourceTitle = parsed.artifactTitle?.trim() || parsed.formState.title.trim() || "Recovered review";
+  const recoveredText = parsed.formState.text.trim() || sourceTitle;
+  const revisionId = parsed.artifactId ?? "recovered-diff-review";
+  const now = new Date().toISOString();
+
+  return {
+    schema_version: "recovered-workbench",
+    artifact_id: revisionId,
+    status: parsed.artifactStatus ?? "completed",
+    created_at: now,
+    updated_at: now,
+    source: {
+      source_type: parsed.formState.sourceType,
+      source_label: parsed.formState.sourceLabel,
+      title: sourceTitle,
+      url: parsed.formState.url || null,
+      imported: parsed.formState.sourceType !== "text",
+    },
+    document: {
+      id: `${revisionId}-document`,
+      revision_id: revisionId,
+      title: sourceTitle,
+      source_type: parsed.formState.sourceType,
+      source_label: parsed.formState.sourceLabel,
+      raw_content: recoveredText,
+      text: recoveredText,
+      blocks: [
+        {
+          id: `${revisionId}-block-0`,
+          index: 0,
+          text: recoveredText,
+          kind: "paragraph",
+          origin: "source",
+          markdown: recoveredText,
+          marks: [],
+        },
+      ],
+    },
+    run_config: {
+      selected_agents: parsed.formState.selectedAgents,
+      resolved_agents: parsed.formState.selectedAgents,
+      runtime_mode: "mock",
+      persistence_mode: parsed.formState.persistenceMode,
+      include_debug_trace: parsed.formState.includeDebugTrace,
+    },
+    agent_plan: [],
+    agent_results: [],
+    anchors: [],
+    threads: [],
+    summary: null,
+    events: [],
+    debug: null,
+    error_message: null,
+  };
+}
+
+function isWorkbenchPhase(value: unknown): value is WorkbenchPhase {
+  return value === "intake" || value === "running" || value === "review" || value === "diff_review";
 }

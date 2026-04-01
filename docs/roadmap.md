@@ -22,9 +22,6 @@ excluded here — that warrants its own planning document when the time comes.
 - **Fact-check prompt and contract tuning**
   - Keep the deep research flow, but narrow the prompt and output contract so claim verification, overlap research, and citation gaps are more consistent
   - Improve how fact-check results feed downstream value, editorial, and synthesis reasoning
-- **Prompt injection protection** *(M3)*
-  - User article content is interpolated directly into LLM prompts
-  - Should be sanitized or isolated via structured message roles
 - **Stop inflating downstream prompts** *(M10)*
   - Full `raw_output` from upstream agents is serialized into downstream agent prompts
   - Should pass only the structured summary/findings, not the entire raw payload
@@ -59,10 +56,6 @@ excluded here — that warrants its own planning document when the time comes.
 
 - **Async instruction loading** *(M1)*
   - `load_instruction_text()` uses synchronous `read_text()` on the async event loop
-- **FastAPI body declaration** *(M13)*
-  - `create_run` manually parses JSON instead of using a FastAPI body model
-- **overall_score bounds validation** *(M14)*
-  - No `ge=0/le=100` constraint on the field; invalid scores could silently pass through
 
 ---
 

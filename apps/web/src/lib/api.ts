@@ -21,6 +21,13 @@ export interface CreateRunPayload {
   includeDebugTrace: boolean;
 }
 
+export interface CreateRunFromFileOptions {
+  selectedAgents: string[];
+  persistenceMode: PersistenceMode;
+  includeDebugTrace: boolean;
+  title?: string;
+}
+
 export interface CreateCommentPayload {
   artifactId: string;
   body: string;
@@ -128,19 +135,23 @@ export async function previewSource(payload: Omit<CreateRunPayload, "selectedAge
 
 export async function createRunFromFile(
   file: File,
-  options: Pick<CreateRunPayload, "selectedAgents" | "persistenceMode" | "includeDebugTrace">,
+  options: CreateRunFromFileOptions,
   signal?: AbortSignal,
 ): Promise<AnalysisArtifact> {
   const formData = new FormData();
   formData.append("file", file);
+  options.selectedAgents.forEach((agentId) => {
+    formData.append("selected_agents", agentId);
+  });
+  formData.append("persistence_mode", options.persistenceMode);
+  formData.append("include_debug_trace", String(options.includeDebugTrace));
+  if (options.title) {
+    formData.append("title", options.title);
+  }
   return parseJson(
-    await fetch(`${API_BASE_URL}/api/v1/runs?selected_agents=${options.selectedAgents.join(",")}`, {
+    await fetch(`${API_BASE_URL}/api/v1/runs`, {
       method: "POST",
       body: formData,
-      headers: {
-        "X-Artifact-Persistence-Mode": options.persistenceMode,
-        "X-Artifact-Debug-Trace": String(options.includeDebugTrace),
-      },
       signal,
     }),
   );

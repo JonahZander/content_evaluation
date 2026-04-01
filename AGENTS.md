@@ -104,8 +104,16 @@ Examples that may make sense later:
 
 Repo-local skills currently available:
 
-- `.codex/skills/commit-style/SKILL.md`
-- `.codex/skills/frontend-design/SKILL.md`
+- `.agents/skills/commit-style/SKILL.md`
+- `.agents/skills/frontend-design/SKILL.md`
+- `.agents/skills/framework-selection/SKILL.md`
+- `.agents/skills/implement-plan/SKILL.md`
+- `.agents/skills/langchain-dependencies/SKILL.md`
+- `.agents/skills/langchain-fundamentals/SKILL.md`
+- `.agents/skills/langchain-middleware/SKILL.md`
+- `.agents/skills/langgraph-fundamentals/SKILL.md`
+- `.agents/skills/langgraph-human-in-the-loop/SKILL.md`
+- `.agents/skills/langgraph-persistence/SKILL.md`
 
 Do not create a skill for information that is really repository knowledge.
 If the content explains this project's architecture, workflows, or domain language, prefer `docs/`.
@@ -114,7 +122,7 @@ If the content explains this project's architecture, workflows, or domain langua
 
 Use the repo-local commit guidance:
 
-- Skill: `.codex/skills/commit-style/SKILL.md`
+- Skill: `.agents/skills/commit-style/SKILL.md`
 - Template: `.gitmessage.txt`
 - Conventions: `docs/process/commit-conventions.md`
 

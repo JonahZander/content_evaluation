@@ -36,15 +36,12 @@ These findings from the 2026-03-13 code review were not addressed in the current
 | H5 | `providers/tavily/client.py` | Tavily API key is sent in the JSON request body. Limitation of the Tavily API contract. |
 | H8 | Frontend tests | No tests for frontend error/failure paths. |
 | M1 | `agents/registry.py` | `load_instruction_text()` uses synchronous `read_text()` on the async event loop. |
-| M3 | `providers/langchain/client.py` | User content is interpolated directly into prompts (prompt injection risk). |
 | M6 | `providers/extraction/client.py` | Fallback decision based on string matching in error messages (brittle). |
 | M7 | `services/orchestration.py` | Stale artifact references in the legacy processing path. |
 | M8 | `services/orchestration.py` | `_ensure_run_active` reads the full artifact from DB just to check `status`. |
 | M9 | `services/orchestration.py` | Inline text sources are forced to `ContentFormat.MARKDOWN`. |
 | M10 | `services/orchestration.py` | Full `raw_output` serialized into downstream agent prompts, inflating token counts. |
 | M12 | `services/worker.py` | `ProviderError.retriable` flag is ignored at the worker level. |
-| M13 | `api/main.py` | Manual JSON parsing in `create_run` bypasses FastAPI body declaration. |
-| M14 | `domain/models.py` | `overall_score` has no `ge=0/le=100` constraint. |
 | M15 | `config.py` | `lru_cache` on `get_settings()` prevents override in tests. |
 | M16 | `api/dependencies.py` | Runtime mode compared via `.value == "live"` instead of `is RuntimeMode.LIVE`. |
 
@@ -91,7 +88,10 @@ These were critical or high findings that were resolved in commits `b28127b`, `e
 | H7 | Error body parsing: `parseJson` reads body before throwing |
 | H9 | E2E test wrong assertion: now asserts `"Run log"` |
 | M2 | Chat model re-instantiated per request: `_model_cache` per `(family, model_name)` |
+| M3 | Prompt injection hardening: instructions moved to the system message and article content/upstream context now flow through a structured user payload |
 | M4/M5 | httpx clients per request: created at `__init__` in all providers |
 | M11 | Worker sequential: `asyncio.Semaphore(worker_max_concurrent_runs)` |
+| M13 | FastAPI run creation now uses a typed JSON body route and a separate multipart route instead of manual JSON parsing |
+| M14 | `ArtifactSummary.overall_score` now enforces `ge=0/le=100` |
 | L14 | `SelectionDraft` duplicated: defined once in `src/lib/types.ts` |
 | L25/M18 | 18+ `useState` hooks and missing `useCallback`: `useReducer` + stabilized callbacks |

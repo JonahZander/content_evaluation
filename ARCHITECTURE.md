@@ -74,7 +74,7 @@ Backend features should converge toward:
   - a registry of specialist agents
   - explicit dependencies
   - parallel execution for independent agents
-  - dependent execution for synthesis/scoring steps
+  - dependent execution for editorial and other prerequisite-driven follow-up steps
 
 ## Runtime Modes
 
@@ -112,7 +112,7 @@ Backend features should converge toward:
 - `docs/frontend/`
   - UI behaviors, progress timeline, review interactions, artifact import/export patterns
 - `docs/backend/`
-  - Pipelines, artifact contracts, Python standards, orchestration, result synthesis
+  - Pipelines, artifact contracts, Python standards, orchestration, summary assembly, and revised-markdown flow
 - `docs/agents/`
   - Agent responsibilities, instructions, dependency graph, provider routing
 - `docs/operations/`

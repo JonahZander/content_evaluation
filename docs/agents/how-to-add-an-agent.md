@@ -21,7 +21,7 @@ Create a markdown file somewhere under:
 services/api/src/content_evaluation/agents/instructions/
 ```
 
-The registry entry's `instruction_file` should point to that relative path. Most agents use a flat file like `value.md`; nested paths like `fact_check/research_brief.md` also work.
+The registry entry's `instruction_file` should point to that relative path. Most agents use a flat file like `editorial.md`; nested paths like `fact_check/research_brief.md` also work.
 
 Write the analysis prompt. Follow the patterns in the existing instruction files:
 - State the agent's job in one sentence.
@@ -65,8 +65,8 @@ AgentDefinition(
 
 **Dependency notes:**
 - `depends_on=()` means the agent runs in parallel with other independent agents.
-- `depends_on=("fact_check", "value")` means this agent waits for those agents first.
-- `synthesis` already depends on all current specialist agents; update its `depends_on` if your agent should feed into the synthesis score.
+- `depends_on=("fact_check", "ai_likelihood")` means this agent waits for those agents first.
+- New run planning currently schedules `fact_check`, `ai_likelihood`, and `editorial` for the main flow. If your new agent should participate there, update the dependency graph and current-workflow docs together.
 
 ## Step 4: Verify whether orchestration changes are actually needed
 

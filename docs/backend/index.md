@@ -1,6 +1,6 @@
 # Backend Docs
 
-Read this section for ingestion, artifact orchestration, background execution, exports, and result synthesis.
+Read this section for ingestion, artifact orchestration, background execution, exports, summary assembly, and revised-markdown generation.
 
 ## Files
 

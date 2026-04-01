@@ -45,7 +45,7 @@
   display: grid;
   grid-template-columns: 1.35fr 0.65fr;
   gap: 0;
-  align-items: start;
+  align-items: flex-start;
 }
 
 .titleRow > *:not(:last-child) {
@@ -110,6 +110,43 @@
   border-radius: 0;
 }
 
+.demoArtifactPanel {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(260px, 0.8fr);
+  gap: 20px;
+  padding: 22px;
+  border-bottom: 1px solid var(--line);
+  background:
+    linear-gradient(135deg, rgba(0, 0, 0, 0.02), transparent 55%),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.025), transparent 65%);
+}
+
+.demoArtifactCopy {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.demoArtifactTitle {
+  margin: 0;
+  font-size: clamp(1.5rem, 2.8vw, 2.2rem);
+  line-height: 1.02;
+}
+
+.demoArtifactBody,
+.demoArtifactHint {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.demoArtifactActions {
+  display: grid;
+  gap: 12px;
+  align-content: center;
+  justify-items: start;
+}
+
 .toolbarSettings {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
@@ -151,7 +188,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
-  align-items: start;
+  align-items: flex-start;
 }
 
 .sourceComposerReadOnly {
@@ -519,6 +556,40 @@
   animation: fadeInCard 400ms ease-out;
 }
 
+.runningStatusLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+  white-space: nowrap;
+}
+
+.runningStatusDots {
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-template-columns: repeat(3, 0.45em);
+  gap: 0.12em;
+  width: calc(3 * 0.45em + 2 * 0.12em);
+  justify-content: flex-start;
+  align-items: center;
+}
+
+.runningStatusDot {
+  width: 0.35em;
+  height: 0.35em;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.18;
+  animation: runningStatusDotPulse 1.2s ease-in-out infinite;
+}
+
+.runningStatusDot:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.runningStatusDot:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
 .runningPreviewText,
 .runningPreviewSuggestion {
   margin: 0;
@@ -650,11 +721,6 @@
   color: var(--muted);
 }
 
-.animatedDots {
-  display: inline-block;
-  min-width: 1.5ch;
-}
-
 .runningSourcePreview {
   margin-top: 16px;
   border: 1px solid var(--line);
@@ -718,6 +784,19 @@
   }
 }
 
+@keyframes runningStatusDotPulse {
+  0%,
+  100% {
+    opacity: 0.18;
+    transform: translateY(0);
+  }
+
+  50% {
+    opacity: 1;
+    transform: translateY(-1px);
+  }
+}
+
 .analysisContextPanel {
   padding: 0 22px 18px;
   border-bottom: 1px solid var(--line);
@@ -734,7 +813,7 @@
 
 .researchPanelHeader {
   display: flex;
-  align-items: start;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
 }
@@ -872,7 +951,7 @@
   flex-wrap: wrap;
   justify-content: space-between;
   gap: 12px;
-  align-items: start;
+  align-items: flex-start;
 }
 
 .diffReviewHeaderText {
@@ -1157,7 +1236,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.95fr);
   gap: 24px;
-  align-items: start;
+  align-items: flex-start;
   padding: 0 0 26px;
   border-bottom: 1px solid var(--line);
 }
@@ -1466,7 +1545,7 @@
 
 .replyHeader {
   display: flex;
-  align-items: start;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
 }
@@ -1586,7 +1665,7 @@
 .eventItem {
   display: grid;
   grid-template-columns: minmax(0, 1.8fr) minmax(180px, 0.8fr);
-  align-items: start;
+  align-items: flex-start;
   gap: 12px;
   padding: 10px 0;
   border-bottom: 1px solid var(--line);
@@ -1718,6 +1797,10 @@
 
   .sourceComposer,
   .eventItem {
+    grid-template-columns: 1fr;
+  }
+
+  .demoArtifactPanel {
     grid-template-columns: 1fr;
   }
 

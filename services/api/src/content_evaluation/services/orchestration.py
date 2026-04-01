@@ -483,14 +483,15 @@ class RunOrchestrator:
             return artifact
 
     async def apply_diff_review(self, artifact_id: UUID) -> AnalysisArtifact:
-        """Apply reviewed diff decisions and promote the accepted markdown."""
+        """Apply reviewed diff decisions and promote the accepted markdown.
+
+        Unaccepted diff items keep their original markdown span.
+        """
 
         async with self._artifact_lock(artifact_id):
             artifact = await self._require_artifact(artifact_id)
             if artifact.document is None or artifact.diff_review is None:
                 raise ValidationError("No revised markdown diff is available to apply.")
-            if any(item.decision is RevisedMarkdownDiffDecision.PENDING for item in artifact.diff_review.diff_items):
-                raise ValidationError("Review every diff item before applying revised markdown.")
 
             applied_markdown = _apply_diff_review(artifact.diff_review)
             previous_document = artifact.document.model_copy(deep=True)

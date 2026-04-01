@@ -151,11 +151,11 @@ Review this file for:
 - source resolution
 - normalization
 - dependency expansion and scheduling
-- similarity search
+- fact-check-backed overlap research and targeted follow-up research
 - per-agent analysis
 - anchor creation
 - agent comment creation
-- summary scoring
+- summary scoring and review-summary assembly
 - artifact event logging
 
 ### Review mutations

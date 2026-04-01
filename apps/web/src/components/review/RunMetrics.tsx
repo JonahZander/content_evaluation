@@ -33,7 +33,7 @@ export function RunMetrics({ summary }: RunMetricsProps) {
       ? `${summaryMetrics.estimated_reading_time_minutes} min read`
       : "Pending";
 
-  const overallScore = summary?.overall_score != null ? `${Math.round(summary.overall_score * 100)}%` : "—";
+  const overallScore = summary?.overall_score != null ? `${summary.overall_score}%` : "—";
   const verdict = summary?.verdict ?? null;
 
   return (

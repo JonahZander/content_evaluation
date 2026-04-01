@@ -7,7 +7,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 ## Target UI Regions
 
 - Intake panel
-  - URL input with explicit draft-import preview, file upload, pasted text, artifact import, and agent selectors
+  - Guided demo entry, URL input with explicit draft-import preview, file upload, pasted text, artifact import, and agent selectors
 - Progress panel
   - Phase-2-only running view with progress bar, per-agent status, stage timeline, retry/resume notices, partial findings, and run log
 - Run log
@@ -23,9 +23,9 @@ Provide a high-legibility review surface where users can inspect source text, wa
   - Prefills from suggested fact-check research prompts when available, otherwise opens empty
 - Revised markdown panel
   - Lives in an isolated Phase 4 shell once a candidate revision exists
-  - Supports both side-by-side and inline review modes, with the default view matching the revision mode
+  - Uses mode-specific review layouts instead of one shared diff surface
   - Full rewrites should read as a clean original-vs-candidate comparison with one apply/discard choice
-  - Partial rewrites should read as one flowing document with inline keep/discard controls for each changed section before the working draft is replaced
+  - Surgical revisions should read as one flowing document with inline keep/discard controls and word-level change highlights embedded directly in context
 - Source text pane
   - Selectable text with highlighted spans in paragraph rows
   - Supports lightweight markdown presentation for headings, inline emphasis, inline links, and fenced code blocks
@@ -42,7 +42,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
   - Phase 1 shows only intake/import controls plus any URL or draft preview
   - Phase 2 shows only the running view and does not render the full workbench behind it
   - Phase 3 shows the review workbench, metrics, summary, source pane, and inline comment rail
-  - Phase 4 isolates revised-markdown diff review until all diff decisions are recorded
+  - Phase 4 isolates revised-markdown diff review until the revision is applied
 
 ## Implementation Notes
 
@@ -65,6 +65,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Imported URL previews should support reversible per-block removal before analysis so boilerplate or irrelevant sections can be excluded without editing the raw draft.
 - Imported URL previews should keep removed blocks in place with muted styling and a remove/restore toggle so the layout does not shift while the reviewer prunes the draft.
 - URL preview pruning stays in Phase 1 so the reviewer can normalize the draft before the first run.
+- The intake shell should offer one curated `Open demo review` entry that imports a finished artifact directly into the review workbench, with generic artifact import still available as a secondary path.
 - Workspace persistence should be the preselected mode for new analyses so reloads can recover the canonical artifact from the backend.
 - Session persistence should remain available as a lightweight local option, but the browser should only store restore metadata rather than a full artifact snapshot.
 - Comments identify the agent or reviewer that produced them.
@@ -74,7 +75,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Research-category agent comments should expose `Ask follow-up` in that same action row and reuse the inline composer shell with follow-up language in the placeholder and submit label.
 - Completed, failed, or canceled artifacts should support additive follow-up analysis on the same artifact instead of forcing a new run.
 - Terminal artifacts with accepted agent suggestions should expose a `Generate revised markdown` action.
-- Once revised markdown exists, the reviewer must accept or reject every diff item before the reviewed markdown can be applied.
+- Once revised markdown exists, the reviewer can apply accepted diff items without resolving every pending item first.
 - Follow-up analysis should stay blocked while revised-markdown diff review is pending or waiting to be applied.
 - Human standalone comments can be edited or deleted inline.
 - Human replies should expose a compact trash delete affordance in the thread UI.
@@ -90,6 +91,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Export and import actions should be visible from the main toolbar.
 - The toolbar should expose JSON, Markdown, and compact Markdown todo exports from the main action row.
 - The toolbar should expose revision actions only when current-revision accepted agent suggestions exist and no diff review is already active.
+- The review shell should repeat the revision action row near the bottom of the page so reviewers can trigger revision after finishing a full scroll through comments and source text.
 - The toolbar should expose a stop-run action for queued/running work and a new-analysis reset action.
 - The toolbar should keep the pasted-text composer in its own full-width source row beneath source selection controls.
 - Pasted-text runs should keep that composer visible in later phases as a dimmed read-only reference instead of removing it once the run begins.
@@ -121,7 +123,9 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Queued or running progress bars should animate even while the percentage is unchanged so the reviewer can see that work is still active.
 - Retry and resume events should be visible in both the run log and the per-agent status area.
 - Partial findings should rotate in a focused running preview card during Phase 2 rather than exposing the full workbench.
+- The rotating Phase 2 preview card should advance on a calm 5-second cadence so the running state stays readable in demos and screenshots.
 - The rotating Phase 2 preview card should stay fixed-height, scroll long content, and clearly read as a live placeholder surface instead of a final comment card.
+- The `RUNNING` status treatment should reserve fixed dot slots so the label never shifts as the dots animate.
 - Phase 2 should keep the submitted source text visible in a collapsible panel so reviewers can reread the draft while analysis is still running.
 - Append-agent runs should keep the review shell visible and surface only a compact inline progress strip while they are active.
 - Targeted research runs should keep the review shell visible and use the same compact inline progress treatment as append-agent runs.
@@ -134,16 +138,19 @@ Provide a high-legibility review surface where users can inspect source text, wa
   - `Apply changes` for surgical mode
   - `Rewrite draft` for full-document mode with an optional/required direction prompt in the UI before submit
 - Phase 4 should label which mode produced the candidate revision and surface the rewrite direction when one was supplied.
-- Phase 4 should let reviewers switch between side-by-side and inline diff views without changing the underlying candidate revision.
+- Rewrite-mode Phase 4 may let reviewers switch between side-by-side and inline diff views without changing the underlying candidate revision.
 - Full-document rewrites should default to side-by-side review with one discard action that marks every diff rejected without applying the candidate draft.
-- Surgical revisions should default to inline review with removed text struck through, added text highlighted, and the apply action blocked until every change has a decision.
+- Surgical revisions should use one inline reading surface only, with removed text struck through, added text highlighted at word level, no duplicate summary cards underneath, and the apply action enabled as soon as at least one change is accepted.
+- Inline apply copy should make clear that only accepted changes are promoted while pending or unreviewed changes stay unchanged.
+- If revised-markdown review state is stale and the backend no longer has that diff review, the frontend should exit Phase 4 and return the reviewer to the main comment/review shell with a clear status message instead of leaving a dead diff screen visible.
 - Preserved historical fact-check and research findings should stay visible after apply, but they must be clearly marked as `original draft` findings and must not count as current-draft accepted suggestions.
 - When preserved historical findings still map honestly into the revised draft they may render inline with an original-draft indicator; otherwise they should appear in a separate clearly labeled original-draft section backed by the archived previous snapshot.
 - Debug visibility should be toggleable when the artifact includes debug trace data.
 - Empty states are shown when no artifact or no comment threads are present.
 - Synthetic unmatched-reference blocks should render with visibly distinct fallback styling so reviewers can tell they are not original article text.
 - When an anchor cannot be matched into one contiguous set of adjacent rendered blocks, its thread should render after the article in an unmatched-reference section instead of attaching to the first paragraph.
-- Revised-markdown diff review is isolated from the main workbench until all diff decisions are recorded and the revision is applied.
+- Revised-markdown diff review is isolated from the main workbench until the revision is applied.
+- If a stored revised-markdown diff review can no longer be refetched from the backend, the workbench should reopen the main review/comment shell from the saved draft context instead of falling back to intake.
 
 ## Boundaries
 

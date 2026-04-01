@@ -52,11 +52,11 @@ Load only the section needed for the current task.
 
 - Inputs: URL, pasted text, `.txt`, `.md`, imported artifact JSON
 - Primary contract: `AnalysisArtifact` produced by the API and rendered by the UI
-- Runtime modes: `session` by default, optional `workspace` persistence
-- Review UI: paragraph-row text and comment layout, review summary panel, fact-check and targeted-research comment rails, SVG connector lines, live agent progress, agent selection, artifact import/export
+- Default UI path: `workspace` persistence with session restore metadata kept in the browser; imported artifacts and session-mode runs remain supported
+- Review UI: guided demo entry, paragraph-row text and comment layout, review summary panel, fact-check and targeted-research comment rails, SVG connector lines, live agent progress, agent selection, artifact import/export
 - Review actions: reply to comments, create reviewer comments, accept/reject/uncertain agent comments
-- Agents: fact-check, targeted research, AI-likelihood, value, audience, editorial, and synthesis; overlap research now hangs off fact-check instead of a standalone top-level similarity surface
+- Agents: fact-check, targeted research, AI-likelihood, and editorial; overlap research now hangs off fact-check instead of a standalone top-level similarity surface, and revised markdown is a post-run workflow rather than a first-pass agent
 - Backend surfaces now include a dedicated targeted-research endpoint for prompt-scoped follow-ups on terminal artifacts
-- Exports: Markdown and JSON derived directly from the artifact
+- Exports: compact Todo Markdown, full Markdown, and JSON derived directly from the artifact
 - Runtime visibility: `/health`, `/ready`, run events, SSE stream, optional debug trace
 - Browser E2E coverage: Playwright installed through the official setup flow in `apps/web`

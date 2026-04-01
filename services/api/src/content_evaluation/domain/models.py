@@ -413,7 +413,7 @@ class ArtifactAgentResult(BaseModel):
 class ArtifactSummary(BaseModel):
     """Store aggregate scores and narrative summary."""
 
-    overall_score: int
+    overall_score: int = Field(ge=0, le=100)
     verdict: str
     value_summary: str = ""
     audience_summary: str = ""

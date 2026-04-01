@@ -14,27 +14,27 @@ Writers and editors need a fast way to judge whether a blog post is original, us
 ## Current Outputs
 
 - Canonical `AnalysisArtifact` snapshots that can be created without the frontend
-- Similar-content findings from online research
+- Fact-check findings with linked evidence and overlap research
 - AI-generation likelihood estimate
-- Main value proposition summary
-- Likely target audience
-- Reading-worthiness evaluation
-- Section-level comments and revision suggestions anchored to text spans
+- Fact-check-backed review summary data such as TL;DR, inferred audience, overlap items, and overall review metrics
+- Section-level editorial comments and revision suggestions anchored to text spans
+- Targeted follow-up research appended to an existing artifact
 - Threaded reviewer replies beneath agent comments
 - Reviewer decisions on agent comments: `accepted`, `rejected`, `uncertain`
 - Evidence trail showing run events, agent stages, and model names
-- Markdown and JSON exports
+- Todo Markdown, full Markdown, and JSON exports
 - Optional debug/trace information about agent execution
 
 ## Primary User Flow
 
 1. User submits content or imports an existing artifact.
-2. The API creates a session-oriented artifact and a run config, including selected agents.
+2. The API creates an artifact plus run config, including selected agents and persistence mode.
 3. The system normalizes the text into a shared document model with ordered blocks.
 4. A LangGraph-backed orchestrator expands agent dependencies, resumes from checkpoints when needed, runs independent agents in parallel, waits for prerequisite-driven agents, and merges each result into the artifact.
-5. The UI shows live progress, partial findings, summary data, anchored comments, and export actions.
-6. The reviewer replies to comments, marks agent comments accepted/rejected/uncertain, and can add standalone comments on selected text.
-7. The artifact can be exported, re-imported, or optionally persisted in workspace mode.
+5. The UI can also open one curated demo artifact directly into the review workbench.
+6. The UI shows live progress, partial findings, summary data, anchored comments, and export actions.
+7. The reviewer replies to comments, marks agent comments accepted/rejected/uncertain, can add standalone comments on selected text, and can trigger revised-markdown generation after accepting suggestions.
+8. The artifact can be exported, re-imported, or persisted in workspace mode.
 
 ## Product Principles
 

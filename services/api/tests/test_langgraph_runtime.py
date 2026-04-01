@@ -9,6 +9,7 @@ from content_evaluation.domain.models import (
     ArtifactBlock,
     ContentFormat,
     GraphCheckpoint,
+    GraphNodeResult,
     GraphRunState,
     OrchestratorBackend,
     ProviderRoute,
@@ -25,6 +26,7 @@ from content_evaluation.providers.mock.providers import (
 )
 from content_evaluation.repositories.in_memory import InMemoryRunRepository
 from content_evaluation.services.orchestration import RunOrchestrator, _result_context_payload
+from content_evaluation.services.comments import CommentService
 
 
 class CrossParagraphAnalysisProvider(MockAnalysisProvider):
@@ -115,6 +117,27 @@ class RetryOnceAnalysisProvider(MockAnalysisProvider):
         return await super().analyze(agent_id, instruction, title, blocks, context, route)
 
 
+class FailingAnalysisProvider(MockAnalysisProvider):
+    """Fail if LangGraph ever tries to execute an agent node."""
+
+    async def analyze(
+        self,
+        agent_id: str,
+        instruction: str,
+        title: str,
+        blocks: list[ArtifactBlock],
+        context: dict[str, object] | None = None,
+        route: ProviderRoute | None = None,
+    ) -> dict[str, object]:
+        del agent_id
+        del instruction
+        del title
+        del blocks
+        del context
+        del route
+        raise AssertionError("provider should not be called when the checkpoint already completed the agent")
+
+
 @pytest.mark.asyncio
 async def test_langgraph_run_completes_and_clears_checkpoint() -> None:
     """Process one run through LangGraph and clear the checkpoint on completion."""
@@ -200,6 +223,146 @@ async def test_langgraph_resume_uses_existing_checkpoint() -> None:
     assert updated.document is not None
     assert updated.status.value == "completed"
     assert any(event.status == "resumed" for event in updated.events)
+
+
+@pytest.mark.asyncio
+async def test_langgraph_resume_does_not_duplicate_agent_output_after_checkpoint_failure() -> None:
+    """If checkpoint persistence fails after merge, a retry should reuse the persisted output."""
+
+    repository = InMemoryRunRepository()
+    orchestrator = RunOrchestrator(
+        repository,
+        MockAnalysisProvider(),
+        MockSimilaritySearchProvider(),
+        MockContentExtractionProvider(),
+        RuntimeMode.MOCK,
+        False,
+        OrchestratorBackend.LANGGRAPH,
+        deep_research_provider=MockDeepResearchProvider(),
+    )
+    input_data = RunInput(
+        source_type=SourceType.TEXT,
+        source_label="Draft",
+        title="Draft",
+        text="Alpha paragraph.\n\nBeta paragraph.",
+        selected_agents=["editorial"],
+    )
+    artifact = await orchestrator.create_run(input_data)
+
+    original_save_graph_checkpoint = repository.save_graph_checkpoint
+    failed_once = False
+
+    async def flaky_save_graph_checkpoint(checkpoint: GraphCheckpoint) -> GraphCheckpoint:
+        nonlocal failed_once
+        if not failed_once and "editorial" in checkpoint.state.completed_agents:
+            failed_once = True
+            raise RuntimeError("checkpoint write failed")
+        return await original_save_graph_checkpoint(checkpoint)
+
+    repository.save_graph_checkpoint = flaky_save_graph_checkpoint  # type: ignore[assignment]
+
+    with pytest.raises(RuntimeError, match="checkpoint write failed"):
+        await orchestrator.process_run(artifact.artifact_id, input_data)
+
+    failed_artifact = await repository.get_artifact(artifact.artifact_id)
+    assert failed_artifact is not None
+    editorial_comments = [
+        comment
+        for thread in failed_artifact.threads
+        for comment in thread.comments
+        if comment.category.value == "editorial"
+    ]
+    assert len(editorial_comments) == 1
+
+    comment_service = CommentService(repository, reviewer_name="Reviewer")
+    reply = await comment_service.add_reply(editorial_comments[0].id, "human reply")
+    assert reply.body == "human reply"
+
+    await orchestrator.process_run(artifact.artifact_id, input_data)
+
+    updated = await repository.get_artifact(artifact.artifact_id)
+    assert updated is not None
+    assert updated.status.value == "completed"
+    assert [result.agent_id for result in updated.agent_results].count("editorial") == 1
+    final_editorial_comments = [
+        comment
+        for thread in updated.threads
+        for comment in thread.comments
+        if comment.category.value == "editorial"
+    ]
+    assert len(final_editorial_comments) == 1
+    assert len(final_editorial_comments[0].replies) == 1
+    assert final_editorial_comments[0].replies[0].body == "human reply"
+    assert await repository.get_graph_checkpoint(artifact.artifact_id) is None
+
+
+@pytest.mark.asyncio
+async def test_langgraph_resume_skips_agent_when_checkpoint_marks_it_completed() -> None:
+    """A checkpoint that already marks an agent complete should skip its provider call."""
+
+    repository = InMemoryRunRepository()
+    initial_orchestrator = RunOrchestrator(
+        repository,
+        MockAnalysisProvider(),
+        MockSimilaritySearchProvider(),
+        MockContentExtractionProvider(),
+        RuntimeMode.MOCK,
+        False,
+        OrchestratorBackend.LANGGRAPH,
+        deep_research_provider=MockDeepResearchProvider(),
+    )
+    input_data = RunInput(
+        source_type=SourceType.TEXT,
+        source_label="Draft",
+        title="Draft",
+        text="Alpha paragraph.\n\nBeta paragraph.",
+        selected_agents=["ai_likelihood"],
+    )
+    artifact = await initial_orchestrator.create_run(input_data)
+    await initial_orchestrator.process_run(artifact.artifact_id, input_data)
+
+    await repository.save_graph_checkpoint(
+        GraphCheckpoint(
+            artifact_id=artifact.artifact_id,
+            state=GraphRunState(
+                artifact_id=artifact.artifact_id,
+                input_data=input_data,
+                selected_agents=artifact.run_config.selected_agents,
+                resolved_agents=artifact.run_config.resolved_agents,
+                extracted_content=input_data.text,
+                extracted_title=input_data.title,
+                extracted_content_format=ContentFormat.MARKDOWN,
+                completed_nodes=["resolve_source", "normalize_document", "plan_agents", "ai_likelihood"],
+                completed_agents=["ai_likelihood"],
+                node_results=[
+                    GraphNodeResult(
+                        node_id="ai_likelihood",
+                        agent_id="ai_likelihood",
+                        status="completed",
+                    )
+                ],
+            ),
+        )
+    )
+
+    orchestrator = RunOrchestrator(
+        repository,
+        FailingAnalysisProvider(),
+        MockSimilaritySearchProvider(),
+        MockContentExtractionProvider(),
+        RuntimeMode.MOCK,
+        False,
+        OrchestratorBackend.LANGGRAPH,
+        deep_research_provider=MockDeepResearchProvider(),
+    )
+
+    await orchestrator.process_run(artifact.artifact_id, input_data)
+
+    updated = await repository.get_artifact(artifact.artifact_id)
+    assert updated is not None
+    assert updated.status.value == "completed"
+    assert [result.agent_id for result in updated.agent_results].count("ai_likelihood") == 1
+    assert await repository.get_graph_checkpoint(artifact.artifact_id) is None
 
 
 @pytest.mark.asyncio

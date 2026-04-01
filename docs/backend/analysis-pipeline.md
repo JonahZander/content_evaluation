@@ -51,6 +51,9 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
     - `editorial` depends on `fact_check` and `ai_likelihood`
   - `value`, `audience`, and first-pass `synthesis` are no longer scheduled in the main run
   - Retry transient provider timeouts and network failures inside the individual agent execution loop before failing the run
+  - Fact-check and targeted research pass the full normalized article text into deep research by default
+  - If a deep-research model rejects the full article for token length, retry once with a deterministic paragraph-preserving reduced article body and record that fallback in metadata
+  - LangGraph agent nodes re-check the latest durable checkpoint before commit so a worker retry can reuse already-persisted agent output without duplicating comments or losing human replies
    - Emit progress events and partial artifact updates as each agent completes
    - Capture token usage (`input_tokens`, `output_tokens`) in `AgentExecutionResult.usage` after each LLM call; populated by the LangChain, deep research, and mock providers
    - Use LangChain chat-model adapters for analysis nodes
@@ -111,7 +114,9 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 - `api/dependencies.py`
   - Long-lived service container; `AppServices.stop()` closes provider HTTP clients on shutdown
 - `services/orchestration.py`
-  - Session/workspace run lifecycle, backend selection (`append_agents`, `langgraph`, or `legacy`), dependency-driven scheduling, checkpoint persistence, and artifact assembly
+  - Session/workspace run lifecycle, backend selection (`append_agents`, `langgraph`, or `legacy`), dependency-driven scheduling, checkpoint persistence, resumable LangGraph commits, and artifact assembly
+- `providers/deep_research/provider.py`
+  - Full-text-first deep research wrapper with single-shot token-limit fallback for oversized article prompts
 - `providers/langchain/client.py`
   - LangChain-backed provider routing across OpenAI, Anthropic, and Gemini
   - Chat models are cached per (family, model_name) pair for the lifetime of the provider

@@ -1176,6 +1176,28 @@ class RunOrchestrator:
             await self._ensure_run_active(state["artifact_id"])
             async with self._artifact_lock(state["artifact_id"]):
                 artifact = await self._require_artifact(state["artifact_id"])
+                checkpoint = await self._repository.get_graph_checkpoint(state["artifact_id"])
+                if checkpoint is not None and definition.agent_id in checkpoint.state.completed_agents:
+                    existing_result = _result_for_current_revision(artifact, agent_id=definition.agent_id)
+                    if existing_result is None:
+                        return {}
+                    return _graph_agent_completion_updates(
+                        definition,
+                        existing_result,
+                        model_name=_require_plan_item(artifact, definition.agent_id).model_name,
+                    )
+
+                existing_result = _result_for_current_revision(artifact, agent_id=definition.agent_id)
+                if existing_result is not None:
+                    updates = _graph_agent_completion_updates(
+                        definition,
+                        existing_result,
+                        model_name=_require_plan_item(artifact, definition.agent_id).model_name,
+                    )
+                    if checkpoint is None or definition.agent_id not in checkpoint.state.completed_agents:
+                        await self._checkpoint_graph_state(state, updates)
+                    return updates
+
                 plan_item = _require_plan_item(artifact, definition.agent_id)
                 if plan_item.status is not AgentPlanStatus.COMPLETED:
                     plan_item.status = AgentPlanStatus.RUNNING
@@ -1202,25 +1224,29 @@ class RunOrchestrator:
                             agent_id=definition.agent_id,
                             agent_name=definition.display_name,
                         )
-                result = await self._execute_agent_with_retries(artifact, definition)
-                await self._merge_agent_result(artifact, result)
 
-            updates: dict[str, object] = {
-                "completed_nodes": [definition.agent_id],
-                "completed_agents": [definition.agent_id],
-                "node_results": [
-                    GraphNodeResult(
-                        node_id=definition.agent_id,
-                        agent_id=definition.agent_id,
-                        status="completed",
-                        summary=result.summary,
-                        model_name=result.model_name,
-                        metadata=result.metadata,
-                    ).model_dump(mode="json")
-                ],
-            }
-            await self._checkpoint_graph_state(state, updates)
-            return updates
+                execution_artifact = artifact.model_copy(deep=True)
+
+            result = await self._execute_agent_with_retries(execution_artifact, definition)
+
+            async with self._artifact_lock(state["artifact_id"]):
+                artifact = await self._require_artifact(state["artifact_id"])
+                checkpoint = await self._repository.get_graph_checkpoint(state["artifact_id"])
+                existing_result = _result_for_current_revision(artifact, agent_id=definition.agent_id)
+                if existing_result is not None:
+                    updates = _graph_agent_completion_updates(
+                        definition,
+                        existing_result,
+                        model_name=_require_plan_item(artifact, definition.agent_id).model_name,
+                    )
+                    if checkpoint is None or definition.agent_id not in checkpoint.state.completed_agents:
+                        await self._checkpoint_graph_state(state, updates)
+                    return updates
+
+                await self._merge_agent_result(artifact, result)
+                updates = _graph_agent_completion_updates(definition, result)
+                await self._checkpoint_graph_state(state, updates)
+                return updates
 
         return _run_agent
 
@@ -1533,6 +1559,9 @@ class RunOrchestrator:
 
         if artifact.document is None:
             raise ValidationError("Artifact document is missing")
+        existing_result = _result_for_current_revision(artifact, agent_id=result.definition.agent_id)
+        if replace_existing_results and existing_result is not None:
+            return
         plan_item = _require_plan_item(artifact, result.definition.agent_id)
         plan_item.status = AgentPlanStatus.COMPLETED
         plan_item.completed_at = datetime.now(UTC)
@@ -1563,6 +1592,7 @@ class RunOrchestrator:
                 suggestion=finding.suggestion,
                 sources=finding.sources,
                 metadata={
+                    "agent_id": result.definition.agent_id,
                     "excerpt": cleaned_excerpt,
                     "anchor_match_kind": anchor.match_kind.value,
                     "matched_to_source": anchor.match_kind == ArtifactAnchorMatchKind.SOURCE,
@@ -1709,7 +1739,9 @@ class RunOrchestrator:
     async def _checkpoint_graph_state(self, state: LangGraphState, updates: dict[str, object]) -> None:
         """Persist one merged graph checkpoint snapshot."""
 
-        merged = self._merge_graph_state(state, updates)
+        checkpoint = await self._repository.get_graph_checkpoint(state["artifact_id"])
+        base_state = self._graph_state_to_dict(checkpoint.state) if checkpoint is not None else state
+        merged = self._merge_graph_state(base_state, updates)
         await self._repository.save_graph_checkpoint(
             GraphCheckpoint(
                 artifact_id=merged.artifact_id,
@@ -2046,6 +2078,38 @@ def _progress_for_artifact(artifact: AnalysisArtifact) -> float:
     completed = sum(1 for item in artifact.agent_plan if item.status is AgentPlanStatus.COMPLETED)
     running = sum(1 for item in artifact.agent_plan if item.status is AgentPlanStatus.RUNNING)
     return min(0.99, (completed + (0.5 if running else 0.0)) / len(artifact.agent_plan))
+
+
+def _graph_agent_completion_updates(
+    definition: AgentDefinition,
+    result: AgentExecutionResult | ArtifactAgentResult,
+    *,
+    model_name: str | None = None,
+) -> dict[str, object]:
+    """Build the LangGraph state updates for one completed agent."""
+
+    resolved_model_name = model_name
+    if resolved_model_name is None and isinstance(result, AgentExecutionResult):
+        resolved_model_name = result.model_name
+    if resolved_model_name is None:
+        resolved_model_name = _coerce_str(getattr(result, "metadata", {}).get("model_name"))
+
+    summary = result.summary
+    metadata = dict(result.metadata)
+    return {
+        "completed_nodes": [definition.agent_id],
+        "completed_agents": [definition.agent_id],
+        "node_results": [
+            GraphNodeResult(
+                node_id=definition.agent_id,
+                agent_id=definition.agent_id,
+                status="completed",
+                summary=summary,
+                model_name=resolved_model_name,
+                metadata=metadata,
+            ).model_dump(mode="json")
+        ],
+    }
 
 
 def _result_for_current_revision(

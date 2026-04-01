@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import uuid
 
 from langchain_core.callbacks import UsageMetadataCallbackHandler
@@ -12,6 +13,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from content_evaluation.config import Settings
 from content_evaluation.domain.models import AnalysisProviderFamily
 from content_evaluation.providers.deep_research.deep_researcher import deep_researcher_builder
+from content_evaluation.providers.deep_research.utils import get_model_token_limit, is_token_limit_exceeded
 
 _PROVIDER_MODEL_PREFIX: dict[AnalysisProviderFamily, str] = {
     AnalysisProviderFamily.OPENAI: "openai",
@@ -80,25 +82,53 @@ class LiveDeepResearchProvider:
     async def fact_check(self, brief: str, article_text: str) -> dict[str, object]:
         """Run multi-step research and return structured findings."""
 
-        full_brief = f"{brief}\n\nORIGINAL ARTICLE:\n{article_text[:4000]}"
-        return await self._invoke_graph(full_brief, article_text)
+        return await self._invoke_graph(brief, article_text, article_label="ORIGINAL ARTICLE")
 
     async def research(self, prompt: str, article_text: str) -> dict[str, object]:
         """Run prompt-scoped targeted research and return structured findings."""
 
-        full_brief = (
-            f"TARGETED FOLLOW-UP RESEARCH\n"
-            f"User prompt: {prompt}\n\n"
-            f"{article_text[:4000]}"
+        parsed = await self._invoke_graph(
+            f"TARGETED FOLLOW-UP RESEARCH\nUser prompt: {prompt}",
+            article_text,
+            article_label="ORIGINAL ARTICLE",
         )
-        parsed = await self._invoke_graph(full_brief, article_text)
         metadata = parsed.get("metadata")
         if isinstance(metadata, dict) and "suggested_research_prompt" not in metadata:
             metadata["suggested_research_prompt"] = prompt
         return parsed
 
-    async def _invoke_graph(self, full_brief: str, article_text: str) -> dict[str, object]:
+    async def _invoke_graph(
+        self,
+        lead_text: str,
+        article_text: str,
+        *,
+        article_label: str,
+    ) -> dict[str, object]:
         """Run the vendored graph and coerce its response into JSON."""
+
+        try:
+            return await self._invoke_graph_once(
+                self._build_full_brief(lead_text, article_text, article_label=article_label)
+            )
+        except Exception as error:
+            if not is_token_limit_exceeded(error, str(self._research_config["research_model"])):
+                raise
+
+        fallback_article_text = self._build_fallback_article_text(article_text)
+        parsed = await self._invoke_graph_once(
+            self._build_full_brief(lead_text, fallback_article_text, article_label=article_label)
+        )
+        metadata = parsed.setdefault("metadata", {})
+        if not isinstance(metadata, dict):
+            metadata = {}
+            parsed["metadata"] = metadata
+        metadata["token_limit_fallback_used"] = True
+        metadata["token_limit_fallback_chars"] = len(fallback_article_text)
+        metadata["token_limit_fallback_model"] = str(self._research_config["research_model"])
+        return parsed
+
+    async def _invoke_graph_once(self, full_brief: str) -> dict[str, object]:
+        """Run one graph attempt and coerce its response into JSON."""
 
         graph = deep_researcher_builder.compile(checkpointer=MemorySaver())
         usage_handler = UsageMetadataCallbackHandler()
@@ -124,7 +154,7 @@ class LiveDeepResearchProvider:
             parsed = {
                 "findings": [
                     {
-                        "excerpt": article_text[:80].strip(),
+                        "excerpt": full_brief[:80].strip(),
                         "rationale": raw[:500] or "Research completed but output was not valid JSON.",
                         "confidence": 0.5,
                         "suggestion": "Check raw output in metadata.raw_report.",
@@ -169,3 +199,40 @@ class LiveDeepResearchProvider:
             }
             parsed["metadata"]["usage_by_model"] = usage_by_model
         return parsed
+
+    @staticmethod
+    def _build_full_brief(lead_text: str, article_text: str, *, article_label: str) -> str:
+        """Build the full research prompt body."""
+
+        return f"{lead_text}\n\n{article_label}:\n{article_text}"
+
+    def _build_fallback_article_text(self, article_text: str) -> str:
+        """Return a deterministic reduced article body that preserves paragraph boundaries."""
+
+        if not article_text.strip():
+            return article_text
+
+        token_limit = get_model_token_limit(str(self._research_config["research_model"]))
+        paragraph_budget = max(1, len(article_text) // 2)
+        if token_limit is not None:
+            paragraph_budget = min(paragraph_budget, max(1, token_limit))
+
+        paragraphs = [paragraph.strip() for paragraph in re.split(r"\n\s*\n", article_text.strip()) if paragraph.strip()]
+        if not paragraphs:
+            return article_text[:paragraph_budget]
+
+        pieces: list[str] = []
+        used = 0
+        for paragraph in paragraphs:
+            separator = "\n\n" if pieces else ""
+            candidate_len = len(separator) + len(paragraph)
+            if pieces and used + candidate_len > paragraph_budget:
+                break
+            if not pieces and candidate_len > paragraph_budget:
+                return paragraph[:paragraph_budget]
+            pieces.append(paragraph)
+            used += candidate_len
+        reduced = "\n\n".join(pieces)
+        if not reduced:
+            return article_text[:paragraph_budget]
+        return reduced

@@ -1,5 +1,6 @@
 """Tests for the fact_check agent and related components."""
 
+import json
 import os
 from typing import Protocol
 
@@ -58,6 +59,10 @@ def test_build_fact_check_brief_limits_blocks():
     brief = build_fact_check_brief("T", blocks)
     assert "Block 9" in brief
     assert "Block 10" not in brief
+
+
+class _TokenLimitError(RuntimeError):
+    """Synthetic token-limit failure for retry tests."""
 
 
 @pytest.mark.asyncio
@@ -185,6 +190,137 @@ async def test_live_deep_research_provider_attaches_usage_handler(monkeypatch: p
     assert any(
         isinstance(cb, UsageMetadataCallbackHandler) for cb in callbacks
     ), "UsageMetadataCallbackHandler not found in config['callbacks']"
+
+
+@pytest.mark.asyncio
+async def test_live_deep_research_provider_fact_check_uses_full_article_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    """LiveDeepResearchProvider.fact_check must pass the full article text into the graph."""
+
+    import content_evaluation.providers.deep_research.provider as dr_module
+    from content_evaluation.config import Settings
+    from content_evaluation.providers.deep_research.provider import LiveDeepResearchProvider
+
+    captured: list[dict[str, object]] = []
+    article_text = "\n\n".join(
+        f"Paragraph {i} with enough detail to exceed the old truncation path and prove full-text passage."
+        for i in range(1, 80)
+    )
+
+    class FakeGraph:
+        async def ainvoke(self, input_: object, config: dict) -> dict:
+            del config
+            captured.append(input_)
+            return {"final_report": json.dumps({"findings": [], "summary": "ok", "metadata": {}})}
+
+    class FakeBuilder:
+        def compile(self, **_: object) -> FakeGraph:
+            return FakeGraph()
+
+    monkeypatch.setattr(dr_module, "deep_researcher_builder", FakeBuilder())
+
+    prov = LiveDeepResearchProvider(Settings(openai_api_key="key", tavily_api_key="key"))
+    await prov.fact_check("Check the article.", article_text)
+
+    assert len(captured) == 1
+    payload = captured[0]
+    assert isinstance(payload, dict)
+    message = payload["messages"][0]["content"]
+    assert isinstance(message, str)
+    assert message.endswith(article_text)
+    assert payload["research_brief"].endswith(article_text)
+
+
+@pytest.mark.asyncio
+async def test_live_deep_research_provider_research_uses_full_article_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    """LiveDeepResearchProvider.research must pass the full article text into the graph."""
+
+    import content_evaluation.providers.deep_research.provider as dr_module
+    from content_evaluation.config import Settings
+    from content_evaluation.providers.deep_research.provider import LiveDeepResearchProvider
+
+    captured: list[dict[str, object]] = []
+    article_text = "\n\n".join(
+        f"Paragraph {i} with enough detail to exceed the old truncation path and prove full-text passage."
+        for i in range(1, 80)
+    )
+
+    class FakeGraph:
+        async def ainvoke(self, input_: object, config: dict) -> dict:
+            del config
+            captured.append(input_)
+            return {"final_report": json.dumps({"findings": [], "summary": "ok", "metadata": {}})}
+
+    class FakeBuilder:
+        def compile(self, **_: object) -> FakeGraph:
+            return FakeGraph()
+
+    monkeypatch.setattr(dr_module, "deep_researcher_builder", FakeBuilder())
+
+    prov = LiveDeepResearchProvider(Settings(openai_api_key="key", tavily_api_key="key"))
+    await prov.research("Check the lead claim.", article_text)
+
+    assert len(captured) == 1
+    payload = captured[0]
+    assert isinstance(payload, dict)
+    message = payload["messages"][0]["content"]
+    assert isinstance(message, str)
+    assert message.endswith(article_text)
+    assert payload["research_brief"].endswith(article_text)
+
+
+@pytest.mark.asyncio
+async def test_live_deep_research_provider_retries_once_on_token_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """LiveDeepResearchProvider should retry once with a reduced article body on token-limit failures."""
+
+    import content_evaluation.providers.deep_research.provider as dr_module
+    from content_evaluation.config import Settings
+    from content_evaluation.providers.deep_research.provider import LiveDeepResearchProvider
+
+    captured: list[dict[str, object]] = []
+    article_text = "\n\n".join(
+        f"Paragraph {i} has distinct wording for the fallback check."
+        for i in range(1, 120)
+    )
+
+    class FakeGraph:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def ainvoke(self, input_: object, config: dict) -> dict:
+            del config
+            self.calls += 1
+            captured.append(input_)
+            if self.calls == 1:
+                raise _TokenLimitError("context length exceeded")
+            return {"final_report": json.dumps({"findings": [], "summary": "ok", "metadata": {}})}
+
+    class FakeBuilder:
+        def __init__(self) -> None:
+            self.graph = FakeGraph()
+
+        def compile(self, **_: object) -> FakeGraph:
+            return self.graph
+
+    monkeypatch.setattr(dr_module, "deep_researcher_builder", FakeBuilder())
+    monkeypatch.setattr(dr_module, "is_token_limit_exceeded", lambda error, model_name=None: isinstance(error, _TokenLimitError))
+    monkeypatch.setattr(dr_module, "get_model_token_limit", lambda model_name: 130)
+
+    prov = LiveDeepResearchProvider(Settings(openai_api_key="key", tavily_api_key="key"))
+    result = await prov.fact_check("Check the article.", article_text)
+
+    assert len(captured) == 2
+    first_message = captured[0]["messages"][0]["content"]
+    second_message = captured[1]["messages"][0]["content"]
+    assert isinstance(first_message, str)
+    assert isinstance(second_message, str)
+    assert first_message.endswith(article_text)
+    assert len(second_message) < len(first_message)
+    assert "Paragraph 1 has distinct wording for the fallback check." in second_message
+    assert "Paragraph 2 has distinct wording for the fallback check." in second_message
+    assert "Paragraph 3 has distinct wording for the fallback check." not in second_message
+    assert result["metadata"]["token_limit_fallback_used"] is True
+    assert result["metadata"]["token_limit_fallback_chars"] == len(second_message.split("ORIGINAL ARTICLE:\n", 1)[1])
+    assert result["metadata"]["token_limit_fallback_model"].startswith("openai:")
 
 
 @pytest.mark.asyncio

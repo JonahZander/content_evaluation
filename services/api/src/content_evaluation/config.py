@@ -1,6 +1,5 @@
 """Application settings."""
 
-from functools import lru_cache
 from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
@@ -98,8 +97,18 @@ class Settings(BaseSettings):
         return self
 
 
-@lru_cache(maxsize=1)
-def get_settings() -> Settings:
-    """Return cached application settings."""
+_settings: Settings | None = None
 
-    return Settings()
+
+def get_settings() -> Settings:
+    """Return the application settings singleton."""
+    global _settings
+    if _settings is None:
+        _settings = Settings()
+    return _settings
+
+
+def reset_settings() -> None:
+    """Reset the settings singleton (for test isolation)."""
+    global _settings
+    _settings = None

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from fastapi import Request
 
 from content_evaluation.config import Settings, get_settings
-from content_evaluation.domain.models import ReadinessReport
+from content_evaluation.domain.models import ReadinessReport, RuntimeMode
 from content_evaluation.logging import get_logger
 from content_evaluation.providers.deep_research.provider import LiveDeepResearchProvider
 from content_evaluation.providers.extraction.client import (
@@ -114,7 +114,7 @@ class AppServices:
     def _build_providers(settings: Settings) -> ProviderHealth:
         """Build provider instances and readiness metadata."""
 
-        if settings.runtime_mode.value == "live":
+        if settings.runtime_mode is RuntimeMode.LIVE:
             deep_research_provider = LiveDeepResearchProvider(settings)
             return ProviderHealth(
                 analysis_provider=LangChainAnalysisProvider(settings),

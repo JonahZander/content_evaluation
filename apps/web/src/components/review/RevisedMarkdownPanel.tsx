@@ -79,10 +79,10 @@ export function RevisedMarkdownPanel({
                     ? `Apply will include ${acceptedItems} accepted change${acceptedItems === 1 ? "" : "s"} and leave ${pendingItems} pending or unreviewed diff ${pendingItems === 1 ? "item" : "items"} unchanged.`
                     : `Apply will include only the ${acceptedItems} accepted change${acceptedItems === 1 ? "" : "s"} and leave any rejected changes out of the revised draft.`
                   : activeViewMode === "inline" && pendingItems > 0
-                    ? "Accept at least one diff item to enable apply. Pending or unreviewed changes will remain unchanged until they are reviewed."
+                    ? "Accept at least one diff item to enable apply. Pending changes will remain as-is in the applied draft."
                   : activeViewMode === "side-by-side"
                     ? "Review the full revision side by side, then apply or discard it as one decision."
-                    : "Accept at least one diff item to apply the reviewed markdown. Pending or unreviewed changes will remain unchanged."}
+                    : "Accept at least one diff item to apply changes."}
             </p>
           </div>
           <div className={styles.diffReviewHeaderActions}>

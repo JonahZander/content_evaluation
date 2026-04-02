@@ -1301,7 +1301,7 @@ describe("ReviewWorkbench", () => {
     expect(screen.queryByTestId("diff-summary-diff-1")).not.toBeInTheDocument();
     expect(
       screen.getByText(
-        "Accept at least one diff item to enable apply. Pending or unreviewed changes will remain unchanged until they are reviewed.",
+        "Accept at least one diff item to enable apply. Pending changes will remain as-is in the applied draft.",
       ),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Apply accepted changes" })).toBeDisabled();
@@ -1406,6 +1406,23 @@ describe("ReviewWorkbench", () => {
     );
     expect(api.applyRevisedMarkdown).not.toHaveBeenCalled();
     expect(screen.getByTestId("diff-view-toggle-side-by-side")).toBeInTheDocument();
+  });
+
+  it("unblocks additive analysis after applying a discarded revision", async () => {
+    const rewriteArtifact = buildArtifactWithRewriteDiffReview();
+    vi.mocked(api.updateRevisedMarkdownDiffReview).mockResolvedValueOnce(buildArtifactWithRejectedRewriteDiffs());
+    vi.mocked(api.applyRevisedMarkdown).mockResolvedValueOnce(buildArtifactAfterAppliedRevision());
+
+    render(<ReviewWorkbench initialArtifact={rewriteArtifact} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Discard revision" }));
+    await waitFor(() => expect(api.updateRevisedMarkdownDiffReview).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole("button", { name: "Apply full revision" }));
+    await waitFor(() => expect(api.applyRevisedMarkdown).toHaveBeenCalled());
+
+    expect(screen.queryByTestId("diff-review-shell")).not.toBeInTheDocument();
+    expect(screen.getByTestId("review-workbench")).toBeInTheDocument();
   });
 
   it("shares rewrite state between the top and bottom revision actions", () => {

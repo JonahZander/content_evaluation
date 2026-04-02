@@ -110,43 +110,6 @@
   border-radius: 0;
 }
 
-.demoArtifactPanel {
-  display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(260px, 0.8fr);
-  gap: 20px;
-  padding: 22px;
-  border-bottom: 1px solid var(--line);
-  background:
-    linear-gradient(135deg, rgba(0, 0, 0, 0.02), transparent 55%),
-    linear-gradient(90deg, rgba(0, 0, 0, 0.025), transparent 65%);
-}
-
-.demoArtifactCopy {
-  display: grid;
-  gap: 8px;
-  align-content: start;
-}
-
-.demoArtifactTitle {
-  margin: 0;
-  font-size: clamp(1.5rem, 2.8vw, 2.2rem);
-  line-height: 1.02;
-}
-
-.demoArtifactBody,
-.demoArtifactHint {
-  margin: 0;
-  color: var(--muted);
-  line-height: 1.6;
-}
-
-.demoArtifactActions {
-  display: grid;
-  gap: 12px;
-  align-content: center;
-  justify-items: start;
-}
-
 .toolbarSettings {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
@@ -1797,10 +1760,6 @@
 
   .sourceComposer,
   .eventItem {
-    grid-template-columns: 1fr;
-  }
-
-  .demoArtifactPanel {
     grid-template-columns: 1fr;
   }
 

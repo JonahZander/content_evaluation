@@ -40,7 +40,6 @@ import {
   updateHumanComment,
   updateReviewState,
 } from "@/lib/api";
-import { mockArtifact } from "@/lib/mock-data";
 import type {
   AgentCatalogEntry,
   AnalysisArtifact,
@@ -905,43 +904,6 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     }
   }
 
-  async function handleOpenDemoArtifact() {
-    const replacingCurrentAnalysis = artifact !== null || previewDocument !== null;
-    if (replacingCurrentAnalysis) {
-      const replaced = await maybeReplaceCurrentAnalysis(false);
-      if (!replaced) {
-        return;
-      }
-    }
-
-    const { signal, requestId } = startSubmissionRequest();
-    try {
-      dispatch({ type: "SET_IS_SUBMITTING", value: true });
-      const imported = await importArtifact(structuredClone(mockArtifact), signal);
-      if (!isCurrentSubmissionRequest(requestId)) {
-        return;
-      }
-      dispatch({ type: "SET_ARTIFACT", artifact: imported });
-      dispatch({ type: "SET_PREVIEW_DOCUMENT", document: null });
-      dispatch({ type: "SET_ACTIVE_ARTIFACT_ID", id: activeArtifactIdFor(imported) });
-      dispatch({ type: "SET_FORM_STATE", formState: hydrateFormStateFromArtifact(formState, imported) });
-      dispatch({ type: "SET_HAS_DOWNLOADED_JSON", value: false });
-      dispatch({ type: "SET_STATUS_MESSAGE", message: "Opened the demo review artifact." });
-    } catch (error) {
-      if (isAbortError(error)) {
-        return;
-      }
-      dispatch({
-        type: "SET_STATUS_MESSAGE",
-        message: error instanceof Error ? error.message : "Could not open the demo artifact.",
-      });
-    } finally {
-      if (isCurrentSubmissionRequest(requestId)) {
-        dispatch({ type: "SET_IS_SUBMITTING", value: false });
-      }
-    }
-  }
-
   async function handleStopRun() {
     if (artifact === null || (artifact.status !== "queued" && artifact.status !== "running")) {
       return;
@@ -1460,29 +1422,6 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       <div className={styles.shell}>
         {isIntakePhase ? (
           <>
-            <section className={styles.demoArtifactPanel} data-testid="demo-artifact-panel">
-              <div className={styles.demoArtifactCopy}>
-                <span className={styles.chooseContentLabel}>Demo demo</span>
-                <h2 className={styles.demoArtifactTitle}>Open a finished review instantly.</h2>
-                <p className={styles.demoArtifactBody}>
-                  Load one curated article artifact and jump straight into the strongest path: review comments,
-                  accept or reject findings, reply inline, and export the result.
-                </p>
-              </div>
-              <div className={styles.demoArtifactActions}>
-                <button
-                  className={styles.button}
-                  data-testid="open-demo-artifact-button"
-                  type="button"
-                  onClick={() => void handleOpenDemoArtifact()}
-                  disabled={isSubmitting}
-                >
-                  {isSubmitting ? "Opening demo..." : "Open demo review"}
-                </button>
-                <p className={styles.demoArtifactHint}>Or import your own URL, draft, file, or saved artifact below.</p>
-              </div>
-            </section>
-
             <ReviewToolbar
               formState={formState}
               agents={agents}

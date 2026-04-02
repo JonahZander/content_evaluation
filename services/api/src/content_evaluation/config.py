@@ -85,6 +85,8 @@ class Settings(BaseSettings):
     def validate_runtime(self) -> "Settings":
         """Validate production-safe runtime settings."""
 
+        if self.orchestrator_backend is not OrchestratorBackend.LANGGRAPH:
+            raise ConfigurationError("Legacy orchestrator backend is no longer supported")
         if self.app_env == "production":
             if self.runtime_mode is RuntimeMode.MOCK:
                 raise ConfigurationError(
@@ -102,6 +104,7 @@ _settings: Settings | None = None
 
 def get_settings() -> Settings:
     """Return the application settings singleton."""
+
     global _settings
     if _settings is None:
         _settings = Settings()
@@ -110,5 +113,6 @@ def get_settings() -> Settings:
 
 def reset_settings() -> None:
     """Reset the settings singleton (for test isolation)."""
+
     global _settings
     _settings = None

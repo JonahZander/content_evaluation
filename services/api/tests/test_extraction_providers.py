@@ -81,8 +81,25 @@ async def test_trafilatura_http_error() -> None:
         with _patch_validate_url(), respx.mock(assert_all_called=True) as router:
             router.get(_SAFE_URL).mock(return_value=Response(403))
 
-            with pytest.raises(ProviderError, match="status 403"):
+            with pytest.raises(ProviderError, match="status 403") as excinfo:
                 await provider.extract(_SAFE_URL)
+
+        assert excinfo.value.fallback_eligible is True
+    finally:
+        await provider.close()
+
+
+@pytest.mark.asyncio
+async def test_trafilatura_http_error_marks_non_retryable_status_as_not_fallback_eligible() -> None:
+    provider = TrafilaturaExtractionProvider(timeout_seconds=5.0)
+    try:
+        with _patch_validate_url(), respx.mock(assert_all_called=True) as router:
+            router.get(_SAFE_URL).mock(return_value=Response(404))
+
+            with pytest.raises(ProviderError, match="status 404") as excinfo:
+                await provider.extract(_SAFE_URL)
+
+        assert excinfo.value.fallback_eligible is False
     finally:
         await provider.close()
 
@@ -95,8 +112,10 @@ async def test_trafilatura_empty_extraction() -> None:
             router.get(_SAFE_URL).mock(return_value=Response(200, text="<html></html>"))
 
             with patch("content_evaluation.providers.extraction.client.trafilatura.extract", return_value=None):
-                with pytest.raises(ProviderError, match="no readable article text"):
+                with pytest.raises(ProviderError, match="no readable article text") as excinfo:
                     await provider.extract(_SAFE_URL)
+
+        assert excinfo.value.fallback_eligible is True
     finally:
         await provider.close()
 

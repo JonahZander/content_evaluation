@@ -606,6 +606,7 @@ class RunInput(BaseModel):
     source_type: SourceType
     source_label: str
     text: str | None = None
+    content_format: ContentFormat | None = None
     title: str | None = None
     url: str | None = None
     prompt: str | None = None

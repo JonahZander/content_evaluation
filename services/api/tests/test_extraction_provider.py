@@ -62,7 +62,12 @@ async def test_fallback_extractor_returns_direct_result_without_tavily() -> None
 async def test_fallback_extractor_uses_tavily_on_403() -> None:
     """Fall back to Tavily when direct extraction is blocked."""
 
-    primary = StubPrimaryExtractor(error=ProviderError("Direct content extraction failed with status 403"))
+    primary = StubPrimaryExtractor(
+        error=ProviderError(
+            "Direct content extraction failed with status 403",
+            fallback_eligible=True,
+        )
+    )
     fallback = StubFallbackExtractor(
         result=ExtractedContent(
             title="Fallback",
@@ -83,7 +88,12 @@ async def test_fallback_extractor_uses_tavily_on_403() -> None:
 async def test_fallback_extractor_uses_tavily_when_direct_extracts_no_text() -> None:
     """Fall back when direct extraction returns no readable article text."""
 
-    primary = StubPrimaryExtractor(error=ProviderError("Direct content extraction returned no readable article text"))
+    primary = StubPrimaryExtractor(
+        error=ProviderError(
+            "Direct content extraction returned no readable article text",
+            fallback_eligible=True,
+        )
+    )
     fallback = StubFallbackExtractor(
         result=ExtractedContent(
             title="Fallback",
@@ -103,8 +113,33 @@ async def test_fallback_extractor_uses_tavily_when_direct_extracts_no_text() -> 
 async def test_fallback_extractor_reports_both_failures() -> None:
     """Return a clear error when the primary and fallback both fail."""
 
-    primary = StubPrimaryExtractor(error=ProviderError("Direct content extraction failed with status 403"))
+    primary = StubPrimaryExtractor(
+        error=ProviderError(
+            "Direct content extraction failed with status 403",
+            fallback_eligible=True,
+        )
+    )
     fallback = StubFallbackExtractor(error=ProviderError("Tavily extraction failed with status 500"))
 
     with pytest.raises(ProviderError, match="Tavily fallback failed"):
         await FallbackExtractionProvider(primary, fallback).extract("https://example.com")
+
+
+@pytest.mark.asyncio
+async def test_fallback_extractor_does_not_use_tavily_when_not_eligible() -> None:
+    """Raise immediately when the primary error is not fallback-eligible."""
+
+    primary = StubPrimaryExtractor(error=ProviderError("Direct content extraction failed with status 404"))
+    fallback = StubFallbackExtractor(
+        result=ExtractedContent(
+            title="Fallback",
+            content="Fallback body",
+            content_format=ContentFormat.MARKDOWN,
+            metadata={"provider_name": "tavily-extract"},
+        )
+    )
+
+    with pytest.raises(ProviderError, match="Content extraction failed"):
+        await FallbackExtractionProvider(primary, fallback).extract("https://example.com")
+
+    assert fallback.calls == 0

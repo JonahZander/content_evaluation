@@ -6,7 +6,7 @@ from copy import deepcopy
 from uuid import UUID
 
 from content_evaluation.domain.exceptions import NotFoundError
-from content_evaluation.domain.models import AnalysisArtifact, GraphCheckpoint, RunJob, RunJobStatus, now_utc
+from content_evaluation.domain.models import AnalysisArtifact, GraphCheckpoint, RunJob, RunJobStatus, RunStatus, now_utc
 
 
 class InMemoryRunRepository:
@@ -39,6 +39,14 @@ class InMemoryRunRepository:
 
         artifact = self._artifacts.get(artifact_id)
         return deepcopy(artifact) if artifact is not None else None
+
+    async def get_run_status(self, artifact_id: UUID) -> RunStatus:
+        """Return the current run status for one artifact."""
+
+        artifact = self._artifacts.get(artifact_id)
+        if artifact is None:
+            raise NotFoundError(f"Artifact {artifact_id} not found")
+        return artifact.status
 
     async def enqueue_run_job(self, job: RunJob) -> RunJob:
         """Persist a queued job."""

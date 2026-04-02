@@ -105,7 +105,7 @@ Prompt files are stored here:
 How they are loaded:
 
 1. `AgentDefinition.instruction_file` is declared in `agents/registry.py`
-2. `load_instruction_text()` reads the matching markdown file
+2. The registry preloads the matching markdown files at import time, and `load_instruction_text()` returns the cached body during dispatch
 3. `LangChainAnalysisProvider` keeps the per-agent instruction in the system message and sends a structured user payload that contains:
    - agent id
    - title

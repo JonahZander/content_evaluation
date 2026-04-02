@@ -25,8 +25,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
    - Routes each job through one of three execution paths:
      - append-agent runs reuse the existing normalized document and only execute newly requested agents
      - targeted research runs reuse the existing normalized document, keep the artifact in the review phase, and append a new `research` thread category
-     - `langgraph` runs start or resume LangGraph execution from the latest stored checkpoint
-     - `legacy` runs execute the older batch loop without LangGraph checkpoints
+     - full `langgraph` runs start or resume LangGraph execution from the latest stored checkpoint
 4. Normalization
    - Extract text and metadata into a shared document schema
    - Use direct fetch + Trafilatura markdown extraction first for URLs, then Tavily extract fallback for blocked or unreadable pages
@@ -35,6 +34,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
    - Keep uncertain blocks by default and record both removed and suspicious blocks in `ArtifactDocument.cleaner_audit`
    - Treat the cleaner output as the canonical `raw_content` used by downstream analysis
    - Normalize markdown-aware content into ordered document blocks with render metadata, inline link marks, and plain-text anchor offsets
+   - Preserve plain-text intent for normal pasted text and `.txt` uploads while keeping reviewer-pruned URL previews and markdown-signaled inputs in markdown mode
    - Conservatively split oversized plain-text paragraph blocks so collapsed imports do not become one giant review span
    - Save the normalized document into the artifact
 5. Agent planning
@@ -103,8 +103,8 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 
 ## Orchestration Backend Selection
 
-- `OrchestratorBackend.LANGGRAPH` is the default backend and drives new full-run execution.
-- `OrchestratorBackend.LEGACY` remains available as a compatibility path for the older batch executor.
+- `OrchestratorBackend.LANGGRAPH` is the only supported full-run backend and drives all new full-run execution.
+- Settings now reject the removed legacy backend instead of carrying a second full-run execution path.
 - Additive follow-up analysis does not use the full-run backend switch; it routes through the dedicated append-agents path.
 - The active backend is configured through `Settings.orchestrator_backend` and is surfaced in readiness output.
 
@@ -115,7 +115,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
 - `api/dependencies.py`
   - Long-lived service container; `AppServices.stop()` closes provider HTTP clients on shutdown
 - `services/orchestration.py`
-  - Session/workspace run lifecycle, backend selection (`append_agents`, `langgraph`, or `legacy`), dependency-driven scheduling, checkpoint persistence, resumable LangGraph commits, and artifact assembly
+  - Session/workspace run lifecycle, execution routing (`append_agents`, targeted `research`, or full `langgraph`), dependency-driven scheduling, checkpoint persistence, resumable LangGraph commits, and artifact assembly
 - `providers/deep_research/provider.py`
   - Full-text-first deep research wrapper with single-shot token-limit fallback for oversized article prompts
 - `providers/langchain/client.py`

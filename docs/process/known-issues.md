@@ -35,15 +35,6 @@ These findings from the 2026-03-13 code review were not addressed in the current
 |----|------|-------|
 | H5 | `providers/tavily/client.py` | Tavily API key is sent in the JSON request body. Limitation of the Tavily API contract. |
 | H8 | Frontend tests | No tests for frontend error/failure paths. |
-| M1 | `agents/registry.py` | `load_instruction_text()` uses synchronous `read_text()` on the async event loop. |
-| M6 | `providers/extraction/client.py` | Fallback decision based on string matching in error messages (brittle). |
-| M7 | `services/orchestration.py` | Stale artifact references in the legacy processing path. |
-| M8 | `services/orchestration.py` | `_ensure_run_active` reads the full artifact from DB just to check `status`. |
-| M9 | `services/orchestration.py` | Inline text sources are forced to `ContentFormat.MARKDOWN`. |
-| M10 | `services/orchestration.py` | Full `raw_output` serialized into downstream agent prompts, inflating token counts. |
-| M12 | `services/worker.py` | `ProviderError.retriable` flag is ignored at the worker level. |
-| M15 | `config.py` | `lru_cache` on `get_settings()` prevents override in tests. |
-| M16 | `api/dependencies.py` | Runtime mode compared via `.value == "live"` instead of `is RuntimeMode.LIVE`. |
 
 ### Frontend
 
@@ -65,9 +56,9 @@ All Low severity findings (L1–L28) from `docs/code-review-2026-03-13.md` remai
 
 ---
 
-## Fixed in Recent Commits
+## Fixed or Closed
 
-These were critical or high findings that were resolved in commits `b28127b`, `ee15ca7`, and `b924054`.
+These findings have been resolved in prior commits or the current codebase state.
 
 | ID | What was fixed |
 |----|---------------|
@@ -82,12 +73,21 @@ These were critical or high findings that were resolved in commits `b28127b`, `e
 | H6 | Six frontend handlers with no error handling: all now have `try/catch` |
 | H7 | Error body parsing: `parseJson` reads body before throwing |
 | H9 | E2E test wrong assertion: now asserts `"Run log"` |
+| M1 | Agent instructions are preloaded once in the registry; dispatch uses cached instruction text instead of synchronous file reads. |
 | M2 | Chat model re-instantiated per request: `_model_cache` per `(family, model_name)` |
 | M3 | Prompt injection hardening: instructions moved to the system message and article content/upstream context now flow through a structured user payload |
 | M4/M5 | httpx clients per request: created at `__init__` in all providers |
+| M6 | Extraction fallback now uses structured `ProviderError.fallback_eligible` metadata instead of string matching. |
+| M7 | Legacy full-run orchestration path retired; settings now reject the removed legacy backend and full runs always use LangGraph. |
+| M8 | `_ensure_run_active` now uses a narrow repository `get_run_status()` lookup instead of loading full artifacts. |
+| M9 | Inline text input now preserves plain-text intent by default while keeping markdown-aware sources in markdown mode. |
+| M10 | Downstream agent context is verified to exclude `raw_output`; tests assert the trimmed payload shape on the active LangGraph path. |
 | M11 | Worker sequential: `asyncio.Semaphore(worker_max_concurrent_runs)` |
+| M12 | Worker now respects `ProviderError.retriable` when requeueing or failing runs. |
 | M13 | FastAPI run creation now uses a typed JSON body route and a separate multipart route instead of manual JSON parsing |
 | M14 | `ArtifactSummary.overall_score` now enforces `ge=0/le=100` |
+| M15 | Settings now use a resettable module-level singleton instead of `lru_cache`, so tests can override env-driven values. |
+| M16 | Runtime-mode checks now compare directly against `RuntimeMode.LIVE`. |
 | M17 | `API_BASE_URL` now lives in one shared frontend API client module and is reused by SSE paths. |
 | M19/M20 | Session restore now uses strict v3 metadata-only storage with bounded draft recovery and fail-closed validation. |
 | M23 | Summary sub-scores (`novelty_score`, `ai_likelihood`) now support explicit null/unavailable values; the UI renders neutral placeholders and still renders real `0%`. |

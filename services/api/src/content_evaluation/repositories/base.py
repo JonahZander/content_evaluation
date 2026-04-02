@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Protocol
 from uuid import UUID
 
-from content_evaluation.domain.models import AnalysisArtifact, GraphCheckpoint, RunJob
+from content_evaluation.domain.models import AnalysisArtifact, GraphCheckpoint, RunJob, RunStatus
 
 
 class RunRepository(Protocol):
@@ -19,6 +19,9 @@ class RunRepository(Protocol):
 
     async def get_artifact(self, artifact_id: UUID) -> AnalysisArtifact | None:
         """Return one artifact snapshot."""
+
+    async def get_run_status(self, artifact_id: UUID) -> RunStatus:
+        """Return the current run status for one artifact or raise."""
 
     async def enqueue_run_job(self, job: RunJob) -> RunJob:
         """Persist a queued job."""

@@ -13,6 +13,7 @@ from uuid import uuid4
 
 import pytest
 
+from content_evaluation.domain.exceptions import NotFoundError
 from content_evaluation.domain.models import (
     AnalysisArtifact,
     ArtifactBlock,
@@ -24,6 +25,7 @@ from content_evaluation.domain.models import (
     RunInput,
     RunJob,
     RunJobStatus,
+    RunStatus,
     RuntimeMode,
     SourceType,
 )
@@ -248,6 +250,37 @@ async def test_list_artifact_ids_merges_cache_and_postgres() -> None:
     ids = await repo.list_artifact_ids()
     assert artifact.artifact_id in ids
     assert pg_id in ids
+
+
+@pytest.mark.asyncio
+async def test_get_run_status_returns_cached_status() -> None:
+    repo = _repo_with_pool()
+    artifact = _build_artifact()
+    artifact.status = RunStatus.RUNNING
+    await repo.create_artifact(artifact)
+
+    assert await repo.get_run_status(artifact.artifact_id) is RunStatus.RUNNING
+
+
+@pytest.mark.asyncio
+async def test_get_run_status_queries_postgres_without_loading_full_artifact() -> None:
+    artifact_id = uuid4()
+    cursor = FakeCursor(rows=[{"status": "canceled"}])
+    pool = FakePool(FakeConnection(cursor))
+    repo = _repo_with_pool(pool)
+
+    assert await repo.get_run_status(artifact_id) is RunStatus.CANCELED
+    assert "payload->>'status'" in str(cursor.executed[0][0])
+
+
+@pytest.mark.asyncio
+async def test_get_run_status_raises_for_missing_artifact() -> None:
+    cursor = FakeCursor(rows=[])
+    pool = FakePool(FakeConnection(cursor))
+    repo = _repo_with_pool(pool)
+
+    with pytest.raises(NotFoundError, match="Artifact"):
+        await repo.get_run_status(uuid4())
 
 
 # ---------------------------------------------------------------------------

@@ -43,6 +43,7 @@ from content_evaluation.domain.exceptions import ContentEvaluationError, NotFoun
 from content_evaluation.domain.models import (
     AnalysisArtifact,
     ArtifactDocument,
+    ContentFormat,
     PersistenceMode,
     RunInput,
     RunJob,
@@ -470,6 +471,7 @@ async def _run_input_from_file(
         source_label=file_name,
         title=title or file_name,
         text=decoded,
+        content_format=ContentFormat.MARKDOWN if file_extension == "md" else ContentFormat.PLAIN_TEXT,
         selected_agents=selected_agents,
         persistence_mode=persistence_mode,
         include_debug_trace=include_debug_trace,

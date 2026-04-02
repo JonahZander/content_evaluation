@@ -17,6 +17,7 @@ from content_evaluation.domain.models import (
     GraphCheckpoint,
     RunJob,
     RunJobStatus,
+    RunStatus,
     now_utc,
 )
 
@@ -116,6 +117,25 @@ class PostgresRunRepository:
         parsed = AnalysisArtifact.model_validate(row["payload"])
         self._artifacts[parsed.artifact_id] = deepcopy(parsed)
         return deepcopy(parsed)
+
+    async def get_run_status(self, artifact_id: UUID) -> RunStatus:
+        """Return one artifact status without loading the full payload."""
+
+        cached = self._artifacts.get(artifact_id)
+        if cached is not None:
+            return cached.status
+
+        assert self._pool is not None
+        async with self._pool.connection() as connection:
+            async with connection.cursor(row_factory=dict_row) as cursor:
+                await cursor.execute(
+                    "select payload->>'status' as status from artifacts where id = %s",
+                    (str(artifact_id),),
+                )
+                row = await cursor.fetchone()
+        if row is None or not isinstance(row.get("status"), str):
+            raise NotFoundError(f"Artifact {artifact_id} not found")
+        return RunStatus(row["status"])
 
     async def list_artifact_ids(self) -> list[UUID]:
         """Return all known artifact IDs from PostgreSQL."""

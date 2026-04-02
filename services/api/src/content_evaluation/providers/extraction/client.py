@@ -58,7 +58,11 @@ class TrafilaturaExtractionProvider:
         await _validate_url(url)
         response = await self._client.get(url)
         if response.status_code >= 400:
-            raise ProviderError(f"Direct content extraction failed with status {response.status_code}")
+            fallback_eligible = response.status_code in {403, 429, 500, 502, 503, 504}
+            raise ProviderError(
+                f"Direct content extraction failed with status {response.status_code}",
+                fallback_eligible=fallback_eligible,
+            )
 
         downloaded = response.text
         extracted = trafilatura.extract(
@@ -69,7 +73,10 @@ class TrafilaturaExtractionProvider:
             include_links=True,
         )
         if not extracted:
-            raise ProviderError("Direct content extraction returned no readable article text")
+            raise ProviderError(
+                "Direct content extraction returned no readable article text",
+                fallback_eligible=True,
+            )
 
         return ExtractedContent(
             title=url,
@@ -169,7 +176,7 @@ class FallbackExtractionProvider:
         try:
             return await self._primary.extract(url)
         except ProviderError as primary_error:
-            if not _should_try_fallback(str(primary_error)):
+            if not primary_error.fallback_eligible:
                 raise ProviderError(f"Content extraction failed: {primary_error}") from primary_error
 
             try:
@@ -184,18 +191,3 @@ class FallbackExtractionProvider:
             return extracted
 
 
-def _should_try_fallback(message: str) -> bool:
-    """Return whether a direct extraction error should trigger fallback."""
-
-    status_codes = (
-        "status 403",
-        "status 429",
-        "status 500",
-        "status 502",
-        "status 503",
-        "status 504",
-    )
-    return (
-        any(status in message for status in status_codes)
-        or "no readable article text" in message
-    )

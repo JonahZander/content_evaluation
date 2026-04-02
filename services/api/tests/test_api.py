@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import time
 
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
+from starlette.datastructures import UploadFile
 
 from content_evaluation.api.dependencies import AppServices
-from content_evaluation.api.main import app
+from content_evaluation.api.main import _run_input_from_file, app
 from content_evaluation.config import Settings
 from content_evaluation.domain.models import (
     AnalysisArtifact,
@@ -18,6 +20,8 @@ from content_evaluation.domain.models import (
     ArtifactDocument,
     ArtifactSource,
     ArtifactSummary,
+    ContentFormat,
+    PersistenceMode,
     RunConfig,
     RunMode,
     RuntimeMode,
@@ -270,6 +274,32 @@ def test_api_run_accepts_multipart_options(monkeypatch: pytest.MonkeyPatch) -> N
     assert payload["run_config"]["selected_agents"] == ["ai_likelihood", "editorial"]
     assert payload["run_config"]["persistence_mode"] == "session"
     assert payload["run_config"]["include_debug_trace"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("file_name", "expected_format"),
+    [
+        ("draft.md", ContentFormat.MARKDOWN),
+        ("draft.txt", ContentFormat.PLAIN_TEXT),
+    ],
+)
+async def test_run_input_from_file_preserves_upload_format(
+    file_name: str,
+    expected_format: ContentFormat,
+) -> None:
+    """Record whether uploaded text was markdown-aware or plain text."""
+
+    run_input = await _run_input_from_file(
+        UploadFile(filename=file_name, file=io.BytesIO(b"## Heading\n\nBody text")),
+        AppServices(_mock_settings()),
+        title=None,
+        selected_agents=[],
+        persistence_mode=PersistenceMode.SESSION,
+        include_debug_trace=False,
+    )
+
+    assert run_input.content_format is expected_format
 
 
 def test_artifact_summary_rejects_out_of_range_scores() -> None:

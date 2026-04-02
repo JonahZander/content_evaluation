@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from content_evaluation.domain.models import (
     AnalysisArtifact,
+    ContentFormat,
     PersistenceMode,
     ReviewState,
     RevisedMarkdownDiffDecision,
@@ -23,6 +24,7 @@ class PreviewSourceRequest(BaseModel):
     source_label: str
     title: str | None = None
     text: str | None = None
+    content_format: ContentFormat | None = None
     url: str | None = None
 
 

@@ -2,6 +2,7 @@
 
 import json
 import os
+from pathlib import Path
 from typing import Protocol
 
 import pytest
@@ -127,6 +128,18 @@ def test_fact_check_instruction_file_loads():
     defn = get_agent_definition("fact_check")
     text = load_instruction_text(defn)
     assert len(text) > 50
+
+
+def test_instruction_text_is_preloaded_before_runtime_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve cached prompt text without reading instruction files on demand."""
+
+    defn = get_agent_definition("fact_check")
+
+    def _fail_read_text(*_args: object, **_kwargs: object) -> str:
+        raise AssertionError("instruction files should not be read during dispatch")
+
+    monkeypatch.setattr(Path, "read_text", _fail_read_text)
+    assert len(load_instruction_text(defn)) > 50
 
 
 def test_fact_check_dependency_graph_is_current() -> None:

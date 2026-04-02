@@ -215,6 +215,7 @@ The queued request payload used by the worker and API routes.
 | Field | Type | Description |
 |-------|------|-------------|
 | `mode` | `RunMode` | `create`, `append_agents`, or `research`. |
+| `content_format` | `ContentFormat \| None` | Optional explicit format for inline text inputs. `.md` uploads set `markdown`, `.txt` uploads set `plain_text`, and omitted values are inferred from the source/input shape. |
 | `prompt` | `str \| None` | Targeted research prompt used by `POST /api/v1/runs/{run_id}/research`. |
 | `anchor_id` | `str \| None` | Optional anchor identifier for scoping targeted research. |
 | `comment_id` | `str \| None` | Optional comment identifier; when present, the follow-up prompt is stored as a reply before the research job is queued. |

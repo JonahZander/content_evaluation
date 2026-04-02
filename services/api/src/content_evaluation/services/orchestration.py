@@ -121,6 +121,32 @@ class RevisionSuggestionInput:
     sort_key: tuple[int, int, int, str, datetime, str]
 
 
+_INLINE_MARKDOWN_PATTERNS = (
+    re.compile(r"(?m)^\s{0,3}#{1,6}\s+\S"),
+    re.compile(r"(?m)^```"),
+    re.compile(r"(?m)^\s*>\s+\S"),
+    re.compile(r"(?m)^\s*[-*+]\s+\S"),
+    re.compile(r"(?m)^\s*\d+\.\s+\S"),
+    re.compile(r"\[[^\]]+\]\([^)]+\)"),
+    re.compile(r"(?<!\*)\*\*[^*\n]+\*\*(?!\*)"),
+    re.compile(r"(?<!\*)\*[^*\n]+\*(?!\*)"),
+    re.compile(r"`[^`\n]+`"),
+)
+
+
+def _resolve_inline_content_format(input_data: RunInput) -> ContentFormat:
+    """Infer the intended format for inline text supplied with a run."""
+
+    if input_data.content_format is not None:
+        return input_data.content_format
+    if input_data.source_type is SourceType.URL and input_data.url:
+        return ContentFormat.MARKDOWN
+    text = input_data.text or ""
+    if any(pattern.search(text) for pattern in _INLINE_MARKDOWN_PATTERNS):
+        return ContentFormat.MARKDOWN
+    return ContentFormat.PLAIN_TEXT
+
+
 @dataclass(frozen=True, slots=True)
 class RevisionReplacement:
     """Store one surgical replacement instruction."""
@@ -612,12 +638,9 @@ class RunOrchestrator:
                     artifact_id, input_data, attempt=attempt, max_attempts=max_attempts
                 )
                 return
-            if self._orchestrator_backend is OrchestratorBackend.LANGGRAPH:
-                await self._process_run_with_langgraph(
-                    artifact_id, input_data, attempt=attempt, max_attempts=max_attempts
-                )
-                return
-            await self._process_run_legacy(artifact_id, input_data, attempt=attempt, max_attempts=max_attempts)
+            await self._process_run_with_langgraph(
+                artifact_id, input_data, attempt=attempt, max_attempts=max_attempts
+            )
         finally:
             self._artifact_locks.pop(artifact_id, None)
 
@@ -862,100 +885,6 @@ class RunOrchestrator:
             )
             raise
 
-    async def _process_run_legacy(
-        self,
-        artifact_id: UUID,
-        input_data: RunInput,
-        *,
-        attempt: int,
-        max_attempts: int | None,
-    ) -> None:
-        """Process one queued artifact through the legacy loop."""
-
-        artifact = await self._require_artifact(artifact_id)
-        artifact.status = RunStatus.RUNNING
-        artifact.error_message = None
-        if attempt > 1:
-            await self._append_event(
-                artifact,
-                EventType.RUN,
-                "run",
-                "resumed",
-                "Run resumed after worker retry",
-                progress=_progress_for_artifact(artifact),
-                snapshot_available=True,
-                attempt=attempt,
-                max_attempts=max_attempts,
-            )
-        await self._append_event(
-            artifact,
-            EventType.RUN,
-            "run",
-            "started",
-            "Run started",
-            snapshot_available=True,
-            attempt=attempt,
-            max_attempts=max_attempts,
-        )
-
-        try:
-            await self._ensure_run_active(artifact_id)
-            extracted = await self._resolve_source(input_data)
-            await self._append_event(
-                artifact,
-                EventType.ARTIFACT,
-                "extraction",
-                "completed",
-                _source_message(extracted),
-                progress=0.02,
-                snapshot_available=True,
-                metadata=extracted.metadata,
-            )
-            await self._ensure_run_active(artifact_id)
-            artifact.document = normalize_text(
-                input_data,
-                extracted.content,
-                extracted.title,
-                content_format=extracted.content_format,
-            )
-            artifact.source.title = artifact.document.title
-            await self._append_event(
-                artifact,
-                EventType.ARTIFACT,
-                "normalization",
-                "completed",
-                "Document normalized",
-                progress=0.05,
-                snapshot_available=True,
-            )
-
-            for batch in _execution_batches(artifact.run_config.resolved_agents):
-                await self._ensure_run_active(artifact_id)
-                await self._queue_batch(artifact, batch)
-                await self._run_batch(artifact, batch)
-
-            await self._ensure_run_active(artifact_id)
-            artifact.summary = _build_summary(artifact)
-            artifact.status = RunStatus.COMPLETED
-            await self._append_event(
-                artifact,
-                EventType.RUN,
-                "run",
-                "completed",
-                "Run completed",
-                progress=1.0,
-                snapshot_available=True,
-            )
-        except RunCancelledError:
-            artifact = await self._require_artifact(artifact_id)
-            artifact.status = RunStatus.CANCELED
-            await self._repository.update_artifact(artifact)
-        except Exception as error:
-            artifact.status = RunStatus.FAILED
-            artifact.error_message = str(error)
-            await self._append_run_failed_event(artifact, error, progress=1.0)
-            raise
-
     async def _process_run_with_langgraph(
         self,
         artifact_id: UUID,
@@ -1017,7 +946,7 @@ class RunOrchestrator:
         """Resolve one source payload into extracted content."""
 
         if input_data.text:
-            content_format = ContentFormat.MARKDOWN
+            content_format = _resolve_inline_content_format(input_data)
             if input_data.source_type is SourceType.URL and input_data.url:
                 provider_name = "url-preview"
             else:
@@ -1035,13 +964,14 @@ class RunOrchestrator:
             )
         if input_data.source_type.value == "url" and input_data.url:
             return await self._extraction_provider.extract(input_data.url)
+        content_format = input_data.content_format or ContentFormat.PLAIN_TEXT
         return ExtractedContent(
             title=input_data.title or input_data.source_label,
             content="",
-            content_format=ContentFormat.MARKDOWN,
+            content_format=content_format,
             metadata={
                 "provider_name": "inline-input",
-                "content_format": ContentFormat.MARKDOWN.value,
+                "content_format": content_format.value,
                 "source_type": input_data.source_type.value,
             },
         )
@@ -1731,8 +1661,8 @@ class RunOrchestrator:
     async def _ensure_run_active(self, artifact_id: UUID) -> None:
         """Raise when a run was stopped by the user."""
 
-        artifact = await self._require_artifact(artifact_id)
-        if artifact.status is RunStatus.CANCELED:
+        status = await self._repository.get_run_status(artifact_id)
+        if status is RunStatus.CANCELED:
             raise RunCancelledError("Run stopped by user")
 
     def _resolve_persistence_mode(self, requested: PersistenceMode) -> PersistenceMode:

@@ -36,13 +36,6 @@ These findings from the 2026-03-13 code review were not addressed in the current
 | H5 | `providers/tavily/client.py` | Tavily API key is sent in the JSON request body. Limitation of the Tavily API contract. |
 | H8 | Frontend tests | No tests for frontend error/failure paths. |
 
-### Frontend
-
-| ID | File | Issue |
-|----|------|-------|
-| M21 | `DocumentPane.tsx` | Resize handler fires without debounce. |
-| M22 | `DocumentPane.tsx` | Connector paths go stale when anchor/comment refs mount or unmount. |
-
 ### Infrastructure
 
 | ID | Issue |
@@ -90,6 +83,8 @@ These findings have been resolved in prior commits or the current codebase state
 | M16 | Runtime-mode checks now compare directly against `RuntimeMode.LIVE`. |
 | M17 | `API_BASE_URL` now lives in one shared frontend API client module and is reused by SSE paths. |
 | M19/M20 | Session restore now uses strict v3 metadata-only storage with bounded draft recovery and fail-closed validation. |
+| M21 | Stale finding closed: `DocumentPane` no longer uses the old resize-driven connector architecture, and session-storage writes are now coalesced to bounded metadata payloads. |
+| M22 | Stale finding closed: connector overlay measurement is gone; inline highlights and paragraph-scoped rows replaced the old connector-path lifecycle. |
 | M23 | Summary sub-scores (`novelty_score`, `ai_likelihood`) now support explicit null/unavailable values; the UI renders neutral placeholders and still renders real `0%`. |
 | M24 | Mutation and review API calls now support `AbortSignal`, and workbench handlers guard against stale mutation responses overwriting newer state. |
 | L14 | `SelectionDraft` duplicated: defined once in `src/lib/types.ts` |

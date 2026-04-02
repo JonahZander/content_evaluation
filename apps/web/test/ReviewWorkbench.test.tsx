@@ -1087,6 +1087,35 @@ describe("ReviewWorkbench", () => {
     expect(screen.getByText(mockArtifact.document!.title)).toBeInTheDocument();
   });
 
+  it("persists metadata-only form state instead of the full draft body", async () => {
+    render(<ReviewWorkbench initialArtifact={mockArtifact} />);
+
+    await waitFor(() => {
+      const raw = window.sessionStorage.getItem("content-evaluation:artifact");
+      expect(raw).not.toBeNull();
+    });
+
+    const stored = JSON.parse(window.sessionStorage.getItem("content-evaluation:artifact") ?? "{}");
+    expect(stored.formState.text).toBe("");
+    expect(stored.draftRecovery?.text).toBe(mockArtifact.document?.raw_content ?? mockArtifact.document?.text);
+  });
+
+  it("bounds stored draft recovery for large pasted-text drafts", async () => {
+    render(<ReviewWorkbench initialArtifact={null} />);
+
+    fireEvent.change(screen.getByTestId("draft-text-input"), {
+      target: { value: "A".repeat(90_000) },
+    });
+
+    await waitFor(() => {
+      const raw = window.sessionStorage.getItem("content-evaluation:artifact");
+      expect(raw).not.toBeNull();
+      const stored = JSON.parse(raw ?? "{}");
+      expect(stored.formState.text).toBe("");
+      expect(stored.draftRecovery?.text.length).toBe(75_000);
+    });
+  });
+
   it("falls back to the saved draft state when a session run cannot be refetched", async () => {
     vi.mocked(api.fetchArtifact).mockRejectedValueOnce(new Error("Run not found"));
     window.sessionStorage.setItem(

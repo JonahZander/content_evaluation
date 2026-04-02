@@ -50,11 +50,12 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - State shape, actions, and the pure reducer live in `src/components/review/workbench-state.ts` so state transitions are explicit and testable.
 - Phase selection is derived from the current artifact state so imported draft, running, terminal, and diff-review artifacts restore into the right shell.
 - Browser session restore state is stored as strict versioned metadata (`content-evaluation:artifact`, v3) with bounded draft-recovery text; malformed or outdated payloads are ignored.
+- Session-storage writes are coalesced and the stored `formState` keeps only metadata, so large drafts do not persist full-body text outside bounded draft-recovery fields.
 - Restore policy is deterministic: prefer backend artifact refetch when available, otherwise restore safe draft/preview metadata, and only synthesize a review shell for stale diff-review state when enough draft context exists.
 - Key callbacks (`refreshArtifact`, `refreshArtifactCoalesced`) are stabilized with `useCallback` so the SSE effect always references the current version.
 - The `SelectionDraft` interface is defined once in `src/lib/types.ts` and imported by `ReviewWorkbench`, `SelectionBanner`, and `DocumentPane`.
 - Presentational review pieces live under `src/components/review/`.
-- Connector lines are rendered inside each paragraph row so the anchor-to-comment mapping remains local and legible.
+- The workbench no longer uses connector overlays or connector-canvas measurement; source-to-thread linkage is communicated through row layout, shared hover/focus states, and inline highlights.
 - The workbench uses paragraph-scoped rows so each source block and its comments stay spatially linked.
 - Adjacent multi-block agent anchors should highlight every linked source segment while keeping the thread card attached to the first block row.
 - The UI should render directly from the artifact snapshot rather than a stitched backend-only view model.

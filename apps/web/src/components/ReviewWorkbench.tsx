@@ -83,6 +83,7 @@ interface StoredDraftRecovery {
 const SESSION_STORAGE_KEY = "content-evaluation:artifact";
 const STORED_WORKBENCH_STATE_VERSION = 3;
 const MAX_STORED_DRAFT_CHARS = 75_000;
+const SESSION_STORAGE_WRITE_DEBOUNCE_MS = 150;
 const TERMINAL_RUN_STATUSES = new Set<RunStatus>(["completed", "failed", "canceled"]);
 
 function isAbortError(error: unknown): boolean {
@@ -140,6 +141,8 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   const submissionRequestIdRef = useRef(0);
   const mutationAbortControllerRef = useRef<AbortController | null>(null);
   const mutationRequestIdRef = useRef(0);
+  const sessionStorageWriteTimeoutRef = useRef<number | null>(null);
+  const lastStoredWorkbenchStateRef = useRef<string | null>(null);
   const [isQueuingResearch, setIsQueuingResearch] = useState(false);
   const [rewritePromptOpen, setRewritePromptOpen] = useState(false);
   const [rewriteDirectionPrompt, setRewriteDirectionPrompt] = useState("");
@@ -328,10 +331,46 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       hasDownloadedJson,
     });
     if (storedState === null) {
-      window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+      if (sessionStorageWriteTimeoutRef.current !== null) {
+        window.clearTimeout(sessionStorageWriteTimeoutRef.current);
+        sessionStorageWriteTimeoutRef.current = null;
+      }
+      lastStoredWorkbenchStateRef.current = null;
+      try {
+        window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+      } catch {
+        // Ignore storage failures and keep the in-memory UI state authoritative.
+      }
       return;
     }
-    window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(storedState));
+    const serialized = JSON.stringify(storedState);
+    if (serialized === lastStoredWorkbenchStateRef.current) {
+      return;
+    }
+    if (sessionStorageWriteTimeoutRef.current !== null) {
+      window.clearTimeout(sessionStorageWriteTimeoutRef.current);
+    }
+    sessionStorageWriteTimeoutRef.current = window.setTimeout(() => {
+      try {
+        window.sessionStorage.setItem(SESSION_STORAGE_KEY, serialized);
+        lastStoredWorkbenchStateRef.current = serialized;
+      } catch {
+        try {
+          window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+        } catch {
+          // Ignore storage cleanup failures and keep the in-memory UI state authoritative.
+        }
+        lastStoredWorkbenchStateRef.current = null;
+      } finally {
+        sessionStorageWriteTimeoutRef.current = null;
+      }
+    }, SESSION_STORAGE_WRITE_DEBOUNCE_MS);
+    return () => {
+      if (sessionStorageWriteTimeoutRef.current !== null) {
+        window.clearTimeout(sessionStorageWriteTimeoutRef.current);
+        sessionStorageWriteTimeoutRef.current = null;
+      }
+    };
   }, [artifact, previewDocument, hiddenPreviewBlockIds, formState, hasDownloadedJson]);
 
   const refreshArtifact = useCallback(async (artifactId: string, signal?: AbortSignal) => {
@@ -2557,6 +2596,14 @@ function restoreStoredFormState(parsed: StoredWorkbenchState): ReviewFormState {
   };
 }
 
+function buildStoredFormState(formState: ReviewFormState): ReviewFormState {
+  return {
+    ...formState,
+    // Large draft bodies belong in bounded draftRecovery, not in the metadata shell.
+    text: "",
+  };
+}
+
 function restoreStoredDraftFallback(
   parsed: StoredWorkbenchState,
 ): { previewDocument: ArtifactDocument | null; formState: ReviewFormState; statusMessage: string } | null {
@@ -2677,7 +2724,7 @@ function buildStoredWorkbenchState({
     artifactTitle: artifact?.document?.title ?? artifact?.source.title ?? null,
     artifactPhase: artifact === null ? null : getWorkbenchPhase(artifact),
     draftRecovery,
-    formState,
+    formState: buildStoredFormState(formState),
     hasDownloadedJson,
   };
 

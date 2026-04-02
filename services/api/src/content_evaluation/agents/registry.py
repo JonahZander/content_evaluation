@@ -139,6 +139,11 @@ _AGENTS: tuple[AgentDefinition, ...] = (
 
 _AGENT_MAP: dict[str, AgentDefinition] = {agent.agent_id: agent for agent in _AGENTS}
 
+_INSTRUCTION_TEXT: dict[str, str] = {
+    agent.agent_id: agent.instruction_path().read_text(encoding="utf-8").strip()
+    for agent in _AGENTS
+}
+
 
 def list_agent_definitions() -> list[AgentDefinition]:
     """Return all configured agents."""
@@ -161,4 +166,4 @@ def get_agent_definition(agent_id: str) -> AgentDefinition:
 def load_instruction_text(agent: AgentDefinition) -> str:
     """Return the instruction body for one agent."""
 
-    return agent.instruction_path().read_text(encoding="utf-8").strip()
+    return _INSTRUCTION_TEXT[agent.agent_id]

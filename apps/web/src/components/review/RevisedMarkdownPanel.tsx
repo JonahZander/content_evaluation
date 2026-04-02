@@ -26,6 +26,7 @@ interface RevisedMarkdownPanelProps {
   applied: boolean;
   savingDecision: boolean;
   applyingRevision: boolean;
+  localError: string | null;
   onDecisionChange: (diffId: string, decision: Exclude<DiffDecision, "pending">) => void;
   onRejectAll: () => void;
   onApply: () => void;
@@ -40,6 +41,7 @@ export function RevisedMarkdownPanel({
   applied,
   savingDecision,
   applyingRevision,
+  localError,
   onDecisionChange,
   onRejectAll,
   onApply,
@@ -143,6 +145,11 @@ export function RevisedMarkdownPanel({
                 >
                   Discard revision
                 </button>
+                {localError ? (
+                  <p className={styles.errorBanner} data-testid="revised-markdown-local-error" role="alert">
+                    {localError}
+                  </p>
+                ) : null}
               </div>
             ) : null}
           </>
@@ -240,6 +247,11 @@ export function RevisedMarkdownPanel({
                 >
                   {applyingRevision ? "Applying revision..." : "Apply accepted changes"}
                 </button>
+                {localError ? (
+                  <p className={styles.errorBanner} data-testid="revised-markdown-local-error" role="alert">
+                    {localError}
+                  </p>
+                ) : null}
               </div>
             ) : null}
             {mode === "rewrite" ? (

@@ -31,6 +31,7 @@ export interface WorkbenchState {
   selectedFile: File | null;
   fileInputKey: number;
   importInputKey: number;
+  intakeLocalErrors: IntakeLocalErrors;
 
   // Comment editing
   selectionDraft: SelectionDraft | null;
@@ -40,9 +41,30 @@ export interface WorkbenchState {
   editingCommentId: string | null;
   editingBody: string;
   hoveredAnchorId: string | null;
+  reviewLocalErrors: ReviewLocalErrors;
+
+  // Revised markdown
+  revisedMarkdownLocalError: string | null;
 
   // Export
   hasDownloadedJson: boolean;
+}
+
+export type IntakeLocalErrorKey = "submit" | "urlImport" | "artifactImport";
+
+export interface IntakeLocalErrors {
+  submit: string | null;
+  urlImport: string | null;
+  artifactImport: string | null;
+}
+
+export type ReviewLocalErrorKey = "selectionComment" | "research";
+
+export interface ReviewLocalErrors {
+  selectionComment: string | null;
+  research: string | null;
+  threadActionCommentId: string | null;
+  threadActionMessage: string | null;
 }
 
 export const DEFAULT_FORM_STATE: ReviewFormState = {
@@ -74,6 +96,11 @@ export const initialWorkbenchState: WorkbenchState = {
   selectedFile: null,
   fileInputKey: 0,
   importInputKey: 0,
+  intakeLocalErrors: {
+    submit: null,
+    urlImport: null,
+    artifactImport: null,
+  },
 
   selectionDraft: null,
   commentDraft: "",
@@ -82,6 +109,14 @@ export const initialWorkbenchState: WorkbenchState = {
   editingCommentId: null,
   editingBody: "",
   hoveredAnchorId: null,
+  reviewLocalErrors: {
+    selectionComment: null,
+    research: null,
+    threadActionCommentId: null,
+    threadActionMessage: null,
+  },
+
+  revisedMarkdownLocalError: null,
 
   hasDownloadedJson: false,
 };
@@ -110,6 +145,8 @@ export type WorkbenchAction =
   | { type: "SET_SELECTED_FILE"; file: File | null }
   | { type: "BUMP_FILE_INPUT_KEY" }
   | { type: "BUMP_IMPORT_INPUT_KEY" }
+  | { type: "SET_INTAKE_LOCAL_ERROR"; key: IntakeLocalErrorKey; message: string | null }
+  | { type: "CLEAR_INTAKE_LOCAL_ERRORS" }
   | { type: "SET_SELECTION_DRAFT"; draft: SelectionDraft | null }
   | { type: "SET_COMMENT_DRAFT"; draft: string }
   | { type: "SET_REPLY_DRAFT"; commentId: string; body: string }
@@ -117,6 +154,10 @@ export type WorkbenchAction =
   | { type: "SET_EDITING_COMMENT"; commentId: string | null; body: string }
   | { type: "SET_EDITING_BODY"; body: string }
   | { type: "SET_HOVERED_ANCHOR_ID"; anchorId: string | null }
+  | { type: "SET_REVIEW_LOCAL_ERROR"; key: ReviewLocalErrorKey; message: string | null }
+  | { type: "SET_THREAD_ACTION_LOCAL_ERROR"; commentId: string | null; message: string | null }
+  | { type: "CLEAR_REVIEW_LOCAL_ERRORS" }
+  | { type: "SET_REVISED_MARKDOWN_LOCAL_ERROR"; message: string | null }
   | { type: "SET_HAS_DOWNLOADED_JSON"; value: boolean }
   | { type: "CLEAR_ANALYSIS_STATE"; resetForm: boolean; currentAgents: AgentCatalogEntry[] }
   | {
@@ -178,6 +219,23 @@ export function workbenchReducer(state: WorkbenchState, action: WorkbenchAction)
       return { ...state, fileInputKey: state.fileInputKey + 1 };
     case "BUMP_IMPORT_INPUT_KEY":
       return { ...state, importInputKey: state.importInputKey + 1 };
+    case "SET_INTAKE_LOCAL_ERROR":
+      return {
+        ...state,
+        intakeLocalErrors: {
+          ...state.intakeLocalErrors,
+          [action.key]: action.message,
+        },
+      };
+    case "CLEAR_INTAKE_LOCAL_ERRORS":
+      return {
+        ...state,
+        intakeLocalErrors: {
+          submit: null,
+          urlImport: null,
+          artifactImport: null,
+        },
+      };
     case "SET_SELECTION_DRAFT":
       return { ...state, selectionDraft: action.draft };
     case "SET_COMMENT_DRAFT":
@@ -192,6 +250,35 @@ export function workbenchReducer(state: WorkbenchState, action: WorkbenchAction)
       return { ...state, editingBody: action.body };
     case "SET_HOVERED_ANCHOR_ID":
       return { ...state, hoveredAnchorId: action.anchorId };
+    case "SET_REVIEW_LOCAL_ERROR":
+      return {
+        ...state,
+        reviewLocalErrors: {
+          ...state.reviewLocalErrors,
+          [action.key]: action.message,
+        },
+      };
+    case "SET_THREAD_ACTION_LOCAL_ERROR":
+      return {
+        ...state,
+        reviewLocalErrors: {
+          ...state.reviewLocalErrors,
+          threadActionCommentId: action.commentId,
+          threadActionMessage: action.message,
+        },
+      };
+    case "CLEAR_REVIEW_LOCAL_ERRORS":
+      return {
+        ...state,
+        reviewLocalErrors: {
+          selectionComment: null,
+          research: null,
+          threadActionCommentId: null,
+          threadActionMessage: null,
+        },
+      };
+    case "SET_REVISED_MARKDOWN_LOCAL_ERROR":
+      return { ...state, revisedMarkdownLocalError: action.message };
     case "SET_HAS_DOWNLOADED_JSON":
       return { ...state, hasDownloadedJson: action.value };
     case "CLEAR_ANALYSIS_STATE": {
@@ -220,10 +307,22 @@ export function workbenchReducer(state: WorkbenchState, action: WorkbenchAction)
         activeReplyComposerId: null,
         editingCommentId: null,
         editingBody: "",
+        reviewLocalErrors: {
+          selectionComment: null,
+          research: null,
+          threadActionCommentId: null,
+          threadActionMessage: null,
+        },
+        revisedMarkdownLocalError: null,
         hiddenPreviewBlockIds: [],
         selectedFile: null,
         fileInputKey: state.fileInputKey + 1,
         hasDownloadedJson: false,
+        intakeLocalErrors: {
+          submit: null,
+          urlImport: null,
+          artifactImport: null,
+        },
         formState: resetFormState,
       };
     }
@@ -239,6 +338,18 @@ export function workbenchReducer(state: WorkbenchState, action: WorkbenchAction)
         isSavingDiffReview: false,
         isApplyingRevision: false,
         showTextPreview: false,
+        intakeLocalErrors: {
+          submit: null,
+          urlImport: null,
+          artifactImport: null,
+        },
+        reviewLocalErrors: {
+          selectionComment: null,
+          research: null,
+          threadActionCommentId: null,
+          threadActionMessage: null,
+        },
+        revisedMarkdownLocalError: null,
         formState: action.formState,
         hasDownloadedJson: action.hasDownloadedJson,
         activeArtifactId: action.activeArtifactId,

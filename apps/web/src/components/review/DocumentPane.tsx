@@ -77,13 +77,14 @@ interface DocumentPaneProps {
   onReplyDraftChange: (commentId: string, value: string) => void;
   onToggleReplyComposer: (commentId: string) => void;
   onAddReply: (comment: ArtifactComment) => void;
-  onDeleteReply: (replyId: string) => void;
+  onDeleteReply: (replyId: string, commentId: string) => void;
   onReviewState: (commentId: string, state: ReviewState) => void;
   onStartEditing: (commentId: string, body: string) => void;
   onEditingBodyChange: (value: string) => void;
   onSaveEdit: (commentId: string) => void;
   onCancelEdit: () => void;
   onDeleteComment: (commentId: string) => void;
+  threadActionLocalError: { commentId: string | null; message: string | null };
 }
 
 const reviewActions: ReviewState[] = ["accepted", "rejected", "uncertain"];
@@ -397,6 +398,7 @@ function ThreadCards({
   onSaveEdit,
   onCancelEdit,
   onDeleteComment,
+  threadActionLocalError,
 }: {
   thread: ArtifactThread;
   activeDocumentRevisionId: string | null;
@@ -410,13 +412,14 @@ function ThreadCards({
   onReplyDraftChange: (commentId: string, value: string) => void;
   onToggleReplyComposer: (commentId: string) => void;
   onAddReply: (comment: ArtifactComment) => void;
-  onDeleteReply: (replyId: string) => void;
+  onDeleteReply: (replyId: string, commentId: string) => void;
   onReviewState: (commentId: string, state: ReviewState) => void;
   onStartEditing: (commentId: string, body: string) => void;
   onEditingBodyChange: (value: string) => void;
   onSaveEdit: (commentId: string) => void;
   onCancelEdit: () => void;
   onDeleteComment: (commentId: string) => void;
+  threadActionLocalError: { commentId: string | null; message: string | null };
 }) {
   const isHistoricalThread = activeDocumentRevisionId !== null
     && thread.document_revision_id !== undefined
@@ -446,6 +449,9 @@ function ThreadCards({
           const factCheckSources = factCheckDetails === null
             ? []
             : dedupeStrings([...factCheckDetails.sourceLinks, ...(comment.sources ?? [])]);
+          const commentLocalError = threadActionLocalError.commentId === comment.id
+            ? threadActionLocalError.message
+            : null;
           return (
             <article
               key={comment.id}
@@ -577,6 +583,11 @@ function ThreadCards({
                   </button>
                 </div>
               ) : null}
+              {commentLocalError ? (
+                <p className={styles.importGuidance} data-testid={`thread-action-local-error-${comment.id}`} role="alert">
+                  {commentLocalError}
+                </p>
+              ) : null}
 
               <div className={styles.replyList}>
                 {comment.replies.map((reply) => (
@@ -589,7 +600,7 @@ function ThreadCards({
                           data-testid={`delete-reply-${reply.id}`}
                           type="button"
                           aria-label={`Delete reply by ${reply.author_label}`}
-                          onClick={() => onDeleteReply(reply.id)}
+                          onClick={() => onDeleteReply(reply.id, comment.id)}
                         >
                           <TrashIcon />
                         </button>
@@ -792,6 +803,7 @@ export function DocumentPane({
   onSaveEdit,
   onCancelEdit,
   onDeleteComment,
+  threadActionLocalError,
 }: DocumentPaneProps) {
   const hiddenBlockIdSet = useMemo(() => new Set(hiddenBlockIds), [hiddenBlockIds]);
 
@@ -936,6 +948,7 @@ export function DocumentPane({
                         onSaveEdit={onSaveEdit}
                         onCancelEdit={onCancelEdit}
                         onDeleteComment={onDeleteComment}
+                        threadActionLocalError={threadActionLocalError}
                       />
                     ))
                   ) : (

@@ -34,6 +34,9 @@ interface ReviewToolbarProps {
   importInputKey: number;
   showUrlImportGuidance: boolean;
   hasLoadedContent: boolean;
+  submitLocalError: string | null;
+  urlImportLocalError: string | null;
+  artifactImportLocalError: string | null;
   onFormChange: (updater: (current: ReviewFormState) => ReviewFormState) => void;
   onFileChange: (file: File | null) => void;
   onImportFileChange: (file: File | null) => void;
@@ -68,6 +71,9 @@ export function ReviewToolbar({
   importInputKey,
   showUrlImportGuidance,
   hasLoadedContent,
+  submitLocalError,
+  urlImportLocalError,
+  artifactImportLocalError,
   onFormChange,
   onFileChange,
   onImportFileChange,
@@ -163,6 +169,11 @@ export function ReviewToolbar({
                     Import is not perfect. There might be sections from the site that don&apos;t belong to the post, that can be removed.
                   </p>
                 ) : null}
+                {urlImportLocalError ? (
+                  <p className={styles.errorBanner} data-testid="url-import-local-error" role="alert">
+                    {urlImportLocalError}
+                  </p>
+                ) : null}
               </div>
               <button
                 className={styles.ghostButton}
@@ -209,6 +220,11 @@ export function ReviewToolbar({
                   hidden
                 />
               </label>
+              {artifactImportLocalError ? (
+                <p className={styles.errorBanner} data-testid="artifact-import-local-error" role="alert">
+                  {artifactImportLocalError}
+                </p>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -292,6 +308,11 @@ export function ReviewToolbar({
           </span>
         ) : null}
       </div>
+      {submitLocalError ? (
+        <p className={styles.errorBanner} data-testid="submit-local-error" role="alert">
+          {submitLocalError}
+        </p>
+      ) : null}
     </section>
   );
 }

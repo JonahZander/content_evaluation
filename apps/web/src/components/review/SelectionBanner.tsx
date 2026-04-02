@@ -4,6 +4,7 @@ import type { SelectionDraft } from "@/lib/types";
 interface SelectionBannerProps {
   selectionDraft: SelectionDraft | null;
   commentDraft: string;
+  localErrorMessage: string | null;
   onCommentDraftChange: (value: string) => void;
   onSave: () => void;
   onCancel: () => void;
@@ -12,6 +13,7 @@ interface SelectionBannerProps {
 export function SelectionBanner({
   selectionDraft,
   commentDraft,
+  localErrorMessage,
   onCommentDraftChange,
   onSave,
   onCancel,
@@ -32,6 +34,11 @@ export function SelectionBanner({
           onChange={(event) => onCommentDraftChange(event.target.value)}
           placeholder="Add a reviewer note for this selection"
         />
+        {localErrorMessage ? (
+          <p className={styles.importGuidance} data-testid="selection-comment-local-error" role="alert">
+            {localErrorMessage}
+          </p>
+        ) : null}
         <div className={styles.toolbarGroup}>
           <button className={styles.button} data-testid="selection-comment-save" type="button" onClick={onSave}>
             Save comment

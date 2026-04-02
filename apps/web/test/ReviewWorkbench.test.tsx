@@ -1265,6 +1265,154 @@ describe("ReviewWorkbench", () => {
     expect(blockElement).not.toBeNull();
     expect(blockElement?.className).toContain("documentBlockSynthetic");
   });
+
+  it("shows a local error on the analyze button when run creation fails", async () => {
+    vi.mocked(api.createRun).mockRejectedValueOnce(new Error("Backend unavailable."));
+
+    render(<ReviewWorkbench initialArtifact={null} />);
+
+    fireEvent.change(screen.getByTestId("draft-text-input"), {
+      target: { value: "Some article text." },
+    });
+
+    fireEvent.click(screen.getByTestId("analyze-button"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("submit-local-error")).toHaveTextContent("Backend unavailable."),
+    );
+  });
+
+  it("shows a local error near the URL import button when preview fails", async () => {
+    vi.mocked(api.previewSource).mockRejectedValueOnce(new Error("Could not fetch URL."));
+
+    render(<ReviewWorkbench initialArtifact={null} />);
+
+    fireEvent.change(screen.getByTestId("source-type-select"), {
+      target: { value: "url" },
+    });
+    fireEvent.change(screen.getByTestId("draft-url-input"), {
+      target: { value: "https://example.com/post" },
+    });
+    fireEvent.click(screen.getByTestId("import-url-button"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("url-import-local-error")).toHaveTextContent("Could not fetch URL."),
+    );
+  });
+
+  it("shows a local error near the artifact import input when import fails", async () => {
+    vi.mocked(api.importArtifact).mockRejectedValueOnce(new Error("Invalid artifact file."));
+
+    render(<ReviewWorkbench initialArtifact={null} />);
+
+    fireEvent.change(screen.getByTestId("source-type-select"), {
+      target: { value: "artifact" },
+    });
+
+    const file = { text: async () => '{ "invalid": true }' } as File;
+    fireEvent.change(screen.getByTestId("artifact-import-input"), {
+      target: { files: [file] },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("artifact-import-local-error")).toHaveTextContent("Invalid artifact file."),
+    );
+  });
+
+  it("shows a local error near the analyze button when append-agent fails", async () => {
+    vi.mocked(api.appendAgents).mockRejectedValueOnce(new Error("Agent queue full."));
+
+    render(<ReviewWorkbench initialArtifact={buildAppendableArtifact()} />);
+
+    fireEvent.click(screen.getByTestId("analyze-button"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("submit-local-error")).toHaveTextContent("Agent queue full."),
+    );
+  });
+
+  it("shows a local error in the research panel when targeted research fails", async () => {
+    vi.mocked(api.queueResearch).mockRejectedValueOnce(new Error("Research quota exceeded."));
+
+    render(<ReviewWorkbench initialArtifact={mockArtifact} />);
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Research prompt" }), {
+      target: { value: "What is the source?" },
+    });
+    fireEvent.click(screen.getByTestId("research-submit-button"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("research-local-error")).toHaveTextContent("Research quota exceeded."),
+    );
+  });
+
+  it("shows a per-comment local error when a review-state update fails", async () => {
+    vi.mocked(api.updateReviewState).mockRejectedValueOnce(new Error("State update failed."));
+
+    render(<ReviewWorkbench initialArtifact={mockArtifact} />);
+
+    const thread = screen.getAllByTestId(/^thread-/)[0];
+    const acceptButtons = within(thread).getAllByRole("button", { name: /^Accept$/i });
+    fireEvent.click(acceptButtons[0]);
+
+    await waitFor(() =>
+      expect(screen.getByTestId(/thread-action-local-error/)).toHaveTextContent("State update failed."),
+    );
+  });
+
+  it("shows a local error when revised-markdown generation fails", async () => {
+    vi.mocked(api.generateRevisedMarkdown).mockRejectedValueOnce(new Error("Model timed out."));
+
+    render(<ReviewWorkbench initialArtifact={mockArtifact} />);
+
+    fireEvent.click(screen.getByTestId("apply-changes-button-bottom"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("revised-markdown-local-error")).toHaveTextContent("Model timed out."),
+    );
+  });
+
+  it("shows a local error when a diff decision save fails", async () => {
+    vi.mocked(api.updateRevisedMarkdownDiffReview).mockRejectedValueOnce(new Error("Save conflict."));
+
+    render(<ReviewWorkbench initialArtifact={buildArtifactWithDiffReview()} />);
+
+    fireEvent.click(screen.getByTestId("diff-decision-diff-1-accepted"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("revised-markdown-local-error")).toHaveTextContent("Save conflict."),
+    );
+  });
+
+  it("shows a local error when revised-markdown apply fails without stale-review recovery", async () => {
+    const reviewedArtifact = buildArtifactWithReviewedDiffs();
+    vi.mocked(api.applyRevisedMarkdown).mockRejectedValueOnce(new Error("Apply error."));
+    vi.mocked(api.fetchArtifact).mockRejectedValueOnce(new Error("Not found"));
+
+    render(<ReviewWorkbench initialArtifact={reviewedArtifact} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Apply accepted changes" }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("revised-markdown-local-error")).toHaveTextContent("Apply error."),
+    );
+  });
+
+  it("stale diff review recovery still returns to the review shell after error UX is in place", async () => {
+    const reviewedArtifact = buildArtifactWithReviewedDiffs();
+    vi.mocked(api.applyRevisedMarkdown).mockRejectedValueOnce(
+      new Error("No revised markdown diff is available to apply."),
+    );
+    vi.mocked(api.fetchArtifact).mockResolvedValueOnce(mockArtifact);
+
+    render(<ReviewWorkbench initialArtifact={reviewedArtifact} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Apply accepted changes" }));
+
+    await waitFor(() => expect(screen.getByTestId("review-workbench")).toBeInTheDocument());
+    expect(screen.queryByTestId("diff-review-shell")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("revised-markdown-local-error")).not.toBeInTheDocument();
+  });
 });
 
 function buildOverlapArtifact(): AnalysisArtifact {

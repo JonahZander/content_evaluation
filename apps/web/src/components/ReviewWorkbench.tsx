@@ -122,6 +122,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     selectedFile,
     fileInputKey,
     importInputKey,
+    intakeLocalErrors,
+    reviewLocalErrors,
+    revisedMarkdownLocalError,
     activeArtifactId,
     hasDownloadedJson,
     formState,
@@ -164,6 +167,30 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
 
   function isCurrentMutationRequest(requestId: number): boolean {
     return mutationRequestIdRef.current === requestId;
+  }
+
+  function setIntakeLocalError(key: "submit" | "urlImport" | "artifactImport", message: string | null) {
+    dispatch({ type: "SET_INTAKE_LOCAL_ERROR", key, message });
+  }
+
+  function clearIntakeLocalErrors() {
+    dispatch({ type: "CLEAR_INTAKE_LOCAL_ERRORS" });
+  }
+
+  function setReviewLocalError(key: "selectionComment" | "research", message: string | null) {
+    dispatch({ type: "SET_REVIEW_LOCAL_ERROR", key, message });
+  }
+
+  function setThreadActionLocalError(commentId: string | null, message: string | null) {
+    dispatch({ type: "SET_THREAD_ACTION_LOCAL_ERROR", commentId, message });
+  }
+
+  function setRevisedMarkdownLocalError(message: string | null) {
+    dispatch({ type: "SET_REVISED_MARKDOWN_LOCAL_ERROR", message });
+  }
+
+  function clearReviewLocalErrors() {
+    dispatch({ type: "CLEAR_REVIEW_LOCAL_ERRORS" });
   }
 
   useEffect(() => {
@@ -553,6 +580,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     }
 
     dispatch({ type: "SET_FORM_STATE", formState: resolvedFormState });
+    dispatch({ type: "CLEAR_INTAKE_LOCAL_ERRORS" });
   }, [agents, formState, showTextPreview]);
 
   async function maybeReplaceCurrentAnalysis(resetForm: boolean) {
@@ -598,6 +626,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     }
 
     if (isTerminalArtifact && artifact !== null) {
+      setIntakeLocalError("submit", null);
       const { signal, requestId } = startSubmissionRequest();
       dispatch({ type: "SET_STATUS_MESSAGE", message: "Queueing additional analysis..." });
       dispatch({ type: "SET_IS_SUBMITTING", value: true });
@@ -613,13 +642,18 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         dispatch({ type: "SET_ACTIVE_ARTIFACT_ID", id: updatedArtifact.artifact_id });
         dispatch({ type: "SET_FORM_STATE", formState: hydrateFormStateFromArtifact(formState, updatedArtifact) });
         dispatch({ type: "SET_STATUS_MESSAGE", message: "Additional analysis queued" });
+        setIntakeLocalError("submit", null);
       } catch (error) {
         if (isAbortError(error)) {
           return;
         }
+        const message = error instanceof Error && error.message
+          ? error.message
+          : "Could not queue additional analysis. Try again.";
+        setIntakeLocalError("submit", message);
         dispatch({
           type: "SET_STATUS_MESSAGE",
-          message: error instanceof Error ? error.message : "Could not queue additional analysis.",
+          message,
         });
       } finally {
         if (isCurrentSubmissionRequest(requestId)) {
@@ -638,32 +672,43 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     }
 
     const { signal, requestId } = startSubmissionRequest();
+    setIntakeLocalError("submit", null);
 
     dispatch({ type: "SET_STATUS_MESSAGE", message: "Submitting analysis session..." });
     dispatch({ type: "SET_IS_SUBMITTING", value: true });
     try {
       if (formState.sourceType === "file") {
         if (selectedFile === null) {
-          dispatch({ type: "SET_STATUS_MESSAGE", message: "Choose a .txt or .md file first." });
+          const message = "Choose a .txt or .md file before starting analysis.";
+          setIntakeLocalError("submit", message);
+          dispatch({ type: "SET_STATUS_MESSAGE", message });
           return;
         }
         if (!/\.(txt|md)$/i.test(selectedFile.name)) {
-          dispatch({ type: "SET_STATUS_MESSAGE", message: "Only .txt and .md uploads are supported." });
+          const message = "Only .txt and .md uploads are supported.";
+          setIntakeLocalError("submit", message);
+          dispatch({ type: "SET_STATUS_MESSAGE", message });
           return;
         }
       }
 
       if (formState.sourceType === "text" && !formState.text.trim()) {
-        dispatch({ type: "SET_STATUS_MESSAGE", message: "Paste draft text before starting analysis." });
+        const message = "Paste draft text before starting analysis.";
+        setIntakeLocalError("submit", message);
+        dispatch({ type: "SET_STATUS_MESSAGE", message });
         return;
       }
 
       if (formState.sourceType === "url" && previewDocument === null) {
-        dispatch({ type: "SET_STATUS_MESSAGE", message: "Import the draft from the URL before starting analysis." });
+        const message = "Import the draft from the URL before starting analysis.";
+        setIntakeLocalError("submit", message);
+        dispatch({ type: "SET_STATUS_MESSAGE", message });
         return;
       }
       if (formState.sourceType === "url" && !canAnalyzePreviewDocument) {
-        dispatch({ type: "SET_STATUS_MESSAGE", message: "Restore at least one imported block before starting analysis." });
+        const message = "Restore at least one imported block before starting analysis.";
+        setIntakeLocalError("submit", message);
+        dispatch({ type: "SET_STATUS_MESSAGE", message });
         return;
       }
 
@@ -690,6 +735,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         dispatch({ type: "SET_EDITING_COMMENT", commentId: null, body: "" });
         dispatch({ type: "SET_HAS_DOWNLOADED_JSON", value: false });
         dispatch({ type: "SET_STATUS_MESSAGE", message: `Artifact ${createdArtifact.artifact_id} queued` });
+        setIntakeLocalError("submit", null);
         return;
       }
 
@@ -733,11 +779,16 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       dispatch({ type: "SET_EDITING_COMMENT", commentId: null, body: "" });
       dispatch({ type: "SET_HAS_DOWNLOADED_JSON", value: false });
       dispatch({ type: "SET_STATUS_MESSAGE", message: `Artifact ${createdArtifact.artifact_id} queued` });
+      setIntakeLocalError("submit", null);
     } catch (error) {
       if (isAbortError(error)) {
         return;
       }
-      dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not submit run" });
+      const message = error instanceof Error && error.message
+        ? error.message
+        : "Could not submit this analysis. Confirm the source and try again.";
+      setIntakeLocalError("submit", message);
+      dispatch({ type: "SET_STATUS_MESSAGE", message });
     } finally {
       if (isCurrentSubmissionRequest(requestId)) {
         dispatch({ type: "SET_IS_SUBMITTING", value: false });
@@ -747,9 +798,12 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
 
   async function handlePreviewUrl() {
     if (!formState.url.trim()) {
-      dispatch({ type: "SET_STATUS_MESSAGE", message: "Enter a URL first." });
+      const message = "Enter a URL first.";
+      setIntakeLocalError("urlImport", message);
+      dispatch({ type: "SET_STATUS_MESSAGE", message });
       return;
     }
+    setIntakeLocalError("urlImport", null);
 
     const replacingCurrentAnalysis = artifact !== null || previewDocument !== null;
     if (replacingCurrentAnalysis) {
@@ -776,6 +830,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       dispatch({ type: "SET_PREVIEW_DOCUMENT", document });
       dispatch({ type: "SET_HAS_DOWNLOADED_JSON", value: false });
       dispatch({ type: "SET_STATUS_MESSAGE", message: `Imported draft preview from ${formState.url}` });
+      setIntakeLocalError("urlImport", null);
       dispatch({
         type: "UPDATE_FORM_STATE",
         updater: (current) => ({
@@ -788,7 +843,11 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       if (isAbortError(error)) {
         return;
       }
-      dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not import draft from URL" });
+      const message = error instanceof Error && error.message
+        ? error.message
+        : "Could not import draft from URL. Confirm the link and try again.";
+      setIntakeLocalError("urlImport", message);
+      dispatch({ type: "SET_STATUS_MESSAGE", message });
     } finally {
       if (isCurrentSubmissionRequest(requestId)) {
         dispatch({ type: "SET_IS_PREVIEWING", value: false });
@@ -807,6 +866,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     if (file === null) {
       return;
     }
+    setIntakeLocalError("artifactImport", null);
 
     const replacingCurrentAnalysis = artifact !== null || previewDocument !== null;
     if (replacingCurrentAnalysis) {
@@ -830,11 +890,16 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       dispatch({ type: "SET_FORM_STATE", formState: hydrateFormStateFromArtifact(formState, imported) });
       dispatch({ type: "SET_HAS_DOWNLOADED_JSON", value: true });
       dispatch({ type: "SET_STATUS_MESSAGE", message: `Imported artifact ${imported.artifact_id}` });
+      setIntakeLocalError("artifactImport", null);
     } catch (error) {
       if (isAbortError(error)) {
         return;
       }
-      dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not import artifact" });
+      const message = error instanceof Error && error.message
+        ? error.message
+        : "Could not import artifact JSON. Check the file and try again.";
+      setIntakeLocalError("artifactImport", message);
+      dispatch({ type: "SET_STATUS_MESSAGE", message });
     } finally {
       dispatch({ type: "BUMP_IMPORT_INPUT_KEY" });
     }
@@ -904,12 +969,15 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       return;
     }
     dispatch({ type: "SET_STATUS_MESSAGE", message: "Started a new analysis draft." });
+    clearIntakeLocalErrors();
+    clearReviewLocalErrors();
   }
 
   async function handleCreateComment() {
     if (artifact === null || selectionDraft === null || !commentDraft.trim()) {
       return;
     }
+    setReviewLocalError("selectionComment", null);
     const { signal, requestId } = startMutationRequest();
     try {
       await createComment({
@@ -931,11 +999,16 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       dispatch({ type: "SET_STATUS_MESSAGE", message: `Run ${updatedArtifact.status}` });
       dispatch({ type: "SET_SELECTION_DRAFT", draft: null });
       dispatch({ type: "SET_COMMENT_DRAFT", draft: "" });
+      setReviewLocalError("selectionComment", null);
     } catch (error) {
       if (isAbortError(error)) {
         return;
       }
-      dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not save comment." });
+      const message = error instanceof Error && error.message
+        ? error.message
+        : "Could not save this reviewer comment. Confirm the selected text and try again.";
+      setReviewLocalError("selectionComment", message);
+      dispatch({ type: "SET_STATUS_MESSAGE", message });
     }
   }
 
@@ -948,6 +1021,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       return;
     }
 
+    setThreadActionLocalError(comment.id, null);
     const { signal, requestId } = startMutationRequest();
     dispatch({ type: "SET_IS_SUBMITTING", value: true });
     try {
@@ -979,13 +1053,20 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         type: "SET_STATUS_MESSAGE",
         message: comment.category === "research" ? "Follow-up research queued" : "Comment saved",
       });
+      setThreadActionLocalError(comment.id, null);
     } catch (error) {
       if (isAbortError(error)) {
         return;
       }
+      const message = error instanceof Error && error.message
+        ? error.message
+        : comment.category === "research"
+          ? "Could not queue this follow-up request. Edit the prompt and try again."
+          : "Could not save this reply. Try again.";
+      setThreadActionLocalError(comment.id, message);
       dispatch({
         type: "SET_STATUS_MESSAGE",
-        message: error instanceof Error ? error.message : "Could not save reply.",
+        message,
       });
     } finally {
       if (isCurrentMutationRequest(requestId)) {
@@ -1003,6 +1084,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       return;
     }
 
+    setReviewLocalError("research", null);
     const { signal, requestId } = startMutationRequest();
     setIsQueuingResearch(true);
     try {
@@ -1016,13 +1098,18 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       dispatch({ type: "SET_ARTIFACT", artifact: updatedArtifact });
       dispatch({ type: "SET_ACTIVE_ARTIFACT_ID", id: updatedArtifact.artifact_id });
       dispatch({ type: "SET_STATUS_MESSAGE", message: "Targeted research queued" });
+      setReviewLocalError("research", null);
     } catch (error) {
       if (isAbortError(error)) {
         return;
       }
+      const message = error instanceof Error && error.message
+        ? error.message
+        : "Could not queue targeted research. Refine the prompt and try again.";
+      setReviewLocalError("research", message);
       dispatch({
         type: "SET_STATUS_MESSAGE",
-        message: error instanceof Error ? error.message : "Could not queue targeted research.",
+        message,
       });
     } finally {
       if (isCurrentMutationRequest(requestId)) {
@@ -1031,19 +1118,25 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     }
   }
 
-  async function handleDeleteReply(replyId: string) {
+  async function handleDeleteReply(replyId: string, commentId: string) {
     if (artifact === null) {
       return;
     }
+    setThreadActionLocalError(commentId, null);
     const { signal, requestId } = startMutationRequest();
     try {
       await deleteReply(replyId, signal);
       await refreshArtifactFromMutation(artifact.artifact_id, signal, requestId);
+      setThreadActionLocalError(commentId, null);
     } catch (error) {
       if (isAbortError(error)) {
         return;
       }
-      dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not delete reply." });
+      const message = error instanceof Error && error.message
+        ? error.message
+        : "Could not delete this reply. Try again.";
+      setThreadActionLocalError(commentId, message);
+      dispatch({ type: "SET_STATUS_MESSAGE", message });
     }
   }
 
@@ -1051,6 +1144,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     if (artifact === null) {
       return;
     }
+    setThreadActionLocalError(commentId, null);
     const { signal, requestId } = startMutationRequest();
     try {
       const currentState =
@@ -1059,11 +1153,16 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       const nextState: ReviewState = currentState === reviewState ? "unreviewed" : reviewState;
       await updateReviewState(commentId, nextState, signal);
       await refreshArtifactFromMutation(artifact.artifact_id, signal, requestId);
+      setThreadActionLocalError(commentId, null);
     } catch (error) {
       if (isAbortError(error)) {
         return;
       }
-      dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not update review state." });
+      const message = error instanceof Error && error.message
+        ? error.message
+        : "Could not update this review state. Try again.";
+      setThreadActionLocalError(commentId, message);
+      dispatch({ type: "SET_STATUS_MESSAGE", message });
     }
   }
 
@@ -1071,6 +1170,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     if (artifact === null || !editingBody.trim()) {
       return;
     }
+    setThreadActionLocalError(commentId, null);
     const { signal, requestId } = startMutationRequest();
     try {
       await updateHumanComment(commentId, editingBody, signal);
@@ -1079,11 +1179,16 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         return;
       }
       dispatch({ type: "SET_EDITING_COMMENT", commentId: null, body: "" });
+      setThreadActionLocalError(commentId, null);
     } catch (error) {
       if (isAbortError(error)) {
         return;
       }
-      dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not save edit." });
+      const message = error instanceof Error && error.message
+        ? error.message
+        : "Could not save this comment edit. Try again.";
+      setThreadActionLocalError(commentId, message);
+      dispatch({ type: "SET_STATUS_MESSAGE", message });
     }
   }
 
@@ -1091,6 +1196,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     if (artifact === null) {
       return;
     }
+    setThreadActionLocalError(commentId, null);
     const { signal, requestId } = startMutationRequest();
     try {
       await deleteHumanComment(commentId, signal);
@@ -1101,11 +1207,16 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       if (editingCommentId === commentId) {
         dispatch({ type: "SET_EDITING_COMMENT", commentId: null, body: "" });
       }
+      setThreadActionLocalError(commentId, null);
     } catch (error) {
       if (isAbortError(error)) {
         return;
       }
-      dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not delete comment." });
+      const message = error instanceof Error && error.message
+        ? error.message
+        : "Could not delete this comment. Try again.";
+      setThreadActionLocalError(commentId, message);
+      dispatch({ type: "SET_STATUS_MESSAGE", message });
     }
   }
 
@@ -1133,6 +1244,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       type: "SET_STATUS_MESSAGE",
       message: mode === "rewrite" ? "Generating rewrite draft..." : "Applying accepted changes...",
     });
+    setRevisedMarkdownLocalError(null);
     const { signal, requestId } = startMutationRequest();
     try {
       const updatedArtifact = await generateRevisedMarkdown({
@@ -1156,9 +1268,11 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       if (isAbortError(error)) {
         return;
       }
+      const message = error instanceof Error ? error.message : "Could not generate revised markdown.";
+      setRevisedMarkdownLocalError(message);
       dispatch({
         type: "SET_STATUS_MESSAGE",
-        message: error instanceof Error ? error.message : "Could not generate revised markdown.",
+        message,
       });
     } finally {
       if (isCurrentMutationRequest(requestId)) {
@@ -1171,6 +1285,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     if (artifact === null) {
       return;
     }
+    setRevisedMarkdownLocalError(null);
     const { signal, requestId } = startMutationRequest();
     dispatch({ type: "SET_IS_SAVING_DIFF_REVIEW", value: true });
     try {
@@ -1189,9 +1304,11 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       if (await recoverFromMissingDiffReview(artifact, error, requestId)) {
         return;
       }
+      const message = error instanceof Error ? error.message : "Could not save the diff review decision.";
+      setRevisedMarkdownLocalError(message);
       dispatch({
         type: "SET_STATUS_MESSAGE",
-        message: error instanceof Error ? error.message : "Could not save the diff review decision.",
+        message,
       });
     } finally {
       if (isCurrentMutationRequest(requestId)) {
@@ -1207,6 +1324,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     if (diffReview.mode === "surgical" && !hasAcceptedRevisedMarkdownChanges(diffReview)) {
       return;
     }
+    setRevisedMarkdownLocalError(null);
     const { signal, requestId } = startMutationRequest();
     dispatch({ type: "SET_IS_APPLYING_REVISION", value: true });
     dispatch({ type: "SET_STATUS_MESSAGE", message: "Applying reviewed revised markdown..." });
@@ -1233,9 +1351,11 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       if (await recoverFromMissingDiffReview(artifact, error, requestId)) {
         return;
       }
+      const message = error instanceof Error ? error.message : "Could not apply the revised markdown.";
+      setRevisedMarkdownLocalError(message);
       dispatch({
         type: "SET_STATUS_MESSAGE",
-        message: error instanceof Error ? error.message : "Could not apply the revised markdown.",
+        message,
       });
     } finally {
       if (isCurrentMutationRequest(requestId)) {
@@ -1248,6 +1368,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     if (artifact === null || diffReview === null || diffReview.diffItems.length === 0) {
       return;
     }
+    setRevisedMarkdownLocalError(null);
     const { signal, requestId } = startMutationRequest();
     dispatch({ type: "SET_IS_SAVING_DIFF_REVIEW", value: true });
     try {
@@ -1268,9 +1389,11 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       if (await recoverFromMissingDiffReview(artifact, error, requestId)) {
         return;
       }
+      const message = error instanceof Error ? error.message : "Could not discard the revised markdown candidate.";
+      setRevisedMarkdownLocalError(message);
       dispatch({
         type: "SET_STATUS_MESSAGE",
-        message: error instanceof Error ? error.message : "Could not discard the revised markdown candidate.",
+        message,
       });
     } finally {
       if (isCurrentMutationRequest(requestId)) {
@@ -1366,6 +1489,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
               fileInputKey={fileInputKey}
               selectedFile={selectedFile}
               statusMessage={statusMessage}
+              submitLocalError={intakeLocalErrors.submit}
+              urlImportLocalError={intakeLocalErrors.urlImport}
+              artifactImportLocalError={intakeLocalErrors.artifactImport}
               submitting={isSubmitting}
               previewing={isPreviewing}
               canAnalyze={canAnalyze}
@@ -1386,6 +1512,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
               onFileChange={(file) => {
                 dispatch({ type: "SET_SELECTED_FILE", file });
                 dispatch({ type: "BUMP_FILE_INPUT_KEY" });
+                dispatch({ type: "SET_INTAKE_LOCAL_ERROR", key: "submit", message: null });
                 dispatch({
                   type: "UPDATE_FORM_STATE",
                   updater: (current) => ({
@@ -1446,6 +1573,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
                   onSaveEdit={() => undefined}
                   onCancelEdit={() => undefined}
                   onDeleteComment={() => undefined}
+                  threadActionLocalError={{ commentId: null, message: null }}
                 />
               </section>
             ) : null}
@@ -1476,6 +1604,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
               fileInputKey={fileInputKey}
               selectedFile={selectedFile}
               statusMessage={statusMessage}
+              submitLocalError={intakeLocalErrors.submit}
+              urlImportLocalError={intakeLocalErrors.urlImport}
+              artifactImportLocalError={intakeLocalErrors.artifactImport}
               submitting={isSubmitting}
               previewing={isPreviewing}
               canAnalyze={canAnalyze}
@@ -1496,6 +1627,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
               onFileChange={(file) => {
                 dispatch({ type: "SET_SELECTED_FILE", file });
                 dispatch({ type: "BUMP_FILE_INPUT_KEY" });
+                dispatch({ type: "SET_INTAKE_LOCAL_ERROR", key: "submit", message: null });
                 dispatch({
                   type: "UPDATE_FORM_STATE",
                   updater: (current) => ({
@@ -1517,23 +1649,31 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
             <SelectionBanner
               selectionDraft={selectionDraft}
               commentDraft={commentDraft}
+              localErrorMessage={reviewLocalErrors.selectionComment}
               onCommentDraftChange={(value) => dispatch({ type: "SET_COMMENT_DRAFT", draft: value })}
               onSave={handleCreateComment}
               onCancel={() => dispatch({ type: "SET_SELECTION_DRAFT", draft: null })}
             />
 
             {artifact !== null && !isFollowUpRunInProgress && isTerminalArtifact && hasAcceptedSuggestions && diffReview === null ? (
-              <RevisionActions
-                location="top"
-                canGenerateRevision={canGenerateRevision}
-                generatingRevision={isGeneratingRevision}
-                rewritePromptOpen={rewritePromptOpen}
-                rewriteDirectionPrompt={rewriteDirectionPrompt}
-                onRewriteDirectionPromptChange={setRewriteDirectionPrompt}
-                onToggleRewritePrompt={() => setRewritePromptOpen((current) => !current)}
-                onApplyChanges={() => void handleGenerateRevision("surgical")}
-                onRewriteDraft={() => void handleGenerateRevision("rewrite")}
-              />
+              <>
+                <RevisionActions
+                  location="top"
+                  canGenerateRevision={canGenerateRevision}
+                  generatingRevision={isGeneratingRevision}
+                  rewritePromptOpen={rewritePromptOpen}
+                  rewriteDirectionPrompt={rewriteDirectionPrompt}
+                  onRewriteDirectionPromptChange={setRewriteDirectionPrompt}
+                  onToggleRewritePrompt={() => setRewritePromptOpen((current) => !current)}
+                  onApplyChanges={() => void handleGenerateRevision("surgical")}
+                  onRewriteDraft={() => void handleGenerateRevision("rewrite")}
+                />
+                {revisedMarkdownLocalError ? (
+                  <p className={styles.errorBanner} data-testid="revised-markdown-local-error" role="alert">
+                    {revisedMarkdownLocalError}
+                  </p>
+                ) : null}
+              </>
             ) : null}
 
             {artifact !== null && isFollowUpRunInProgress ? (
@@ -1579,6 +1719,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
                 initialPrompt={researchPromptSeed}
                 disabled={isSubmitting || isQueuingResearch || isFollowUpRunInProgress}
                 submitting={isSubmitting || isQueuingResearch}
+                localError={reviewLocalErrors.research}
                 onSubmit={handleQueueResearch}
               />
             ) : null}
@@ -1639,6 +1780,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
                   dispatch({ type: "SET_EDITING_COMMENT", commentId: null, body: "" });
                 }}
                 onDeleteComment={handleDeleteHumanComment}
+                threadActionLocalError={{ commentId: reviewLocalErrors.threadActionCommentId, message: reviewLocalErrors.threadActionMessage }}
               />
             </section>
 
@@ -1681,6 +1823,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
                   onSaveEdit={() => undefined}
                   onCancelEdit={() => undefined}
                   onDeleteComment={() => undefined}
+                  threadActionLocalError={{ commentId: null, message: null }}
                 />
               </section>
             ) : null}
@@ -1712,6 +1855,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
               applied={revisedMarkdownApplied}
               savingDecision={isSavingDiffReview}
               applyingRevision={isApplyingRevision}
+              localError={revisedMarkdownLocalError}
               onDecisionChange={handleDiffDecision}
               onRejectAll={handleRejectAllDiffs}
               onApply={handleApplyRevision}
@@ -1727,11 +1871,13 @@ function ResearchPanel({
   initialPrompt,
   disabled,
   submitting,
+  localError,
   onSubmit,
 }: {
   initialPrompt: string;
   disabled: boolean;
   submitting: boolean;
+  localError: string | null;
   onSubmit: (prompt: string) => void;
 }) {
   const [prompt, setPrompt] = useState(initialPrompt);
@@ -1773,6 +1919,11 @@ function ResearchPanel({
               : "Start from an empty prompt if no fact-check suggestion exists."}
           </span>
         </div>
+        {localError ? (
+          <p className={styles.errorBanner} data-testid="research-local-error" role="alert">
+            {localError}
+          </p>
+        ) : null}
       </div>
     </section>
   );

@@ -49,6 +49,8 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - `ReviewWorkbench.tsx` coordinates run submission, artifact import/export, live progress, and review mutations against artifact snapshots using a centralized `useReducer` + typed action dispatch instead of individual `useState` hooks.
 - State shape, actions, and the pure reducer live in `src/components/review/workbench-state.ts` so state transitions are explicit and testable.
 - Phase selection is derived from the current artifact state so imported draft, running, terminal, and diff-review artifacts restore into the right shell.
+- Browser session restore state is stored as strict versioned metadata (`content-evaluation:artifact`, v3) with bounded draft-recovery text; malformed or outdated payloads are ignored.
+- Restore policy is deterministic: prefer backend artifact refetch when available, otherwise restore safe draft/preview metadata, and only synthesize a review shell for stale diff-review state when enough draft context exists.
 - Key callbacks (`refreshArtifact`, `refreshArtifactCoalesced`) are stabilized with `useCallback` so the SSE effect always references the current version.
 - The `SelectionDraft` interface is defined once in `src/lib/types.ts` and imported by `ReviewWorkbench`, `SelectionBanner`, and `DocumentPane`.
 - Presentational review pieces live under `src/components/review/`.
@@ -67,7 +69,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - URL preview pruning stays in Phase 1 so the reviewer can normalize the draft before the first run.
 - The intake shell should offer one curated `Open demo review` entry that imports a finished artifact directly into the review workbench, with generic artifact import still available as a secondary path.
 - Workspace persistence should be the preselected mode for new analyses so reloads can recover the canonical artifact from the backend.
-- Session persistence should remain available as a lightweight local option, but the browser should only store restore metadata rather than a full artifact snapshot.
+- Session persistence should remain available as a lightweight local option, but the browser should only store bounded restore metadata rather than a full artifact snapshot.
 - Comments identify the agent or reviewer that produced them.
 - Agent comments are replyable by the human reviewer.
 - Agent comments expose immediate `Accept`, `Reject`, and `Uncertain` actions, and clicking the active state again should clear it back to `unreviewed`.

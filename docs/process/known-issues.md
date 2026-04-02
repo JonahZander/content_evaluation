@@ -49,13 +49,8 @@ These findings from the 2026-03-13 code review were not addressed in the current
 
 | ID | File | Issue |
 |----|------|-------|
-| M17 | `ReviewWorkbench.tsx` / `api.ts` | `API_BASE_URL` duplicated in two files. Divergence would silently break SSE. |
-| M19 | `ReviewWorkbench.tsx` | Weak sessionStorage type guards. |
-| M20 | `ReviewWorkbench.tsx` | Full artifact serialized to sessionStorage on every state change. Can hit ~5MB quota for large documents. |
 | M21 | `DocumentPane.tsx` | Resize handler fires without debounce. |
 | M22 | `DocumentPane.tsx` | Connector paths go stale when anchor/comment refs mount or unmount. |
-| M23 | `RunMetrics.tsx` | Shows "0%" when no data — implies a zero score rather than "not yet computed." |
-| M24 | `api.ts` | No `AbortController` support. Stale responses can overwrite current state. |
 
 ### Infrastructure
 
@@ -93,5 +88,9 @@ These were critical or high findings that were resolved in commits `b28127b`, `e
 | M11 | Worker sequential: `asyncio.Semaphore(worker_max_concurrent_runs)` |
 | M13 | FastAPI run creation now uses a typed JSON body route and a separate multipart route instead of manual JSON parsing |
 | M14 | `ArtifactSummary.overall_score` now enforces `ge=0/le=100` |
+| M17 | `API_BASE_URL` now lives in one shared frontend API client module and is reused by SSE paths. |
+| M19/M20 | Session restore now uses strict v3 metadata-only storage with bounded draft recovery and fail-closed validation. |
+| M23 | Summary sub-scores (`novelty_score`, `ai_likelihood`) now support explicit null/unavailable values; the UI renders neutral placeholders and still renders real `0%`. |
+| M24 | Mutation and review API calls now support `AbortSignal`, and workbench handlers guard against stale mutation responses overwriting newer state. |
 | L14 | `SelectionDraft` duplicated: defined once in `src/lib/types.ts` |
 | L25/M18 | 18+ `useState` hooks and missing `useCallback`: `useReducer` + stabilized callbacks |

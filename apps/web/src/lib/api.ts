@@ -157,11 +157,11 @@ export async function createRunFromFile(
   );
 }
 
-export async function fetchArtifact(artifactId: string): Promise<AnalysisArtifact> {
-  return parseJson(await fetch(`${API_BASE_URL}/api/v1/runs/${artifactId}`));
+export async function fetchArtifact(artifactId: string, signal?: AbortSignal): Promise<AnalysisArtifact> {
+  return parseJson(await fetch(`${API_BASE_URL}/api/v1/runs/${artifactId}`, { signal }));
 }
 
-export async function appendAgents(payload: AppendAgentsPayload): Promise<AnalysisArtifact> {
+export async function appendAgents(payload: AppendAgentsPayload, signal?: AbortSignal): Promise<AnalysisArtifact> {
   return parseJson(
     await fetch(`${API_BASE_URL}/api/v1/runs/${payload.artifactId}/agents`, {
       method: "POST",
@@ -171,11 +171,12 @@ export async function appendAgents(payload: AppendAgentsPayload): Promise<Analys
       body: JSON.stringify({
         selected_agents: payload.selectedAgents,
       }),
+      signal,
     }),
   );
 }
 
-export async function queueResearch(payload: QueueResearchPayload): Promise<AnalysisArtifact> {
+export async function queueResearch(payload: QueueResearchPayload, signal?: AbortSignal): Promise<AnalysisArtifact> {
   return parseJson(
     await fetch(`${API_BASE_URL}/api/v1/runs/${payload.artifactId}/research`, {
       method: "POST",
@@ -187,19 +188,24 @@ export async function queueResearch(payload: QueueResearchPayload): Promise<Anal
         anchor_id: payload.anchorId,
         comment_id: payload.commentId,
       }),
+      signal,
     }),
   );
 }
 
-export async function cancelRun(artifactId: string): Promise<AnalysisArtifact> {
+export async function cancelRun(artifactId: string, signal?: AbortSignal): Promise<AnalysisArtifact> {
   return parseJson(
     await fetch(`${API_BASE_URL}/api/v1/runs/${artifactId}/cancel`, {
       method: "POST",
+      signal,
     }),
   );
 }
 
-export async function generateRevisedMarkdown(payload: GenerateRevisedMarkdownPayload): Promise<AnalysisArtifact> {
+export async function generateRevisedMarkdown(
+  payload: GenerateRevisedMarkdownPayload,
+  signal?: AbortSignal,
+): Promise<AnalysisArtifact> {
   return parseJson(
     await fetch(`${API_BASE_URL}/api/v1/runs/${payload.artifactId}/revised-markdown`, {
       method: "POST",
@@ -210,6 +216,7 @@ export async function generateRevisedMarkdown(payload: GenerateRevisedMarkdownPa
         mode: payload.mode,
         direction_prompt: payload.directionPrompt,
       }),
+      signal,
     }),
   );
 }
@@ -217,6 +224,7 @@ export async function generateRevisedMarkdown(payload: GenerateRevisedMarkdownPa
 export async function updateRevisedMarkdownDiffReview(
   artifactId: string,
   decisions: UpdateRevisedMarkdownDiffReviewDecision[],
+  signal?: AbortSignal,
 ): Promise<AnalysisArtifact> {
   return parseJson(
     await fetch(`${API_BASE_URL}/api/v1/runs/${artifactId}/revised-markdown/diff-review`, {
@@ -230,19 +238,21 @@ export async function updateRevisedMarkdownDiffReview(
           decision: item.decision,
         })),
       }),
+      signal,
     }),
   );
 }
 
-export async function applyRevisedMarkdown(artifactId: string): Promise<AnalysisArtifact> {
+export async function applyRevisedMarkdown(artifactId: string, signal?: AbortSignal): Promise<AnalysisArtifact> {
   return parseJson(
     await fetch(`${API_BASE_URL}/api/v1/runs/${artifactId}/revised-markdown/apply`, {
       method: "POST",
+      signal,
     }),
   );
 }
 
-export async function importArtifact(artifact: AnalysisArtifact): Promise<AnalysisArtifact> {
+export async function importArtifact(artifact: AnalysisArtifact, signal?: AbortSignal): Promise<AnalysisArtifact> {
   return parseJson(
     await fetch(`${API_BASE_URL}/api/v1/artifacts/import`, {
       method: "POST",
@@ -250,11 +260,12 @@ export async function importArtifact(artifact: AnalysisArtifact): Promise<Analys
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ artifact }),
+      signal,
     }),
   );
 }
 
-export async function createComment(payload: CreateCommentPayload): Promise<void> {
+export async function createComment(payload: CreateCommentPayload, signal?: AbortSignal): Promise<void> {
   await parseJson(
     await fetch(`${API_BASE_URL}/api/v1/comments`, {
       method: "POST",
@@ -270,11 +281,12 @@ export async function createComment(payload: CreateCommentPayload): Promise<void
         end_offset: payload.endOffset,
         quote: payload.quote,
       }),
+      signal,
     }),
   );
 }
 
-export async function addReply(commentId: string, body: string): Promise<void> {
+export async function addReply(commentId: string, body: string, signal?: AbortSignal): Promise<void> {
   await parseJson(
     await fetch(`${API_BASE_URL}/api/v1/comments/${commentId}/replies`, {
       method: "POST",
@@ -282,18 +294,20 @@ export async function addReply(commentId: string, body: string): Promise<void> {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ body }),
+      signal,
     }),
   );
 }
 
-export async function deleteReply(replyId: string): Promise<void> {
+export async function deleteReply(replyId: string, signal?: AbortSignal): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/api/v1/replies/${replyId}`, {
     method: "DELETE",
+    signal,
   });
   await assertOk(response);
 }
 
-export async function updateReviewState(commentId: string, state: ReviewState): Promise<void> {
+export async function updateReviewState(commentId: string, state: ReviewState, signal?: AbortSignal): Promise<void> {
   await parseJson(
     await fetch(`${API_BASE_URL}/api/v1/comments/${commentId}/review-state`, {
       method: "PATCH",
@@ -301,11 +315,12 @@ export async function updateReviewState(commentId: string, state: ReviewState): 
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ review_state: state }),
+      signal,
     }),
   );
 }
 
-export async function updateHumanComment(commentId: string, body: string): Promise<void> {
+export async function updateHumanComment(commentId: string, body: string, signal?: AbortSignal): Promise<void> {
   await parseJson(
     await fetch(`${API_BASE_URL}/api/v1/comments/${commentId}`, {
       method: "PATCH",
@@ -313,13 +328,15 @@ export async function updateHumanComment(commentId: string, body: string): Promi
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ body }),
+      signal,
     }),
   );
 }
 
-export async function deleteHumanComment(commentId: string): Promise<void> {
+export async function deleteHumanComment(commentId: string, signal?: AbortSignal): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/api/v1/comments/${commentId}`, {
     method: "DELETE",
+    signal,
   });
   await assertOk(response);
 }

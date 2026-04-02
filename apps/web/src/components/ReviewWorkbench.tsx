@@ -61,20 +61,34 @@ interface ReviewWorkbenchProps {
 type WorkbenchPhase = "intake" | "running" | "review" | "diff_review";
 
 interface StoredWorkbenchState {
-  version: 2;
+  version: 3;
   artifactId: string | null;
   artifactPersistenceMode: ReviewFormState["persistenceMode"] | null;
   artifactStatus: RunStatus | null;
   artifactTitle: string | null;
   artifactPhase?: WorkbenchPhase | null;
-  previewDocument: ArtifactDocument | null;
-  hiddenPreviewBlockIds?: string[];
+  draftRecovery: StoredDraftRecovery | null;
   formState: ReviewFormState;
   hasDownloadedJson: boolean;
 }
 
+interface StoredDraftRecovery {
+  mode: "intake" | "preview";
+  sourceType: "text" | "url";
+  sourceLabel: string;
+  title: string;
+  url: string;
+  text: string;
+}
+
 const SESSION_STORAGE_KEY = "content-evaluation:artifact";
+const STORED_WORKBENCH_STATE_VERSION = 3;
+const MAX_STORED_DRAFT_CHARS = 75_000;
 const TERMINAL_RUN_STATUSES = new Set<RunStatus>(["completed", "failed", "canceled"]);
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
+}
 
 export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   const [state, dispatch] = useReducer(workbenchReducer, {
@@ -120,14 +134,42 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   const historicalCommentRefs = useRef<Record<string, HTMLElement | null>>({});
   const refreshInFlightRef = useRef<Promise<AnalysisArtifact> | null>(null);
   const queuedRefreshArtifactIdRef = useRef<string | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const submissionAbortControllerRef = useRef<AbortController | null>(null);
+  const submissionRequestIdRef = useRef(0);
+  const mutationAbortControllerRef = useRef<AbortController | null>(null);
+  const mutationRequestIdRef = useRef(0);
   const [isQueuingResearch, setIsQueuingResearch] = useState(false);
   const [rewritePromptOpen, setRewritePromptOpen] = useState(false);
   const [rewriteDirectionPrompt, setRewriteDirectionPrompt] = useState("");
 
+  function startSubmissionRequest(): { signal: AbortSignal; requestId: number } {
+    submissionAbortControllerRef.current?.abort();
+    const controller = new AbortController();
+    submissionAbortControllerRef.current = controller;
+    submissionRequestIdRef.current += 1;
+    return { signal: controller.signal, requestId: submissionRequestIdRef.current };
+  }
+
+  function isCurrentSubmissionRequest(requestId: number): boolean {
+    return submissionRequestIdRef.current === requestId;
+  }
+
+  function startMutationRequest(): { signal: AbortSignal; requestId: number } {
+    mutationAbortControllerRef.current?.abort();
+    const controller = new AbortController();
+    mutationAbortControllerRef.current = controller;
+    mutationRequestIdRef.current += 1;
+    return { signal: controller.signal, requestId: mutationRequestIdRef.current };
+  }
+
+  function isCurrentMutationRequest(requestId: number): boolean {
+    return mutationRequestIdRef.current === requestId;
+  }
+
   useEffect(() => {
     return () => {
-      abortControllerRef.current?.abort();
+      submissionAbortControllerRef.current?.abort();
+      mutationAbortControllerRef.current?.abort();
     };
   }, []);
 
@@ -196,12 +238,12 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
           if (cancelled) {
             return;
           }
-          if (parsed.artifactPhase === "diff_review") {
+          if (parsed.artifactPhase === "diff_review" && parsed.draftRecovery !== null) {
             dispatch({
               type: "RESTORE_STORED_STATE",
               artifact: buildRecoveredReviewArtifact(parsed),
               previewDocument: null,
-              formState: parsed.formState,
+              formState: restoreStoredFormState(parsed),
               hasDownloadedJson: parsed.hasDownloadedJson,
               activeArtifactId: null,
               statusMessage:
@@ -209,31 +251,35 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
             });
             return;
           }
+
+          const recoveredDraft = restoreStoredDraftFallback(parsed);
           dispatch({
             type: "RESTORE_STORED_STATE",
             artifact: null,
-            previewDocument: parsed.previewDocument,
-            formState: parsed.formState,
+            previewDocument: recoveredDraft?.previewDocument ?? null,
+            formState: recoveredDraft?.formState ?? restoreStoredFormState(parsed),
             hasDownloadedJson: parsed.hasDownloadedJson,
             activeArtifactId: null,
             statusMessage:
-              parsed.artifactPersistenceMode === "workspace"
-                ? "Previous workspace run is no longer available from the backend. Restored the draft only."
-                : "Previous session run is no longer available from the backend. Restored the draft only.",
+              recoveredDraft?.statusMessage
+              ?? (parsed.artifactPersistenceMode === "workspace"
+                ? "Previous workspace run is no longer available from the backend. Start a new analysis or reimport the draft."
+                : "Previous session run is no longer available from the backend. Start a new analysis or reimport the draft."),
           });
           return;
         }
       }
 
-      if (parsed.previewDocument !== null) {
+      const recoveredDraft = restoreStoredDraftFallback(parsed);
+      if (recoveredDraft !== null) {
         dispatch({
           type: "RESTORE_STORED_STATE",
           artifact: null,
-          previewDocument: parsed.previewDocument,
-          formState: parsed.formState,
+          previewDocument: recoveredDraft.previewDocument,
+          formState: recoveredDraft.formState,
           hasDownloadedJson: parsed.hasDownloadedJson,
           activeArtifactId: null,
-          statusMessage: `Restored imported draft preview for ${parsed.previewDocument.title}.`,
+          statusMessage: recoveredDraft.statusMessage,
         });
       }
     }
@@ -248,31 +294,22 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     if (typeof window === "undefined") {
       return;
     }
-    const storedState: StoredWorkbenchState = {
-      version: 2,
-      artifactId: artifact?.artifact_id ?? null,
-      artifactPersistenceMode: artifact?.run_config.persistence_mode ?? null,
-      artifactStatus: artifact?.status ?? null,
-      artifactTitle: artifact?.document?.title ?? artifact?.source.title ?? null,
-      artifactPhase: artifact === null ? null : getWorkbenchPhase(artifact),
-      previewDocument: artifact === null ? previewDocument : null,
-      hiddenPreviewBlockIds: artifact === null ? hiddenPreviewBlockIds : [],
+    const storedState = buildStoredWorkbenchState({
+      artifact,
+      previewDocument,
+      hiddenPreviewBlockIds,
       formState,
       hasDownloadedJson,
-    };
-    if (
-      storedState.artifactId === null &&
-      storedState.previewDocument === null &&
-      !hasFormDraft(formState)
-    ) {
+    });
+    if (storedState === null) {
       window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
       return;
     }
     window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(storedState));
   }, [artifact, previewDocument, hiddenPreviewBlockIds, formState, hasDownloadedJson]);
 
-  const refreshArtifact = useCallback(async (artifactId: string) => {
-    const updated = await fetchArtifact(artifactId);
+  const refreshArtifact = useCallback(async (artifactId: string, signal?: AbortSignal) => {
+    const updated = await fetchArtifact(artifactId, signal);
     dispatch({ type: "SET_ARTIFACT", artifact: updated });
     if (updated.document !== null) {
       dispatch({ type: "SET_PREVIEW_DOCUMENT", document: null });
@@ -280,6 +317,23 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     dispatch({ type: "SET_STATUS_MESSAGE", message: `Run ${updated.status}` });
     return updated;
   }, []);
+
+  async function refreshArtifactFromMutation(
+    artifactId: string,
+    signal: AbortSignal,
+    requestId: number,
+  ): Promise<AnalysisArtifact | null> {
+    const updated = await fetchArtifact(artifactId, signal);
+    if (!isCurrentMutationRequest(requestId)) {
+      return null;
+    }
+    dispatch({ type: "SET_ARTIFACT", artifact: updated });
+    if (updated.document !== null) {
+      dispatch({ type: "SET_PREVIEW_DOCUMENT", document: null });
+    }
+    dispatch({ type: "SET_STATUS_MESSAGE", message: `Run ${updated.status}` });
+    return updated;
+  }
 
   const refreshArtifactCoalesced = useCallback(
     async (artifactId: string): Promise<AnalysisArtifact> => {
@@ -323,7 +377,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       eventSource.close();
     };
 
-    const signal = abortControllerRef.current?.signal;
+    const signal = submissionAbortControllerRef.current?.signal;
     const onAbort = () => eventSource.close();
     signal?.addEventListener("abort", onAbort);
 
@@ -544,24 +598,33 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     }
 
     if (isTerminalArtifact && artifact !== null) {
+      const { signal, requestId } = startSubmissionRequest();
       dispatch({ type: "SET_STATUS_MESSAGE", message: "Queueing additional analysis..." });
       dispatch({ type: "SET_IS_SUBMITTING", value: true });
       try {
         const updatedArtifact = await appendAgents({
           artifactId: artifact.artifact_id,
           selectedAgents: formState.selectedAgents,
-        });
+        }, signal);
+        if (!isCurrentSubmissionRequest(requestId)) {
+          return;
+        }
         dispatch({ type: "SET_ARTIFACT", artifact: updatedArtifact });
         dispatch({ type: "SET_ACTIVE_ARTIFACT_ID", id: updatedArtifact.artifact_id });
         dispatch({ type: "SET_FORM_STATE", formState: hydrateFormStateFromArtifact(formState, updatedArtifact) });
         dispatch({ type: "SET_STATUS_MESSAGE", message: "Additional analysis queued" });
       } catch (error) {
+        if (isAbortError(error)) {
+          return;
+        }
         dispatch({
           type: "SET_STATUS_MESSAGE",
           message: error instanceof Error ? error.message : "Could not queue additional analysis.",
         });
       } finally {
-        dispatch({ type: "SET_IS_SUBMITTING", value: false });
+        if (isCurrentSubmissionRequest(requestId)) {
+          dispatch({ type: "SET_IS_SUBMITTING", value: false });
+        }
       }
       return;
     }
@@ -574,9 +637,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       }
     }
 
-    abortControllerRef.current?.abort();
-    abortControllerRef.current = new AbortController();
-    const { signal } = abortControllerRef.current;
+    const { signal, requestId } = startSubmissionRequest();
 
     dispatch({ type: "SET_STATUS_MESSAGE", message: "Submitting analysis session..." });
     dispatch({ type: "SET_IS_SUBMITTING", value: true });
@@ -618,6 +679,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
           },
           signal,
         );
+        if (!isCurrentSubmissionRequest(requestId)) {
+          return;
+        }
         dispatch({ type: "SET_ARTIFACT", artifact: createdArtifact });
         dispatch({ type: "SET_ACTIVE_ARTIFACT_ID", id: createdArtifact.artifact_id });
         dispatch({ type: "SET_FORM_STATE", formState: hydrateFormStateFromArtifact(formState, createdArtifact) });
@@ -658,6 +722,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       }
 
       const createdArtifact = await createRun(payload, signal);
+      if (!isCurrentSubmissionRequest(requestId)) {
+        return;
+      }
       dispatch({ type: "SET_ARTIFACT", artifact: createdArtifact });
       dispatch({ type: "SET_ACTIVE_ARTIFACT_ID", id: createdArtifact.artifact_id });
       dispatch({ type: "SET_FORM_STATE", formState: hydrateFormStateFromArtifact(formState, createdArtifact) });
@@ -667,12 +734,14 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       dispatch({ type: "SET_HAS_DOWNLOADED_JSON", value: false });
       dispatch({ type: "SET_STATUS_MESSAGE", message: `Artifact ${createdArtifact.artifact_id} queued` });
     } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
+      if (isAbortError(error)) {
         return;
       }
       dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not submit run" });
     } finally {
-      dispatch({ type: "SET_IS_SUBMITTING", value: false });
+      if (isCurrentSubmissionRequest(requestId)) {
+        dispatch({ type: "SET_IS_SUBMITTING", value: false });
+      }
     }
   }
 
@@ -690,9 +759,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       }
     }
 
-    abortControllerRef.current?.abort();
-    abortControllerRef.current = new AbortController();
-    const { signal } = abortControllerRef.current;
+    const { signal, requestId } = startSubmissionRequest();
 
     dispatch({ type: "SET_IS_PREVIEWING", value: true });
     dispatch({ type: "SET_STATUS_MESSAGE", message: "Importing draft from URL..." });
@@ -703,6 +770,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         title: formState.title,
         url: formState.url,
       }, signal);
+      if (!isCurrentSubmissionRequest(requestId)) {
+        return;
+      }
       dispatch({ type: "SET_PREVIEW_DOCUMENT", document });
       dispatch({ type: "SET_HAS_DOWNLOADED_JSON", value: false });
       dispatch({ type: "SET_STATUS_MESSAGE", message: `Imported draft preview from ${formState.url}` });
@@ -715,12 +785,14 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         }),
       });
     } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
+      if (isAbortError(error)) {
         return;
       }
       dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not import draft from URL" });
     } finally {
-      dispatch({ type: "SET_IS_PREVIEWING", value: false });
+      if (isCurrentSubmissionRequest(requestId)) {
+        dispatch({ type: "SET_IS_PREVIEWING", value: false });
+      }
     }
   }
 
@@ -745,9 +817,13 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       }
     }
 
+    const { signal, requestId } = startSubmissionRequest();
     try {
       const parsed = JSON.parse(await file.text()) as AnalysisArtifact;
-      const imported = await importArtifact(parsed);
+      const imported = await importArtifact(parsed, signal);
+      if (!isCurrentSubmissionRequest(requestId)) {
+        return;
+      }
       dispatch({ type: "SET_ARTIFACT", artifact: imported });
       dispatch({ type: "SET_PREVIEW_DOCUMENT", document: null });
       dispatch({ type: "SET_ACTIVE_ARTIFACT_ID", id: activeArtifactIdFor(imported) });
@@ -755,6 +831,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       dispatch({ type: "SET_HAS_DOWNLOADED_JSON", value: true });
       dispatch({ type: "SET_STATUS_MESSAGE", message: `Imported artifact ${imported.artifact_id}` });
     } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
       dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not import artifact" });
     } finally {
       dispatch({ type: "BUMP_IMPORT_INPUT_KEY" });
@@ -770,9 +849,13 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       }
     }
 
+    const { signal, requestId } = startSubmissionRequest();
     try {
       dispatch({ type: "SET_IS_SUBMITTING", value: true });
-      const imported = await importArtifact(structuredClone(mockArtifact));
+      const imported = await importArtifact(structuredClone(mockArtifact), signal);
+      if (!isCurrentSubmissionRequest(requestId)) {
+        return;
+      }
       dispatch({ type: "SET_ARTIFACT", artifact: imported });
       dispatch({ type: "SET_PREVIEW_DOCUMENT", document: null });
       dispatch({ type: "SET_ACTIVE_ARTIFACT_ID", id: activeArtifactIdFor(imported) });
@@ -780,12 +863,17 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       dispatch({ type: "SET_HAS_DOWNLOADED_JSON", value: false });
       dispatch({ type: "SET_STATUS_MESSAGE", message: "Opened the demo review artifact." });
     } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
       dispatch({
         type: "SET_STATUS_MESSAGE",
         message: error instanceof Error ? error.message : "Could not open the demo artifact.",
       });
     } finally {
-      dispatch({ type: "SET_IS_SUBMITTING", value: false });
+      if (isCurrentSubmissionRequest(requestId)) {
+        dispatch({ type: "SET_IS_SUBMITTING", value: false });
+      }
     }
   }
 
@@ -793,12 +881,19 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     if (artifact === null || (artifact.status !== "queued" && artifact.status !== "running")) {
       return;
     }
+    const { signal, requestId } = startSubmissionRequest();
     try {
-      const canceledArtifact = await cancelRun(artifact.artifact_id);
+      const canceledArtifact = await cancelRun(artifact.artifact_id, signal);
+      if (!isCurrentSubmissionRequest(requestId)) {
+        return;
+      }
       dispatch({ type: "SET_ARTIFACT", artifact: canceledArtifact });
       dispatch({ type: "SET_ACTIVE_ARTIFACT_ID", id: null });
       dispatch({ type: "SET_STATUS_MESSAGE", message: "Run canceled" });
     } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
       dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not stop the run" });
     }
   }
@@ -815,6 +910,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     if (artifact === null || selectionDraft === null || !commentDraft.trim()) {
       return;
     }
+    const { signal, requestId } = startMutationRequest();
     try {
       await createComment({
         artifactId: artifact.artifact_id,
@@ -823,11 +919,22 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         startOffset: selectionDraft.startOffset,
         endOffset: selectionDraft.endOffset,
         quote: selectionDraft.quote,
-      });
-      await refreshArtifact(artifact.artifact_id);
+      }, signal);
+      const updatedArtifact = await fetchArtifact(artifact.artifact_id, signal);
+      if (!isCurrentMutationRequest(requestId)) {
+        return;
+      }
+      dispatch({ type: "SET_ARTIFACT", artifact: updatedArtifact });
+      if (updatedArtifact.document !== null) {
+        dispatch({ type: "SET_PREVIEW_DOCUMENT", document: null });
+      }
+      dispatch({ type: "SET_STATUS_MESSAGE", message: `Run ${updatedArtifact.status}` });
       dispatch({ type: "SET_SELECTION_DRAFT", draft: null });
       dispatch({ type: "SET_COMMENT_DRAFT", draft: "" });
     } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
       dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not save comment." });
     }
   }
@@ -841,6 +948,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       return;
     }
 
+    const { signal, requestId } = startMutationRequest();
     dispatch({ type: "SET_IS_SUBMITTING", value: true });
     try {
       if (comment.category === "research") {
@@ -849,12 +957,21 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
           prompt: body,
           anchorId: comment.anchor_id,
           commentId: comment.id,
-        });
+        }, signal);
+        if (!isCurrentMutationRequest(requestId)) {
+          return;
+        }
         dispatch({ type: "SET_ARTIFACT", artifact: updatedArtifact });
         dispatch({ type: "SET_ACTIVE_ARTIFACT_ID", id: updatedArtifact.artifact_id });
       } else {
-        await addReply(comment.id, body);
-        await refreshArtifact(artifact.artifact_id);
+        await addReply(comment.id, body, signal);
+        const refreshed = await refreshArtifactFromMutation(artifact.artifact_id, signal, requestId);
+        if (refreshed === null) {
+          return;
+        }
+      }
+      if (!isCurrentMutationRequest(requestId)) {
+        return;
       }
       dispatch({ type: "SET_REPLY_DRAFT", commentId: comment.id, body: "" });
       dispatch({ type: "SET_ACTIVE_REPLY_COMPOSER", commentId: null });
@@ -863,12 +980,17 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         message: comment.category === "research" ? "Follow-up research queued" : "Comment saved",
       });
     } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
       dispatch({
         type: "SET_STATUS_MESSAGE",
         message: error instanceof Error ? error.message : "Could not save reply.",
       });
     } finally {
-      dispatch({ type: "SET_IS_SUBMITTING", value: false });
+      if (isCurrentMutationRequest(requestId)) {
+        dispatch({ type: "SET_IS_SUBMITTING", value: false });
+      }
     }
   }
 
@@ -881,22 +1003,31 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       return;
     }
 
+    const { signal, requestId } = startMutationRequest();
     setIsQueuingResearch(true);
     try {
       const updatedArtifact = await queueResearch({
         artifactId: artifact.artifact_id,
         prompt: trimmedPrompt,
-      });
+      }, signal);
+      if (!isCurrentMutationRequest(requestId)) {
+        return;
+      }
       dispatch({ type: "SET_ARTIFACT", artifact: updatedArtifact });
       dispatch({ type: "SET_ACTIVE_ARTIFACT_ID", id: updatedArtifact.artifact_id });
       dispatch({ type: "SET_STATUS_MESSAGE", message: "Targeted research queued" });
     } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
       dispatch({
         type: "SET_STATUS_MESSAGE",
         message: error instanceof Error ? error.message : "Could not queue targeted research.",
       });
     } finally {
-      setIsQueuingResearch(false);
+      if (isCurrentMutationRequest(requestId)) {
+        setIsQueuingResearch(false);
+      }
     }
   }
 
@@ -904,10 +1035,14 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     if (artifact === null) {
       return;
     }
+    const { signal, requestId } = startMutationRequest();
     try {
-      await deleteReply(replyId);
-      await refreshArtifact(artifact.artifact_id);
+      await deleteReply(replyId, signal);
+      await refreshArtifactFromMutation(artifact.artifact_id, signal, requestId);
     } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
       dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not delete reply." });
     }
   }
@@ -916,14 +1051,18 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     if (artifact === null) {
       return;
     }
+    const { signal, requestId } = startMutationRequest();
     try {
       const currentState =
         artifact.threads.flatMap((thread) => thread.comments).find((comment) => comment.id === commentId)?.review_state
         ?? "unreviewed";
       const nextState: ReviewState = currentState === reviewState ? "unreviewed" : reviewState;
-      await updateReviewState(commentId, nextState);
-      await refreshArtifact(artifact.artifact_id);
+      await updateReviewState(commentId, nextState, signal);
+      await refreshArtifactFromMutation(artifact.artifact_id, signal, requestId);
     } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
       dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not update review state." });
     }
   }
@@ -932,11 +1071,18 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     if (artifact === null || !editingBody.trim()) {
       return;
     }
+    const { signal, requestId } = startMutationRequest();
     try {
-      await updateHumanComment(commentId, editingBody);
-      await refreshArtifact(artifact.artifact_id);
+      await updateHumanComment(commentId, editingBody, signal);
+      const refreshed = await refreshArtifactFromMutation(artifact.artifact_id, signal, requestId);
+      if (refreshed === null) {
+        return;
+      }
       dispatch({ type: "SET_EDITING_COMMENT", commentId: null, body: "" });
     } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
       dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not save edit." });
     }
   }
@@ -945,13 +1091,20 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     if (artifact === null) {
       return;
     }
+    const { signal, requestId } = startMutationRequest();
     try {
-      await deleteHumanComment(commentId);
-      await refreshArtifact(artifact.artifact_id);
+      await deleteHumanComment(commentId, signal);
+      const refreshed = await refreshArtifactFromMutation(artifact.artifact_id, signal, requestId);
+      if (refreshed === null) {
+        return;
+      }
       if (editingCommentId === commentId) {
         dispatch({ type: "SET_EDITING_COMMENT", commentId: null, body: "" });
       }
     } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
       dispatch({ type: "SET_STATUS_MESSAGE", message: error instanceof Error ? error.message : "Could not delete comment." });
     }
   }
@@ -980,12 +1133,16 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       type: "SET_STATUS_MESSAGE",
       message: mode === "rewrite" ? "Generating rewrite draft..." : "Applying accepted changes...",
     });
+    const { signal, requestId } = startMutationRequest();
     try {
       const updatedArtifact = await generateRevisedMarkdown({
         artifactId: artifact.artifact_id,
         mode,
         directionPrompt: mode === "rewrite" ? trimmedDirectionPrompt : undefined,
-      });
+      }, signal);
+      if (!isCurrentMutationRequest(requestId)) {
+        return;
+      }
       dispatch({ type: "SET_ARTIFACT", artifact: updatedArtifact });
       setRewritePromptOpen(false);
       if (mode === "rewrite") {
@@ -996,12 +1153,17 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         message: mode === "rewrite" ? "Rewrite draft ready for diff review." : "Surgical revision ready for diff review.",
       });
     } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
       dispatch({
         type: "SET_STATUS_MESSAGE",
         message: error instanceof Error ? error.message : "Could not generate revised markdown.",
       });
     } finally {
-      dispatch({ type: "SET_IS_GENERATING_REVISION", value: false });
+      if (isCurrentMutationRequest(requestId)) {
+        dispatch({ type: "SET_IS_GENERATING_REVISION", value: false });
+      }
     }
   }
 
@@ -1009,15 +1171,22 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     if (artifact === null) {
       return;
     }
+    const { signal, requestId } = startMutationRequest();
     dispatch({ type: "SET_IS_SAVING_DIFF_REVIEW", value: true });
     try {
       const updatedArtifact = await updateRevisedMarkdownDiffReview(artifact.artifact_id, [
         { diffId, decision },
-      ]);
+      ], signal);
+      if (!isCurrentMutationRequest(requestId)) {
+        return;
+      }
       dispatch({ type: "SET_ARTIFACT", artifact: updatedArtifact });
       dispatch({ type: "SET_STATUS_MESSAGE", message: "Saved revised markdown diff decision." });
     } catch (error) {
-      if (await recoverFromMissingDiffReview(artifact, error)) {
+      if (isAbortError(error)) {
+        return;
+      }
+      if (await recoverFromMissingDiffReview(artifact, error, requestId)) {
         return;
       }
       dispatch({
@@ -1025,7 +1194,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         message: error instanceof Error ? error.message : "Could not save the diff review decision.",
       });
     } finally {
-      dispatch({ type: "SET_IS_SAVING_DIFF_REVIEW", value: false });
+      if (isCurrentMutationRequest(requestId)) {
+        dispatch({ type: "SET_IS_SAVING_DIFF_REVIEW", value: false });
+      }
     }
   }
 
@@ -1036,10 +1207,14 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     if (diffReview.mode === "surgical" && !hasAcceptedRevisedMarkdownChanges(diffReview)) {
       return;
     }
+    const { signal, requestId } = startMutationRequest();
     dispatch({ type: "SET_IS_APPLYING_REVISION", value: true });
     dispatch({ type: "SET_STATUS_MESSAGE", message: "Applying reviewed revised markdown..." });
     try {
-      const updatedArtifact = await applyRevisedMarkdown(artifact.artifact_id);
+      const updatedArtifact = await applyRevisedMarkdown(artifact.artifact_id, signal);
+      if (!isCurrentMutationRequest(requestId)) {
+        return;
+      }
       setRewritePromptOpen(false);
       setRewriteDirectionPrompt("");
       dispatch({ type: "SET_ARTIFACT", artifact: updatedArtifact });
@@ -1052,7 +1227,10 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         message: "Reviewed revised markdown promoted to the working draft.",
       });
     } catch (error) {
-      if (await recoverFromMissingDiffReview(artifact, error)) {
+      if (isAbortError(error)) {
+        return;
+      }
+      if (await recoverFromMissingDiffReview(artifact, error, requestId)) {
         return;
       }
       dispatch({
@@ -1060,7 +1238,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         message: error instanceof Error ? error.message : "Could not apply the revised markdown.",
       });
     } finally {
-      dispatch({ type: "SET_IS_APPLYING_REVISION", value: false });
+      if (isCurrentMutationRequest(requestId)) {
+        dispatch({ type: "SET_IS_APPLYING_REVISION", value: false });
+      }
     }
   }
 
@@ -1068,16 +1248,24 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     if (artifact === null || diffReview === null || diffReview.diffItems.length === 0) {
       return;
     }
+    const { signal, requestId } = startMutationRequest();
     dispatch({ type: "SET_IS_SAVING_DIFF_REVIEW", value: true });
     try {
       const updatedArtifact = await updateRevisedMarkdownDiffReview(
         artifact.artifact_id,
         diffReview.diffItems.map((item) => ({ diffId: item.id, decision: "rejected" as const })),
+        signal,
       );
+      if (!isCurrentMutationRequest(requestId)) {
+        return;
+      }
       dispatch({ type: "SET_ARTIFACT", artifact: updatedArtifact });
       dispatch({ type: "SET_STATUS_MESSAGE", message: "Marked the revised markdown candidate as discarded." });
     } catch (error) {
-      if (await recoverFromMissingDiffReview(artifact, error)) {
+      if (isAbortError(error)) {
+        return;
+      }
+      if (await recoverFromMissingDiffReview(artifact, error, requestId)) {
         return;
       }
       dispatch({
@@ -1085,14 +1273,20 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         message: error instanceof Error ? error.message : "Could not discard the revised markdown candidate.",
       });
     } finally {
-      dispatch({ type: "SET_IS_SAVING_DIFF_REVIEW", value: false });
+      if (isCurrentMutationRequest(requestId)) {
+        dispatch({ type: "SET_IS_SAVING_DIFF_REVIEW", value: false });
+      }
     }
   }
 
   async function recoverFromMissingDiffReview(
     currentArtifact: AnalysisArtifact,
     error: unknown,
+    requestId?: number,
   ): Promise<boolean> {
+    if (requestId !== undefined && !isCurrentMutationRequest(requestId)) {
+      return false;
+    }
     const message = error instanceof Error ? error.message : "";
     if (!MISSING_DIFF_REVIEW_ERRORS.has(message)) {
       return false;
@@ -1102,6 +1296,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
 
     try {
       const refreshedArtifact = await fetchArtifact(currentArtifact.artifact_id);
+      if (requestId !== undefined && !isCurrentMutationRequest(requestId)) {
+        return false;
+      }
       if (refreshedArtifact.diff_review === null) {
         dispatch({ type: "SET_ARTIFACT", artifact: refreshedArtifact });
         dispatch({
@@ -1120,6 +1317,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       diff_review: null,
       revised_document: null,
     };
+    if (requestId !== undefined && !isCurrentMutationRequest(requestId)) {
+      return false;
+    }
     dispatch({ type: "SET_ARTIFACT", artifact: artifactWithoutDiffReview });
     dispatch({
       type: "SET_FORM_STATE",
@@ -2023,29 +2223,62 @@ const MISSING_DIFF_REVIEW_ERRORS = new Set([
   "No revised markdown diff is available to apply.",
 ]);
 
+function isRunStatus(value: unknown): value is RunStatus {
+  return value === "draft"
+    || value === "queued"
+    || value === "running"
+    || value === "completed"
+    || value === "failed"
+    || value === "canceled";
+}
+
+function isStoredDraftRecovery(value: unknown): value is StoredDraftRecovery {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const candidate = value as Partial<StoredDraftRecovery>;
+  if (
+    (candidate.mode !== "intake" && candidate.mode !== "preview")
+    || (candidate.sourceType !== "text" && candidate.sourceType !== "url")
+    || typeof candidate.sourceLabel !== "string"
+    || typeof candidate.title !== "string"
+    || typeof candidate.url !== "string"
+    || typeof candidate.text !== "string"
+  ) {
+    return false;
+  }
+  const trimmedText = candidate.text.trim();
+  if (!trimmedText || trimmedText.length > MAX_STORED_DRAFT_CHARS) {
+    return false;
+  }
+  if (candidate.mode === "preview" && candidate.sourceType !== "url") {
+    return false;
+  }
+  return true;
+}
+
 function isStoredWorkbenchState(value: unknown): value is StoredWorkbenchState {
   if (typeof value !== "object" || value === null) {
     return false;
   }
   const candidate = value as Partial<StoredWorkbenchState>;
   return (
-    candidate.version === 2
+    candidate.version === STORED_WORKBENCH_STATE_VERSION
+    && (candidate.artifactId === null || typeof candidate.artifactId === "string")
+    && (candidate.artifactPersistenceMode === null
+      || candidate.artifactPersistenceMode === "session"
+      || candidate.artifactPersistenceMode === "workspace")
+    && (candidate.artifactStatus === null || isRunStatus(candidate.artifactStatus))
+    && (candidate.artifactTitle === null || typeof candidate.artifactTitle === "string")
+    && (!("artifactPhase" in candidate)
+      || candidate.artifactPhase === undefined
+      || candidate.artifactPhase === null
+      || isWorkbenchPhase(candidate.artifactPhase))
+    && (candidate.draftRecovery === null || isStoredDraftRecovery(candidate.draftRecovery))
     && typeof candidate.formState === "object"
     && candidate.formState !== null
     && typeof candidate.hasDownloadedJson === "boolean"
-    && (!("hiddenPreviewBlockIds" in candidate)
-      || candidate.hiddenPreviewBlockIds === undefined
-      || (Array.isArray(candidate.hiddenPreviewBlockIds) && candidate.hiddenPreviewBlockIds.every((item) => typeof item === "string")))
-    && (!("artifactPhase" in candidate)
-      || candidate.artifactPhase === undefined
-      || isWorkbenchPhase(candidate.artifactPhase))
-    && ("artifactId" in candidate)
-    && ("previewDocument" in candidate)
   );
-}
-
-function isAnalysisArtifact(value: unknown): value is AnalysisArtifact {
-  return typeof value === "object" && value !== null && "artifact_id" in value && "status" in value;
 }
 
 function parseStoredWorkbenchState(raw: string): StoredWorkbenchState | null {
@@ -2053,19 +2286,6 @@ function parseStoredWorkbenchState(raw: string): StoredWorkbenchState | null {
     const parsed = JSON.parse(raw) as unknown;
     if (isStoredWorkbenchState(parsed) && isReviewFormState(parsed.formState)) {
       return parsed;
-    }
-    if (isAnalysisArtifact(parsed)) {
-      return {
-        version: 2,
-        artifactId: parsed.artifact_id,
-        artifactPersistenceMode: parsed.run_config.persistence_mode,
-        artifactStatus: parsed.status,
-        artifactTitle: parsed.document?.title ?? parsed.source.title ?? null,
-        artifactPhase: getWorkbenchPhase(parsed),
-        previewDocument: null,
-        formState: hydrateFormStateFromArtifact(initialWorkbenchState.formState, parsed),
-        hasDownloadedJson: false,
-      };
     }
   } catch {
     return null;
@@ -2228,9 +2448,160 @@ function hasFormDraft(formState: ReviewFormState): boolean {
   );
 }
 
+function boundedDraftText(text: string): string {
+  return text.trim().slice(0, MAX_STORED_DRAFT_CHARS);
+}
+
+function restoreStoredFormState(parsed: StoredWorkbenchState): ReviewFormState {
+  if (parsed.draftRecovery === null) {
+    return parsed.formState;
+  }
+  const { draftRecovery } = parsed;
+  return {
+    ...parsed.formState,
+    sourceType: draftRecovery.sourceType,
+    sourceLabel: draftRecovery.sourceLabel,
+    title: draftRecovery.title,
+    url: draftRecovery.url,
+    text: draftRecovery.text,
+  };
+}
+
+function restoreStoredDraftFallback(
+  parsed: StoredWorkbenchState,
+): { previewDocument: ArtifactDocument | null; formState: ReviewFormState; statusMessage: string } | null {
+  if (parsed.draftRecovery === null) {
+    return null;
+  }
+  const formState = restoreStoredFormState(parsed);
+  const { draftRecovery } = parsed;
+
+  if (draftRecovery.mode === "preview") {
+    const previewTitle = draftRecovery.title.trim() || "Imported URL Preview";
+    const previewText = draftRecovery.text.trim();
+    if (!previewText) {
+      return null;
+    }
+    const previewDocument: ArtifactDocument = {
+      id: "restored-preview-document",
+      revision_id: "restored-preview-document",
+      title: previewTitle,
+      source_type: "url",
+      source_label: draftRecovery.sourceLabel,
+      raw_content: previewText,
+      text: previewText,
+      blocks: [
+        {
+          id: "restored-preview-block-0",
+          index: 0,
+          text: previewText,
+          kind: "paragraph",
+          origin: "source",
+          markdown: previewText,
+          marks: [],
+        },
+      ],
+    };
+    return {
+      previewDocument,
+      formState,
+      statusMessage: `Restored imported draft preview for ${previewTitle}.`,
+    };
+  }
+
+  return {
+    previewDocument: null,
+    formState,
+    statusMessage: "Restored draft from session storage.",
+  };
+}
+
+function buildStoredWorkbenchState({
+  artifact,
+  previewDocument,
+  hiddenPreviewBlockIds,
+  formState,
+  hasDownloadedJson,
+}: {
+  artifact: AnalysisArtifact | null;
+  previewDocument: ArtifactDocument | null;
+  hiddenPreviewBlockIds: string[];
+  formState: ReviewFormState;
+  hasDownloadedJson: boolean;
+}): StoredWorkbenchState | null {
+  const draftRecovery = (() => {
+    if (previewDocument !== null && formState.sourceType === "url") {
+      const previewText = boundedDraftText(buildPreviewSubmissionText(previewDocument, hiddenPreviewBlockIds));
+      if (previewText.length > 0) {
+        return {
+          mode: "preview",
+          sourceType: "url",
+          sourceLabel: formState.sourceLabel || previewDocument.source_label,
+          title: formState.title || previewDocument.title,
+          url: formState.url,
+          text: previewText,
+        } satisfies StoredDraftRecovery;
+      }
+    }
+
+    if (formState.sourceType === "text" || formState.sourceType === "url") {
+      const recoveredText = boundedDraftText(formState.text);
+      if (recoveredText.length > 0) {
+        return {
+          mode: "intake",
+          sourceType: formState.sourceType,
+          sourceLabel: formState.sourceLabel,
+          title: formState.title,
+          url: formState.url,
+          text: recoveredText,
+        } satisfies StoredDraftRecovery;
+      }
+    }
+
+    if (
+      artifact !== null
+      && artifact.document !== null
+      && (artifact.source.source_type === "text" || artifact.source.source_type === "url")
+    ) {
+      const recoveredText = boundedDraftText(artifact.document.raw_content ?? artifact.document.text);
+      if (recoveredText.length > 0) {
+        return {
+          mode: "intake",
+          sourceType: artifact.source.source_type,
+          sourceLabel: artifact.source.source_label,
+          title: artifact.document.title,
+          url: artifact.source.url ?? "",
+          text: recoveredText,
+        } satisfies StoredDraftRecovery;
+      }
+    }
+
+    return null;
+  })();
+
+  const storedState: StoredWorkbenchState = {
+    version: STORED_WORKBENCH_STATE_VERSION,
+    artifactId: artifact?.artifact_id ?? null,
+    artifactPersistenceMode: artifact?.run_config.persistence_mode ?? null,
+    artifactStatus: artifact?.status ?? null,
+    artifactTitle: artifact?.document?.title ?? artifact?.source.title ?? null,
+    artifactPhase: artifact === null ? null : getWorkbenchPhase(artifact),
+    draftRecovery,
+    formState,
+    hasDownloadedJson,
+  };
+
+  if (storedState.artifactId === null && storedState.draftRecovery === null && !hasFormDraft(formState)) {
+    return null;
+  }
+
+  return storedState;
+}
+
 function buildRecoveredReviewArtifact(parsed: StoredWorkbenchState): AnalysisArtifact {
-  const sourceTitle = parsed.artifactTitle?.trim() || parsed.formState.title.trim() || "Recovered review";
-  const recoveredText = parsed.formState.text.trim() || sourceTitle;
+  const restoredFormState = restoreStoredFormState(parsed);
+  const sourceTitle = parsed.artifactTitle?.trim() || restoredFormState.title.trim() || "Recovered review";
+  const recoveredText = restoredFormState.text.trim() || sourceTitle;
   const revisionId = parsed.artifactId ?? "recovered-diff-review";
   const now = new Date().toISOString();
 
@@ -2241,18 +2612,18 @@ function buildRecoveredReviewArtifact(parsed: StoredWorkbenchState): AnalysisArt
     created_at: now,
     updated_at: now,
     source: {
-      source_type: parsed.formState.sourceType,
-      source_label: parsed.formState.sourceLabel,
+      source_type: restoredFormState.sourceType,
+      source_label: restoredFormState.sourceLabel,
       title: sourceTitle,
-      url: parsed.formState.url || null,
-      imported: parsed.formState.sourceType !== "text",
+      url: restoredFormState.url || null,
+      imported: restoredFormState.sourceType !== "text",
     },
     document: {
       id: `${revisionId}-document`,
       revision_id: revisionId,
       title: sourceTitle,
-      source_type: parsed.formState.sourceType,
-      source_label: parsed.formState.sourceLabel,
+      source_type: restoredFormState.sourceType,
+      source_label: restoredFormState.sourceLabel,
       raw_content: recoveredText,
       text: recoveredText,
       blocks: [
@@ -2268,11 +2639,11 @@ function buildRecoveredReviewArtifact(parsed: StoredWorkbenchState): AnalysisArt
       ],
     },
     run_config: {
-      selected_agents: parsed.formState.selectedAgents,
-      resolved_agents: parsed.formState.selectedAgents,
+      selected_agents: restoredFormState.selectedAgents,
+      resolved_agents: restoredFormState.selectedAgents,
       runtime_mode: "mock",
-      persistence_mode: parsed.formState.persistenceMode,
-      include_debug_trace: parsed.formState.includeDebugTrace,
+      persistence_mode: restoredFormState.persistenceMode,
+      include_debug_trace: restoredFormState.includeDebugTrace,
     },
     agent_plan: [],
     agent_results: [],

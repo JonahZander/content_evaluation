@@ -116,7 +116,7 @@ describe("ReviewWorkbench", () => {
 
     fireEvent.click(screen.getByTestId("open-demo-artifact-button"));
 
-    await waitFor(() => expect(api.importArtifact).toHaveBeenCalledWith(mockArtifact));
+    await waitFor(() => expect(api.importArtifact).toHaveBeenCalledWith(mockArtifact, expect.any(AbortSignal)));
     await waitFor(() => expect(screen.getByTestId("review-workbench")).toBeInTheDocument());
     expect(screen.getByText("How Editorial Teams Can Evaluate AI-Written Posts")).toBeInTheDocument();
   });
@@ -288,7 +288,7 @@ describe("ReviewWorkbench", () => {
         data: JSON.stringify({ snapshot_available: true }),
       } as MessageEvent);
 
-      await waitFor(() => expect(api.fetchArtifact).toHaveBeenCalledWith(importedRunningArtifact.artifact_id));
+      await waitFor(() => expect(api.fetchArtifact).toHaveBeenCalledWith(importedRunningArtifact.artifact_id, undefined));
     } finally {
       globalEventSource.EventSource = originalEventSource;
     }
@@ -596,12 +596,12 @@ describe("ReviewWorkbench", () => {
     window.sessionStorage.setItem(
       "content-evaluation:artifact",
       JSON.stringify({
-        version: 2,
+        version: 3,
         artifactId: mockArtifact.artifact_id,
         artifactPersistenceMode: "workspace",
         artifactStatus: "completed",
         artifactTitle: mockArtifact.document?.title ?? null,
-        previewDocument: null,
+        draftRecovery: null,
         formState: {
           sourceType: "text",
           title: "Draft title",
@@ -630,12 +630,19 @@ describe("ReviewWorkbench", () => {
     window.sessionStorage.setItem(
       "content-evaluation:artifact",
       JSON.stringify({
-        version: 2,
+        version: 3,
         artifactId: "run-missing",
         artifactPersistenceMode: "session",
         artifactStatus: "completed",
         artifactTitle: "Saved session run",
-        previewDocument: null,
+        draftRecovery: {
+          mode: "intake",
+          sourceType: "text",
+          sourceLabel: "Manual input",
+          title: "Recovered draft",
+          url: "",
+          text: "Recovered body",
+        },
         formState: {
           sourceType: "text",
           title: "Recovered draft",
@@ -655,7 +662,7 @@ describe("ReviewWorkbench", () => {
     await waitFor(() => expect(api.fetchArtifact).toHaveBeenCalledWith("run-missing"));
     await waitFor(() =>
       expect(screen.getByTestId("run-status")).toHaveTextContent(
-        "Previous session run is no longer available from the backend. Restored the draft only.",
+        "Restored draft from session storage.",
       ),
     );
     expect(screen.getByTestId("draft-text-input")).toHaveValue("Recovered body");
@@ -667,13 +674,20 @@ describe("ReviewWorkbench", () => {
     window.sessionStorage.setItem(
       "content-evaluation:artifact",
       JSON.stringify({
-        version: 2,
+        version: 3,
         artifactId: "run-missing",
         artifactPersistenceMode: "workspace",
         artifactStatus: "completed",
         artifactTitle: "Saved revised draft",
         artifactPhase: "diff_review",
-        previewDocument: null,
+        draftRecovery: {
+          mode: "intake",
+          sourceType: "text",
+          sourceLabel: "Manual input",
+          title: "Recovered draft",
+          url: "",
+          text: "Recovered body",
+        },
         formState: {
           sourceType: "text",
           title: "Recovered draft",
@@ -701,6 +715,60 @@ describe("ReviewWorkbench", () => {
     expect(within(screen.getByTestId("document-block-0")).getByText("Recovered body")).toBeInTheDocument();
   });
 
+  it("restores an intake URL preview from bounded draft-recovery metadata", async () => {
+    window.sessionStorage.setItem(
+      "content-evaluation:artifact",
+      JSON.stringify({
+        version: 3,
+        artifactId: null,
+        artifactPersistenceMode: null,
+        artifactStatus: null,
+        artifactTitle: null,
+        artifactPhase: "intake",
+        draftRecovery: {
+          mode: "preview",
+          sourceType: "url",
+          sourceLabel: "https://example.com/recovered",
+          title: "Recovered URL Preview",
+          url: "https://example.com/recovered",
+          text: "Recovered preview body",
+        },
+        formState: {
+          sourceType: "url",
+          title: "",
+          sourceLabel: "Manual input",
+          text: "",
+          url: "",
+          persistenceMode: "workspace",
+          includeDebugTrace: true,
+          selectedAgents: ["fact_check"],
+        },
+        hasDownloadedJson: false,
+      }),
+    );
+
+    render(<ReviewWorkbench initialArtifact={null} />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("run-status")).toHaveTextContent(
+        "Restored imported draft preview for Recovered URL Preview.",
+      ),
+    );
+    expect(screen.getByTestId("intake-preview-shell")).toBeInTheDocument();
+    expect(within(screen.getByTestId("document-block-0")).getByText("Recovered preview body")).toBeInTheDocument();
+    expect(api.fetchArtifact).not.toHaveBeenCalled();
+  });
+
+  it("ignores legacy stored full-artifact payloads", async () => {
+    window.sessionStorage.setItem("content-evaluation:artifact", JSON.stringify(mockArtifact));
+
+    render(<ReviewWorkbench initialArtifact={null} />);
+
+    await waitFor(() => expect(api.fetchAgents).toHaveBeenCalled());
+    expect(api.fetchArtifact).not.toHaveBeenCalled();
+    expect(screen.getByTestId("draft-text-input")).toHaveValue("");
+  });
+
   it("ignores malformed stored state", async () => {
     window.sessionStorage.setItem("content-evaluation:artifact", JSON.stringify({ version: 2, artifactId: 123 }));
 
@@ -724,7 +792,7 @@ describe("ReviewWorkbench", () => {
 
     fireEvent.click(screen.getByTestId("review-state-comment-2-accepted"));
 
-    expect(api.updateReviewState).toHaveBeenCalledWith("comment-2", "unreviewed");
+    expect(api.updateReviewState).toHaveBeenCalledWith("comment-2", "unreviewed", expect.any(AbortSignal));
   });
 
   it("generates revised markdown only after accepted suggestions exist", () => {
@@ -762,7 +830,7 @@ describe("ReviewWorkbench", () => {
         artifactId: mockArtifact.artifact_id,
         mode: "surgical",
         directionPrompt: undefined,
-      }),
+      }, expect.any(AbortSignal)),
     );
     expect(await screen.findByTestId("revised-markdown-panel")).toBeInTheDocument();
     expect(screen.queryByTestId("diff-view-toggle")).not.toBeInTheDocument();
@@ -794,7 +862,7 @@ describe("ReviewWorkbench", () => {
         artifactId: mockArtifact.artifact_id,
         mode: "rewrite",
         directionPrompt: "Lead with the strongest finding.",
-      }),
+      }, expect.any(AbortSignal)),
     );
     expect(await screen.findByText("Rewrite draft")).toBeInTheDocument();
     expect(screen.getByText("Direction: Lead with the strongest finding.")).toBeInTheDocument();
@@ -821,7 +889,7 @@ describe("ReviewWorkbench", () => {
     await waitFor(() =>
       expect(api.updateRevisedMarkdownDiffReview).toHaveBeenCalledWith(artifactWithDiff.artifact_id, [
         { diffId: "diff-1", decision: "accepted" },
-      ]),
+      ], expect.any(AbortSignal)),
     );
 
     expect(screen.getByTestId("diff-item-status-diff-2")).toHaveTextContent("pending");
@@ -836,7 +904,7 @@ describe("ReviewWorkbench", () => {
 
     fireEvent.click(applyButton);
 
-    await waitFor(() => expect(api.applyRevisedMarkdown).toHaveBeenCalledWith(artifactWithDiff.artifact_id));
+    await waitFor(() => expect(api.applyRevisedMarkdown).toHaveBeenCalledWith(artifactWithDiff.artifact_id, expect.any(AbortSignal)));
     expect(screen.queryByTestId("diff-review-shell")).not.toBeInTheDocument();
     expect(screen.getByTestId("review-workbench")).toBeInTheDocument();
   });
@@ -852,7 +920,7 @@ describe("ReviewWorkbench", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Apply accepted changes" }));
 
-    await waitFor(() => expect(api.applyRevisedMarkdown).toHaveBeenCalledWith(reviewedArtifact.artifact_id));
+    await waitFor(() => expect(api.applyRevisedMarkdown).toHaveBeenCalledWith(reviewedArtifact.artifact_id, expect.any(AbortSignal)));
     await waitFor(() => expect(api.fetchArtifact).toHaveBeenCalledWith(reviewedArtifact.artifact_id));
     await waitFor(() => expect(screen.getByTestId("review-workbench")).toBeInTheDocument());
     expect(screen.queryByTestId("diff-review-shell")).not.toBeInTheDocument();
@@ -872,7 +940,7 @@ describe("ReviewWorkbench", () => {
     await waitFor(() =>
       expect(api.updateRevisedMarkdownDiffReview).toHaveBeenCalledWith(rewriteArtifact.artifact_id, [
         { diffId: "diff-1", decision: "rejected" },
-      ]),
+      ], expect.any(AbortSignal)),
     );
     expect(api.applyRevisedMarkdown).not.toHaveBeenCalled();
     expect(screen.getByTestId("diff-view-toggle-side-by-side")).toBeInTheDocument();
@@ -932,7 +1000,7 @@ describe("ReviewWorkbench", () => {
     expect(api.appendAgents).toHaveBeenCalledWith({
       artifactId: mockArtifact.artifact_id,
       selectedAgents: ["editorial"],
-    });
+    }, expect.any(AbortSignal));
   });
 
   it("deletes a human reply from the thread UI", () => {
@@ -940,7 +1008,7 @@ describe("ReviewWorkbench", () => {
 
     fireEvent.click(screen.getByTestId("delete-reply-reply-1"));
 
-    expect(api.deleteReply).toHaveBeenCalledWith("reply-1");
+    expect(api.deleteReply).toHaveBeenCalledWith("reply-1", expect.any(AbortSignal));
   });
 
   it("renders the run log below the progress section", () => {
@@ -958,6 +1026,34 @@ describe("ReviewWorkbench", () => {
     expect(screen.getByTestId("review-summary-panel")).toBeInTheDocument();
     expect(screen.getByText("Research summary")).toBeInTheDocument();
     expect(screen.getByText("Editorial review systems for AI content")).toBeInTheDocument();
+  });
+
+  it("renders unavailable sub-scores as em dashes while keeping real zero values as 0%", () => {
+    const missingScoresArtifact = structuredClone(mockArtifact);
+    if (missingScoresArtifact.summary === null) {
+      throw new Error("Expected summary data in mock artifact");
+    }
+    missingScoresArtifact.summary.novelty_score = null;
+    missingScoresArtifact.summary.ai_likelihood = null;
+
+    const { unmount } = render(<ReviewWorkbench initialArtifact={missingScoresArtifact} />);
+
+    expect(screen.getByText("Novelty").closest("article")).toHaveTextContent("—");
+    expect(screen.getByText("Human voice").closest("article")).toHaveTextContent("—");
+
+    unmount();
+
+    const zeroScoresArtifact = structuredClone(mockArtifact);
+    if (zeroScoresArtifact.summary === null) {
+      throw new Error("Expected summary data in mock artifact");
+    }
+    zeroScoresArtifact.summary.novelty_score = 0;
+    zeroScoresArtifact.summary.ai_likelihood = 0;
+
+    render(<ReviewWorkbench initialArtifact={zeroScoresArtifact} />);
+
+    expect(screen.getByText("Novelty").closest("article")).toHaveTextContent("0%");
+    expect(screen.getByText("Human voice").closest("article")).toHaveTextContent("0%");
   });
 
   it("renders fact-check details in the comment thread rail", () => {
@@ -1140,7 +1236,7 @@ describe("ReviewWorkbench", () => {
         prompt: "What recent data supports this?",
         anchorId: "anchor-research-1",
         commentId: "comment-research-1",
-      }),
+      }, expect.any(AbortSignal)),
     );
     expect(api.addReply).not.toHaveBeenCalled();
   });

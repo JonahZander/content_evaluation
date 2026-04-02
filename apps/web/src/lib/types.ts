@@ -168,8 +168,8 @@ export interface ArtifactSummary {
   verdict: string;
   value_summary: string;
   audience_summary: string;
-  novelty_score: number;
-  ai_likelihood: number;
+  novelty_score: number | null;
+  ai_likelihood: number | null;
   tl_dr?: string;
   word_count?: number;
   estimated_reading_time_minutes?: number;

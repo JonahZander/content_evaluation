@@ -5,15 +5,8 @@ interface RunMetricsProps {
   summary: ArtifactSummary | null;
 }
 
-type SummaryMetrics = ArtifactSummary & {
-  tl_dr?: string;
-  word_count?: number;
-  estimated_reading_time_minutes?: number;
-};
-
 export function RunMetrics({ summary }: RunMetricsProps) {
-  const summaryMetrics = summary as SummaryMetrics | null;
-  function formatScore(score: number | null | undefined): string {
+  function formatSubScore(score: number | null | undefined): string {
     if (score === null || score === undefined) {
       return "—";
     }
@@ -27,10 +20,10 @@ export function RunMetrics({ summary }: RunMetricsProps) {
     return new Intl.NumberFormat("en-US").format(count);
   }
 
-  const wordCountLabel = formatCount(summaryMetrics?.word_count);
+  const wordCountLabel = formatCount(summary?.word_count);
   const readingTimeLabel =
-    summaryMetrics?.estimated_reading_time_minutes && summaryMetrics.estimated_reading_time_minutes > 0
-      ? `${summaryMetrics.estimated_reading_time_minutes} min read`
+    summary?.estimated_reading_time_minutes && summary.estimated_reading_time_minutes > 0
+      ? `${summary.estimated_reading_time_minutes} min read`
       : "Pending";
 
   const overallScore = summary?.overall_score != null ? `${summary.overall_score}%` : "—";
@@ -45,7 +38,7 @@ export function RunMetrics({ summary }: RunMetricsProps) {
       </article>
       <article className={styles.metricCard}>
         <div className={styles.metricLabel}>TL;DR</div>
-        <div className={styles.metricValueCompact}>{summaryMetrics?.tl_dr || "Pending"}</div>
+        <div className={styles.metricValueCompact}>{summary?.tl_dr || "Pending"}</div>
       </article>
       <article className={styles.metricCard}>
         <div className={styles.metricLabel}>Article length</div>
@@ -57,11 +50,11 @@ export function RunMetrics({ summary }: RunMetricsProps) {
       </article>
       <article className={styles.metricCard}>
         <div className={styles.metricLabel}>Novelty</div>
-        <div className={styles.metricValue}>{formatScore(summaryMetrics?.novelty_score)}</div>
+        <div className={styles.metricValue}>{formatSubScore(summary?.novelty_score)}</div>
       </article>
       <article className={styles.metricCard}>
         <div className={styles.metricLabel}>Human voice</div>
-        <div className={styles.metricValue}>{formatScore(summaryMetrics?.ai_likelihood)}</div>
+        <div className={styles.metricValue}>{formatSubScore(summary?.ai_likelihood)}</div>
       </article>
     </section>
   );

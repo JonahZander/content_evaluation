@@ -2148,11 +2148,17 @@ def _build_summary(artifact: AnalysisArtifact) -> ArtifactSummary:
     overview = _build_overview_data(artifact, fact_check_result)
 
     ai_result = _result_for_current_revision(artifact, agent_id="ai_likelihood")
-    ai_likelihood = 0.0
+    ai_likelihood = None
+    ai_likelihood_for_score = 0.0
     if ai_result is not None:
-        ai_likelihood = max((finding.confidence for finding in ai_result.findings), default=0.0)
+        ai_likelihood_for_score = max((finding.confidence for finding in ai_result.findings), default=0.0)
+        ai_likelihood = ai_likelihood_for_score
 
-    novelty_score = max(0.0, 1.0 - max(overlap_scores or [0.0]))
+    novelty_score = None
+    novelty_score_for_score = 1.0
+    if fact_check_result is not None:
+        novelty_score_for_score = max(0.0, 1.0 - max(overlap_scores or [0.0]))
+        novelty_score = novelty_score_for_score
     value_summary = _fact_check_value_summary(fact_check_result) or overview["tl_dr"]
     audience_summary = overview["inferred_audience"]
     verdict = (
@@ -2163,8 +2169,8 @@ def _build_summary(artifact: AnalysisArtifact) -> ArtifactSummary:
     raw_score = (
         config.base_score
         + (confidence_bonus * config.confidence_multiplier)
-        - (ai_likelihood * config.ai_likelihood_penalty)
-        - ((1.0 - novelty_score) * config.novelty_penalty_max)
+        - (ai_likelihood_for_score * config.ai_likelihood_penalty)
+        - ((1.0 - novelty_score_for_score) * config.novelty_penalty_max)
     )
     return ArtifactSummary(
         overall_score=max(0, min(100, int(raw_score))),

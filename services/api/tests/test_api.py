@@ -12,7 +12,18 @@ from pydantic import ValidationError
 from content_evaluation.api.dependencies import AppServices
 from content_evaluation.api.main import app
 from content_evaluation.config import Settings
-from content_evaluation.domain.models import ArtifactSummary, RunMode
+from content_evaluation.domain.models import (
+    AnalysisArtifact,
+    ArtifactBlock,
+    ArtifactDocument,
+    ArtifactSource,
+    ArtifactSummary,
+    RunConfig,
+    RunMode,
+    RuntimeMode,
+    SourceType,
+)
+from content_evaluation.services.orchestration import _build_summary
 
 
 def _mock_settings() -> Settings:
@@ -279,6 +290,53 @@ def test_artifact_summary_rejects_out_of_range_scores() -> None:
             novelty_score=0.5,
             ai_likelihood=0.4,
         )
+
+
+def test_artifact_summary_accepts_nullable_and_zero_subscores() -> None:
+    """Allow missing sub-scores to be explicit while preserving computed zeros."""
+
+    summary = ArtifactSummary(
+        overall_score=50,
+        verdict="ok",
+        novelty_score=None,
+        ai_likelihood=None,
+    )
+
+    assert summary.novelty_score is None
+    assert summary.ai_likelihood is None
+
+    zero_summary = ArtifactSummary(
+        overall_score=50,
+        verdict="ok",
+        novelty_score=0.0,
+        ai_likelihood=0.0,
+    )
+
+    assert zero_summary.novelty_score == 0.0
+    assert zero_summary.ai_likelihood == 0.0
+
+
+def test_build_summary_uses_null_for_missing_subscores() -> None:
+    """Build a summary that leaves missing agent scores explicit."""
+
+    block = ArtifactBlock(index=0, text="Draft body for scoring.")
+    artifact = AnalysisArtifact(
+        source=ArtifactSource(source_type=SourceType.TEXT, source_label="draft"),
+        document=ArtifactDocument(
+            title="Draft",
+            source_type=SourceType.TEXT,
+            source_label="draft",
+            text=block.text,
+            blocks=[block],
+        ),
+        run_config=RunConfig(selected_agents=["fact_check"], runtime_mode=RuntimeMode.MOCK),
+    )
+
+    summary = _build_summary(artifact)
+
+    assert summary.overall_score == 72
+    assert summary.novelty_score is None
+    assert summary.ai_likelihood is None
 
 
 def test_ready_endpoint_reports_mock_mode(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -417,8 +417,8 @@ class ArtifactSummary(BaseModel):
     verdict: str
     value_summary: str = ""
     audience_summary: str = ""
-    novelty_score: float
-    ai_likelihood: float
+    novelty_score: float | None = None
+    ai_likelihood: float | None = None
     tl_dr: str = ""
     word_count: int = 0
     estimated_reading_time_minutes: int = 0

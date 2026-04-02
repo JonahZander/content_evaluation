@@ -40,12 +40,8 @@ These findings from the 2026-03-13 code review were not addressed in the current
 
 | ID | Issue |
 |----|-------|
-| H10 | `.env` files not excluded from Docker web build context. |
-| L26 | API Dockerfile does not copy `uv.lock`; builds are non-reproducible. |
-| L27 | Both Dockerfiles run containers as root. |
-| L28 | `.agents/` directory is untracked but not in `.gitignore`. |
 
-All Low severity findings (L1–L28) from `docs/code-review-2026-03-13.md` remain open. Consult that document for the full list.
+Remaining unresolved low-severity findings from `docs/code-review-2026-03-13.md` are still deferred. Consult that document for the full historical list.
 
 ---
 
@@ -87,5 +83,9 @@ These findings have been resolved in prior commits or the current codebase state
 | M22 | Stale finding closed: connector overlay measurement is gone; inline highlights and paragraph-scoped rows replaced the old connector-path lifecycle. |
 | M23 | Summary sub-scores (`novelty_score`, `ai_likelihood`) now support explicit null/unavailable values; the UI renders neutral placeholders and still renders real `0%`. |
 | M24 | Mutation and review API calls now support `AbortSignal`, and workbench handlers guard against stale mutation responses overwriting newer state. |
+| H10 | Web Docker builds now have an app-local `.dockerignore`, and the shared root context already excludes `.env*` files. |
 | L14 | `SelectionDraft` duplicated: defined once in `src/lib/types.ts` |
+| L26 | API Docker builds now copy `services/api/uv.lock` and use `uv sync --frozen` for reproducible installs. |
+| L27 | Both Dockerfiles now drop root privileges before starting the app process. |
+| L28 | Root `.gitignore` now ignores `.agents/*` scratch while explicitly keeping tracked repo-local skills. |
 | L25/M18 | 18+ `useState` hooks and missing `useCallback`: `useReducer` + stabilized callbacks |

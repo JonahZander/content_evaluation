@@ -7,7 +7,7 @@ Read this section for the review workbench, interaction design, and user-visible
 - `design-language.md`
   - Visual design principles, color tokens, tile layout rules, background animation, and typography
 - `annotation-review-workbench.md`
-  - Current UX for span selection, comments, connector lines, exports, and run visibility
+  - Current UX for span selection, paragraph-row comment layout, exports, and run visibility
 
 ## Intake form
 
@@ -16,7 +16,7 @@ The workbench intake form is intentionally minimal:
 - No "Draft title" input — the title is derived automatically at submission time from the first `# Heading` in the content, or from the first non-empty line (truncated to 80 characters). For URL imports the page title is used. The `title` field remains in `ReviewFormState` to support session restore and artifact hydration.
 - No workspace mode selector — the persistence mode is fixed at `"workspace"`. The `persistenceMode` field remains in `ReviewFormState`.
 - No debug trace toggle — debug trace is always enabled. The `includeDebugTrace` field remains in `ReviewFormState`.
-- A guided `Open demo review` entry appears above the intake controls and imports one curated artifact directly into the review workbench.
 - A "Choose content" label appears above a source type dropdown with four options: Pasted text, URL, Text file, Import artifact. The dropdown is hidden once content has loaded, but pasted-text runs keep the textarea visible as a read-only preview of the submitted content.
 - Pasted-text intake shows a `Preview` action before analysis starts so the reviewer can inspect the full text without leaving the intake shell.
 - "Import artifact" is one of the source type options, not a standalone button. Selecting it shows a JSON file picker inline in the source composer area.
+- Artifact import is a first-class intake path for reopening a previously exported review state without rerunning analysis.

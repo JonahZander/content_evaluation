@@ -7,7 +7,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 ## Target UI Regions
 
 - Intake panel
-  - Guided demo entry, URL input with explicit draft-import preview, file upload, pasted text, artifact import, and agent selectors
+  - URL input with explicit draft-import preview, file upload, pasted text, artifact import, and agent selectors
 - Progress panel
   - Phase-2-only running view with progress bar, per-agent status, stage timeline, retry/resume notices, partial findings, and run log
 - Run log
@@ -68,7 +68,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Imported URL previews should support reversible per-block removal before analysis so boilerplate or irrelevant sections can be excluded without editing the raw draft.
 - Imported URL previews should keep removed blocks in place with muted styling and a remove/restore toggle so the layout does not shift while the reviewer prunes the draft.
 - URL preview pruning stays in Phase 1 so the reviewer can normalize the draft before the first run.
-- The intake shell should offer one curated `Open demo review` entry that imports a finished artifact directly into the review workbench, with generic artifact import still available as a secondary path.
+- Artifact import should remain a first-class intake path so saved review state can be reopened without rerunning analysis.
 - Workspace persistence should be the preselected mode for new analyses so reloads can recover the canonical artifact from the backend.
 - Session persistence should remain available as a lightweight local option, but the browser should only store bounded restore metadata rather than a full artifact snapshot.
 - Comments identify the agent or reviewer that produced them.

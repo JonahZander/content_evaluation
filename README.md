@@ -4,19 +4,20 @@ Content Evaluation is an artifact-first editorial review tool for blog posts and
 
 The backend's primary job is to produce a complete `AnalysisArtifact`. The web app renders that artifact, streams live progress while it is being built, and lets reviewers add replies and decisions on top of it. The same API/services should be usable without the frontend when someone wants to run the analysis pipeline directly and export the result.
 
-## Run The Demo
+## Run Locally
 
 1. Start the API with `npm run dev:api`.
 2. Start the web app with `npm run dev:web`.
-3. Open the app and click `Open demo review`.
+3. Open the app and choose a real intake path: URL import, pasted text, text-file upload, or artifact import.
 
-Recommended demo path:
+Recommended review path:
 
-- Scan the review summary and metrics.
+- Start from pasted text, a URL, or a `.txt` / `.md` upload when you want to exercise the live pipeline.
+- Use artifact import when you want to reopen a saved review state without rerunning analysis.
+- Scan the review summary and metrics once the artifact reaches a terminal state.
 - Open a few agent comments in the rail and inspect the linked evidence.
 - Mark a couple of findings `accepted` or `rejected`, then add a reply.
 - Export `Todo`, `Markdown`, or `JSON` from the toolbar.
-- If you want to show the live pipeline instead, start a fresh run from pasted text, URL import, or file upload after the demo artifact walkthrough.
 
 Current supported inputs:
 
@@ -42,7 +43,7 @@ Current analysis and review capabilities:
 ## Repository Layout
 
 - `apps/web`
-  - Next.js review workbench UI with a left text pane, right comment rail, connector lines, live progress, agent selectors, imports/exports, and review actions
+  - Next.js review workbench UI with paragraph-row text/comment layout, inline highlights, live progress, agent selectors, imports/exports, and review actions
 - `services/api`
   - FastAPI backend in Python 3.12 with artifact generation, provider interfaces, agent registry/orchestration, optional persistence adapters, and SSE event streaming
 - `docs`

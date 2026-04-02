@@ -10,7 +10,7 @@ This project is an agent-readable monorepo with a Next.js frontend and a FastAPI
   - Next.js review workbench for intake, live progress, artifact rendering, review actions, and import/export
 - `services/api/`
   - FastAPI API, artifact orchestration, LangGraph execution, LangChain provider routing, repositories, and backend tests
-- `.codex/skills/`
+- `.agents/skills/`
   - Repo-local skills for recurring agent workflows
 
 ## Layering
@@ -40,7 +40,7 @@ Backend features should converge toward:
   - `src/components/ReviewWorkbench.tsx`
     - Top-level client coordinator for intake, live progress, artifact rendering, and review actions; uses `useReducer` for centralized state management
   - `src/components/review/`
-    - Presentational review components: hero, toolbar, progress area, document pane, comment rail, metrics, selection composer, connector overlay
+    - Presentational review components: hero, toolbar, progress area, document pane, comment rail, summary panels, metrics, and selection composer
   - `src/components/review/workbench-state.ts`
     - Typed reducer, action union, and initial state for ReviewWorkbench
   - `src/lib/api.ts`
@@ -64,8 +64,8 @@ Backend features should converge toward:
 - The API is the canonical producer of `AnalysisArtifact`.
 - The UI renders artifact snapshots directly and does not depend on backend-only stitched view models.
 - Live progress is a separate event stream, not the artifact itself.
-- Session plus artifact export/import is the default local and open-source workflow.
-- Workspace persistence remains optional for team or production deployments.
+- Workspace persistence is the default web workflow.
+- Session-mode runs and artifact export/import remain available for lightweight local and open-source use.
 - LangChain owns model/provider abstraction for analysis agents.
 - LangGraph owns orchestration/runtime flow for analysis runs.
 - Artifact assembly stays in domain code and remains independent of LangGraph state.

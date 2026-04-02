@@ -18,7 +18,7 @@ The system is a monorepo with two application surfaces:
 The main product loop is:
 
 1. The user submits content from the web app.
-2. The API creates an artifact and run config in `session` mode by default.
+2. The web app submits a `workspace` run by default, while the shared run model still supports `session` mode for lightweight local workflows.
 3. The orchestrator expands agent dependencies and executes the analysis graph.
 4. Findings become anchored comments, summary data, and artifact events.
 5. The web app refreshes from the artifact API and event stream.
@@ -51,7 +51,8 @@ The presentational pieces live in:
 - `apps/web/src/components/review/ReviewToolbar.tsx`
 - `apps/web/src/components/review/DocumentPane.tsx`
 - `apps/web/src/components/review/CommentRail.tsx`
-- `apps/web/src/components/review/ConnectorCanvas.tsx`
+- `apps/web/src/components/review/ReviewSummaryPanel.tsx`
+- `apps/web/src/components/review/RevisedMarkdownPanel.tsx`
 - `apps/web/src/components/review/RunMetrics.tsx`
 - `apps/web/src/components/review/SelectionBanner.tsx`
 
@@ -244,14 +245,13 @@ Read:
 
 - `apps/web/src/components/review/DocumentPane.tsx`
 - `apps/web/src/components/review/CommentRail.tsx`
-- `apps/web/src/components/review/ConnectorCanvas.tsx`
 
 Focus on:
 
-- anchor rendering
+- paragraph-row anchor rendering
 - hover behavior
 - multiple comments on one anchor
-- visual connector correctness
+- inline highlight/thread linkage correctness
 
 ### 6. Check fallback and runtime mode behavior
 

@@ -76,7 +76,7 @@ npm run dev:web
 Then:
 
 1. Open `http://localhost:3000`
-2. Either click `Open demo review` for the curated artifact path or paste text / use a URL for a live run
+2. Paste text, use a URL, or upload a `.txt` / `.md` file for a live run
 3. Keep the default agent selection or toggle agents on/off
 4. Click `Analyze content` for live runs
 5. Watch the progress timeline and run log while the worker executes the graph

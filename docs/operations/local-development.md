@@ -61,9 +61,12 @@
   - web
   - api
   - postgres
+- The root `.dockerignore` trims the shared Compose build context, and `apps/web/.dockerignore` keeps app-local web builds from sending `.env` files, local reports, or `node_modules`.
 - The Compose project is explicitly named `content_evaluation_dev` so the stack is easy to distinguish from other local Docker projects.
 - The `api` service loads its service-local environment from `services/api/.env`.
 - Compose still overrides `CONTENT_EVAL_DATABASE_URL` for the `api` container so Postgres resolves to the Docker service host (`postgres`) instead of local `localhost`.
+- The API image copies `services/api/uv.lock` and uses `uv sync --frozen` so Docker installs stay reproducible.
+- Both runtime images now drop root privileges before starting the app process.
 - The compose stack publishes:
   - web on `http://localhost:3000`
   - api on `http://localhost:8000`

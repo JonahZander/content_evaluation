@@ -17,7 +17,7 @@ Read this section for repository workflow and documentation maintenance rules.
 
 ## Related Repo-Local Skills
 
-- `.codex/skills/commit-style/SKILL.md`
+- `.agents/skills/commit-style/SKILL.md`
   - Commit message formatting and workflow
-- `.codex/skills/frontend-design/SKILL.md`
+- `.agents/skills/frontend-design/SKILL.md`
   - Frontend implementation and visual design direction

@@ -48,3 +48,7 @@ services/api/graphs/
 .claude/
 .cursor/
 
+# Repo-local agent workspace scratch while keeping tracked skills
+.agents/*
+!.agents/skills/
+!.agents/skills/**

@@ -1,3 +1,5 @@
+# Adapted from langchain-ai/open_deep_research (MIT License)
+# https://github.com/langchain-ai/open_deep_research
 """System prompts and prompt templates for the Deep Research agent."""
 
 # ruff: noqa: E501

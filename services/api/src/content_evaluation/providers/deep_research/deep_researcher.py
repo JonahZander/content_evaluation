@@ -1,3 +1,5 @@
+# Adapted from langchain-ai/open_deep_research (MIT License)
+# https://github.com/langchain-ai/open_deep_research
 """Main LangGraph implementation for the Deep Research agent."""
 
 # ruff: noqa: E501

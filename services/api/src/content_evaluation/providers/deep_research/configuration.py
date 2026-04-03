@@ -1,3 +1,5 @@
+# Adapted from langchain-ai/open_deep_research (MIT License)
+# https://github.com/langchain-ai/open_deep_research
 """Configuration management for the Open Deep Research system."""
 
 # ruff: noqa: E501

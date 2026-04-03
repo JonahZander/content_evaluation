@@ -1,3 +1,5 @@
+# Adapted from langchain-ai/open_deep_research (MIT License)
+# https://github.com/langchain-ai/open_deep_research
 """Graph state definitions and data structures for the Deep Research agent."""
 
 import operator

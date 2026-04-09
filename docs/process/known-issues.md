@@ -34,7 +34,6 @@ These findings from the 2026-03-13 code review were not addressed in the current
 | ID | File | Issue |
 |----|------|-------|
 | H5 | `providers/tavily/client.py` | Tavily API key is sent in the JSON request body. Limitation of the Tavily API contract. |
-| H8 | Frontend tests | No tests for frontend error/failure paths. |
 
 ### Infrastructure
 
@@ -61,6 +60,7 @@ These findings have been resolved in prior commits or the current codebase state
 | H4 | Unbounded lock dict growth: `_artifact_locks.pop()` after run completes or cancels |
 | H6 | Six frontend handlers with no error handling: all now have `try/catch` |
 | H7 | Error body parsing: `parseJson` reads body before throwing |
+| H8 | Frontend error/failure paths now have focused workbench coverage; later stabilization commits expanded the test suite across run submission, preview/import, review mutations, and revised-markdown flows. |
 | H9 | E2E test wrong assertion: now asserts `"Run log"` |
 | M1 | Agent instructions are preloaded once in the registry; dispatch uses cached instruction text instead of synchronous file reads. |
 | M2 | Chat model re-instantiated per request: `_model_cache` per `(family, model_name)` |

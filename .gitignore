@@ -44,8 +44,11 @@ services/api/graphs/
 .playwright-mcp/
 
 # Symlinked skill directories
+.codex
 .codex/
+.claude
 .claude/
+.cursor
 .cursor/
 
 # Repo-local agent workspace scratch while keeping tracked skills

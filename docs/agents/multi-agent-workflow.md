@@ -15,7 +15,10 @@ This project uses a code-orchestrated multi-agent model:
 - Fact-check agent
   - Extracts the 3–5 most important verifiable claims from the article
   - Uses the vendored deep researcher graph (supervisor + parallel Tavily researchers) to verify each claim against live web sources
+  - Passes article metadata, cited-link context, and the full normalized article text once into deep research
+  - Instructs researchers to inspect relevant article-cited URLs before broader web search, then use official/primary sources and overlap search where needed
   - Returns structured claim findings: claim text, verdict, evidence summary, source links, anchor excerpt, confidence, value/differentiation notes, official-source links, and related-post links
+  - Preserves cited-link checks on each claim when the researcher evaluates whether article-provided links support the nearby claim
   - Also returns summary-first overview data such as TL;DR, inferred audience, and overlap research for the review-summary panel
   - Also produces structured overlap research items that replace the prior standalone similarity surface in new runs
   - Exposes a suggested research prompt in metadata so the research panel can seed a follow-up question without a separate suggestion pass
@@ -111,6 +114,8 @@ Each agent should be declared with:
 
 - Deep research (fact_check agent)
   - Vendored deep researcher graph (supervisor + parallel researchers + Tavily) in live mode
+  - Tavily search is used for source discovery and similar-article overlap research
+  - Tavily exact-URL extraction is exposed as a local researcher tool for checking links already cited by the article
   - MockDeepResearchProvider in development/test fallback
   - Source: vendors/adapted from langchain-ai/open_deep_research (MCP stripped, CONTENT_EVAL key support added)
   - The targeted research agent reuses the same provider family through a prompt-scoped `research(...)` method

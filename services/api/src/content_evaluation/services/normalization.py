@@ -101,18 +101,6 @@ def normalize_text(
     )
 
 
-def build_fact_check_brief(title: str | None, blocks: list[ArtifactBlock]) -> str:
-    """Build a research brief for the fact-check agent from a normalized document."""
-
-    body = "\n\n".join(b.text for b in blocks[:10] if b.text)
-    parts: list[str] = []
-    if title:
-        parts.append(f'Article title: "{title}"')
-    parts.append("---")
-    parts.append(body)
-    return "\n".join(parts)
-
-
 def build_similarity_query(title: str, blocks: Iterable[ArtifactBlock]) -> str:
     """Build one query string from the first visible block."""
 

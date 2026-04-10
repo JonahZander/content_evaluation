@@ -30,6 +30,11 @@ class DeepResearchProvider(Protocol):
                 "source_links": [str],
                 "anchor_excerpt": str,
                 "confidence": float,
+                "article_cited_links_checked": [{
+                  "url": str,
+                  "supports_claim": str,
+                  "note": str,
+                }],
               }],
               "overlap_items": [{"title": str, "url": str, "overlap_note": str}],
               "research_summary": str,

@@ -19,11 +19,22 @@ from content_evaluation.domain.models import (
     ArtifactBlock,
     ArtifactBlockKind,
     ArtifactBlockOrigin,
+    ArtifactDocument,
+    ArtifactInlineMark,
+    ArtifactInlineMarkKind,
+    ContentFormat,
     ProviderKind,
+    SourceType,
 )
+from content_evaluation.providers.deep_research.configuration import SearchAPI
+from content_evaluation.providers.deep_research.utils import get_all_tools, tavily_extract_urls_async
 from content_evaluation.providers.interfaces.deep_research import DeepResearchProvider
 from content_evaluation.providers.mock.providers import MockDeepResearchProvider
-from content_evaluation.services.normalization import build_fact_check_brief
+from content_evaluation.services.orchestration import (
+    _build_deep_research_brief,
+    _build_targeted_research_brief,
+    _normalize_fact_check_claims,
+)
 
 
 def test_fact_check_category_exists():
@@ -48,24 +59,64 @@ def _block(text: str) -> ArtifactBlock:
     )
 
 
-def test_build_fact_check_brief_includes_title():
-    brief = build_fact_check_brief("My Post", [_block("AI will replace all jobs.")])
-    assert "My Post" in brief
-    assert "AI will replace all jobs." in brief
+def _document(blocks: list[ArtifactBlock]) -> ArtifactDocument:
+    return ArtifactDocument(
+        title="My Post",
+        source_type=SourceType.TEXT,
+        source_label="pasted text",
+        content_format=ContentFormat.MARKDOWN,
+        raw_content="\n\n".join(block.text for block in blocks),
+        text="\n\n".join(block.text for block in blocks),
+        blocks=blocks,
+    )
 
 
-def test_build_fact_check_brief_no_title():
-    brief = build_fact_check_brief(None, [_block("Some claim.")])
-    assert "Some claim." in brief
+def test_deep_research_brief_uses_metadata_and_link_context_without_article_preview():
+    block = _block("The benchmark found 81% adoption in its annual report.")
+    block.id = "block-linked"
+    block.marks = [
+        ArtifactInlineMark(
+            start_offset=4,
+            end_offset=13,
+            kind=ArtifactInlineMarkKind.LINK,
+            href="https://example.com/report",
+        )
+    ]
+    brief = _build_deep_research_brief("Check claims.", _document([block, _block("Second block.")]))
+
+    assert "TASK INSTRUCTIONS:\nCheck claims." in brief
+    assert 'Title: "My Post"' in brief
+    assert "ARTICLE LINKS:" in brief
+    assert "block_id: block-linked" in brief
+    assert "anchor_text: benchmark" in brief
+    assert "https://example.com/report" in brief
+    assert "UNTRUSTED ARTICLE TEXT" not in brief
+    assert "Second block." not in brief
 
 
-def test_build_fact_check_brief_limits_blocks():
-    blocks = [_block(f"Block {i}") for i in range(20)]
-    for i, b in enumerate(blocks):
-        b.index = i
-    brief = build_fact_check_brief("T", blocks)
-    assert "Block 9" in brief
-    assert "Block 10" not in brief
+def test_targeted_research_brief_includes_prompt_and_link_context_without_article_preview():
+    block = _block("Follow the cited source for this claim.")
+    block.id = "block-target"
+    block.marks = [
+        ArtifactInlineMark(
+            start_offset=11,
+            end_offset=23,
+            kind=ArtifactInlineMarkKind.LINK,
+            href="https://example.com/source",
+        )
+    ]
+    brief = _build_targeted_research_brief(
+        "Research instruction.",
+        _document([block, _block("Do not duplicate this full article body.")]),
+        "Check the linked source.",
+        target_anchor_id="anchor-1",
+    )
+
+    assert "TARGETED RESEARCH REQUEST:\nCheck the linked source." in brief
+    assert "Target anchor id:\nanchor-1" in brief
+    assert "https://example.com/source" in brief
+    assert "UNTRUSTED ARTICLE TEXT" not in brief
+    assert "Do not duplicate this full article body." not in brief
 
 
 class _TokenLimitError(RuntimeError):
@@ -88,9 +139,43 @@ async def test_mock_provider_returns_valid_findings():
         "value_add",
         "official_source_links",
         "related_post_links",
+        "article_cited_links_checked",
     ):
         assert key in f
     assert 0.0 <= f["confidence"] <= 1.0
+    assert f["article_cited_links_checked"][0]["supports_claim"] == "yes"
+
+
+def test_fact_check_normalization_preserves_article_cited_link_checks() -> None:
+    claims = _normalize_fact_check_claims(
+        {
+            "claim_findings": [
+                {
+                    "claim_text": "Claim",
+                    "verdict": "SUPPORTED",
+                    "evidence_summary": "Evidence",
+                    "source_links": ["https://example.com/source"],
+                    "anchor_excerpt": "Claim",
+                    "confidence": 0.9,
+                    "article_cited_links_checked": [
+                        {
+                            "url": "https://example.com/cited",
+                            "supports_claim": "partly",
+                            "note": "The cited source is relevant but narrower.",
+                        }
+                    ],
+                }
+            ]
+        }
+    )
+
+    assert claims[0]["article_cited_links_checked"] == [
+        {
+            "url": "https://example.com/cited",
+            "supports_claim": "partly",
+            "note": "The cited source is relevant but narrower.",
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -128,6 +213,23 @@ def test_fact_check_instruction_file_loads():
     defn = get_agent_definition("fact_check")
     text = load_instruction_text(defn)
     assert len(text) > 50
+    assert "article_cited_links_checked" in text
+    assert "inspect nearby article-cited links first" in text
+
+
+def test_deep_research_prompts_describe_extract_tool_and_structured_output() -> None:
+    """Research prompts should align tool guidance with the expected JSON contract."""
+
+    from content_evaluation.providers.deep_research.prompts import (
+        final_report_generation_prompt,
+        research_system_prompt,
+    )
+
+    assert "tavily_extract_urls" in research_system_prompt
+    assert "retrieving exact URLs" in research_system_prompt
+    assert '"claim_findings"' in final_report_generation_prompt
+    assert '"article_cited_links_checked"' in final_report_generation_prompt
+    assert '"overlap_items"' in final_report_generation_prompt
 
 
 def test_instruction_text_is_preloaded_before_runtime_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -372,6 +474,65 @@ async def test_live_deep_research_provider_research_attaches_usage_handler(monke
     assert any(
         isinstance(cb, UsageMetadataCallbackHandler) for cb in callbacks
     ), "UsageMetadataCallbackHandler not found in config['callbacks']"
+
+
+@pytest.mark.asyncio
+async def test_tavily_toolkit_includes_search_and_exact_url_extract() -> None:
+    """Tavily research tools should include search and exact URL extraction."""
+
+    tools = await get_all_tools({"configurable": {"search_api": SearchAPI.TAVILY.value}})
+    tool_names = {getattr(tool, "name", "") for tool in tools}
+
+    assert "tavily_search" in tool_names
+    assert "tavily_extract_urls" in tool_names
+
+
+@pytest.mark.asyncio
+async def test_tavily_extract_urls_formats_success_and_failures(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Exact URL extraction should return readable text for researcher tool messages."""
+
+    import content_evaluation.providers.deep_research.utils as utils_module
+
+    captured_request: dict[str, object] = {}
+
+    class FakeTavilyClient:
+        def __init__(self, api_key: str | None) -> None:
+            assert api_key == "tavily-key"
+
+        async def extract(self, **kwargs: object) -> dict[str, object]:
+            captured_request.update(kwargs)
+            return {
+                "results": [
+                    {
+                        "url": "https://example.com/source",
+                        "raw_content": "This exact source supports only part of the nearby claim.",
+                    }
+                ],
+                "failed_results": [
+                    {
+                        "url": "https://example.com/missing",
+                        "error": "not found",
+                    }
+                ],
+            }
+
+    monkeypatch.setenv("TAVILY_API_KEY", "tavily-key")
+    monkeypatch.setattr(utils_module, "AsyncTavilyClient", FakeTavilyClient)
+
+    result = await tavily_extract_urls_async(
+        ["https://example.com/source", "https://example.com/missing"],
+        query="nearby claim",
+        config={"configurable": {"max_content_length": 200}},
+    )
+
+    assert captured_request["urls"] == ["https://example.com/source", "https://example.com/missing"]
+    assert captured_request["extract_depth"] == "advanced"
+    assert captured_request["format"] == "markdown"
+    assert captured_request["query"] == "nearby claim"
+    assert "Extracted URL content" in result
+    assert "This exact source supports only part" in result
+    assert "--- FAILED URLS ---" in result
+    assert "https://example.com/missing" in result
 
 
 @pytest.mark.parametrize(

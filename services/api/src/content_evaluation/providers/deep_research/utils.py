@@ -34,6 +34,12 @@ TAVILY_SEARCH_DESCRIPTION = (
     "A search engine optimized for comprehensive, accurate, and trusted results. "
     "Useful for when you need to answer questions about current events."
 )
+TAVILY_EXTRACT_DESCRIPTION = (
+    "Extract readable markdown content from specific URLs. Use this when the article "
+    "already cites a URL and you need to verify what that exact source says."
+)
+
+
 @tool(description=TAVILY_SEARCH_DESCRIPTION)
 async def tavily_search(
     queries: list[str],
@@ -129,6 +135,72 @@ async def tavily_search(
         formatted_output += "\n\n" + "-" * 80 + "\n"
 
     return formatted_output
+
+
+@tool(description=TAVILY_EXTRACT_DESCRIPTION)
+async def tavily_extract_urls(
+    urls: list[str],
+    query: str | None = None,
+    config: RunnableConfig = None,
+) -> str:
+    """Extract and format content from specific URLs with Tavily Extract API."""
+
+    return await tavily_extract_urls_async(urls, query=query, config=config)
+
+
+async def tavily_extract_urls_async(
+    urls: list[str],
+    *,
+    query: str | None = None,
+    config: RunnableConfig = None,
+) -> str:
+    """Implementation for exact-URL Tavily extraction."""
+
+    if not urls:
+        return "No URLs provided for extraction."
+
+    configurable = Configuration.from_runnable_config(config)
+    tavily_client = AsyncTavilyClient(api_key=get_tavily_api_key(config))
+    request: dict[str, object] = {
+        "urls": urls,
+        "extract_depth": "advanced",
+        "format": "markdown",
+        "include_images": False,
+    }
+    if query:
+        request["query"] = query
+        request["chunks_per_source"] = 5
+
+    response = await tavily_client.extract(**request)
+    results = response.get("results", []) if isinstance(response, dict) else []
+    failed_results = response.get("failed_results", []) if isinstance(response, dict) else []
+
+    if not results and not failed_results:
+        return "No extractable URL content found."
+
+    max_char_to_include = configurable.max_content_length
+    formatted_output = "Extracted URL content:\n"
+    for index, result in enumerate(results, start=1):
+        if not isinstance(result, dict):
+            continue
+        url = str(result.get("url", ""))
+        raw_content = str(result.get("raw_content", "")).strip()
+        if len(raw_content) > max_char_to_include:
+            raw_content = f"{raw_content[:max_char_to_include].rstrip()}\n\n[Content truncated]"
+        formatted_output += f"\n\n--- SOURCE {index} ---\n"
+        formatted_output += f"URL: {url}\n\n"
+        formatted_output += f"CONTENT:\n{raw_content}\n"
+
+    if failed_results:
+        formatted_output += "\n\n--- FAILED URLS ---\n"
+        for failed in failed_results:
+            if not isinstance(failed, dict):
+                continue
+            formatted_output += f"URL: {failed.get('url', '')}\n"
+            formatted_output += f"ERROR: {failed.get('error', '')}\n\n"
+
+    return formatted_output
+
 
 async def tavily_search_async(
     search_queries,
@@ -271,7 +343,13 @@ async def get_search_tool(search_api: SearchAPI):
             "type": "search",
             "name": "web_search"
         }
-        return [search_tool]
+        extract_tool = tavily_extract_urls
+        extract_tool.metadata = {
+            **(extract_tool.metadata or {}),
+            "type": "extract",
+            "name": "url_extract"
+        }
+        return [search_tool, extract_tool]
 
     elif search_api == SearchAPI.NONE:
         # No search functionality configured

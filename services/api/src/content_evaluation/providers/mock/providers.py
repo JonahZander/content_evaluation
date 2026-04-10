@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import Any
 
 from content_evaluation.domain.models import (
     ArtifactBlock,
@@ -183,7 +184,7 @@ class MockDeepResearchProvider:
             "https://example.com/official-source-1",
             "https://example.com/official-source-2",
         ]
-        claim_findings = [
+        claim_findings: list[dict[str, Any]] = [
             _mock_claim_entry(
                 claim_text=primary_excerpt,
                 verdict="SUPPORTED",
@@ -245,6 +246,7 @@ class MockDeepResearchProvider:
                 "value_add": item["value_add"],
                 "official_source_links": list(item["official_source_links"]),
                 "related_post_links": list(item["related_post_links"]),
+                "article_cited_links_checked": list(item["article_cited_links_checked"]),
             }
             for item in claim_findings
         ]
@@ -265,6 +267,7 @@ class MockDeepResearchProvider:
                         "value_add": item["value_add"],
                         "official_source_links": list(item["official_source_links"]),
                         "related_post_links": list(item["related_post_links"]),
+                        "article_cited_links_checked": list(item["article_cited_links_checked"]),
                     },
                 }
                 for item in claim_findings
@@ -316,7 +319,7 @@ class MockDeepResearchProvider:
             "https://example.com/targeted-research-source-1",
             "https://example.com/targeted-research-source-2",
         ]
-        claim_findings = [
+        claim_findings: list[dict[str, Any]] = [
             _mock_claim_entry(
                 claim_text=f"Targeted follow-up: {prompt[:96].strip() or 'review the prompt'}",
                 verdict="SUPPORTED",
@@ -344,6 +347,7 @@ class MockDeepResearchProvider:
                     "value_add": item["value_add"],
                     "official_source_links": list(item["official_source_links"]),
                     "related_post_links": list(item["related_post_links"]),
+                    "article_cited_links_checked": list(item["article_cited_links_checked"]),
                 }
                 for item in claim_findings
             ],
@@ -361,6 +365,7 @@ class MockDeepResearchProvider:
                         "value_add": item["value_add"],
                         "official_source_links": list(item["official_source_links"]),
                         "related_post_links": list(item["related_post_links"]),
+                        "article_cited_links_checked": list(item["article_cited_links_checked"]),
                         "targeted_prompt": prompt,
                     },
                 }
@@ -397,20 +402,32 @@ def _mock_claim_entry(
     value_add: str,
     official_source_links: Iterable[str],
     related_post_links: Iterable[str],
+    article_cited_links_checked: Iterable[dict[str, str]] | None = None,
 ) -> dict[str, object]:
     """Build one deterministic mock claim entry."""
 
+    source_link_list = list(source_links)
     return {
         "claim_text": claim_text,
         "verdict": verdict,
         "evidence_summary": evidence_summary,
-        "source_links": list(source_links),
+        "source_links": source_link_list,
         "anchor_excerpt": anchor_excerpt,
         "confidence": confidence,
         "suggestion": suggestion,
         "value_add": value_add,
         "official_source_links": list(official_source_links),
         "related_post_links": list(related_post_links),
+        "article_cited_links_checked": list(
+            article_cited_links_checked
+            or [
+                {
+                    "url": source_link_list[0] if source_link_list else "https://example.com/mock-source",
+                    "supports_claim": "yes",
+                    "note": "Mock cited-link check indicates the source supports the claim.",
+                }
+            ]
+        ),
     }
 
 

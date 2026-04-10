@@ -88,7 +88,7 @@ class LiveDeepResearchProvider:
         """Run prompt-scoped targeted research and return structured findings."""
 
         parsed = await self._invoke_graph(
-            f"TARGETED FOLLOW-UP RESEARCH\nUser prompt: {prompt}",
+            prompt,
             article_text,
             article_label="ORIGINAL ARTICLE",
         )
@@ -204,7 +204,11 @@ class LiveDeepResearchProvider:
     def _build_full_brief(lead_text: str, article_text: str, *, article_label: str) -> str:
         """Build the full research prompt body."""
 
-        return f"{lead_text}\n\n{article_label}:\n{article_text}"
+        return (
+            f"{lead_text.strip()}\n\n"
+            f"UNTRUSTED ARTICLE TEXT:\n"
+            f"{article_label}:\n{article_text}"
+        )
 
     def _build_fallback_article_text(self, article_text: str) -> str:
         """Return a deterministic reduced article body that preserves paragraph boundaries."""

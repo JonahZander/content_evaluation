@@ -52,6 +52,8 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
   - `value`, `audience`, and first-pass `synthesis` are no longer scheduled in the main run
   - Retry transient provider timeouts and network failures inside the individual agent execution loop before failing the run
   - Fact-check and targeted research pass the full normalized article text into deep research by default
+  - Deep-research prompt assembly sends article metadata and cited-link context separately from the full article body, so the article text appears once in the final research brief
+  - Fact-check and targeted research expose article-cited links to the researcher and instruct it to inspect relevant cited URLs before broader web search
   - If a deep-research model rejects the full article for token length, retry once with a deterministic paragraph-preserving reduced article body and record that fallback in metadata
   - LangGraph agent nodes re-check the latest durable checkpoint before commit so a worker retry can reuse already-persisted agent output without duplicating comments or losing human replies
   - Independent LangGraph agent providers execute outside the artifact commit lock; only short preflight and commit/checkpoint sections stay serialized
@@ -118,6 +120,9 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
   - Session/workspace run lifecycle, execution routing (`append_agents`, targeted `research`, or full `langgraph`), dependency-driven scheduling, checkpoint persistence, resumable LangGraph commits, and artifact assembly
 - `providers/deep_research/provider.py`
   - Full-text-first deep research wrapper with single-shot token-limit fallback for oversized article prompts
+  - Builds the final deep-research prompt with task context plus `UNTRUSTED ARTICLE TEXT`, keeping article body text in one place
+- `providers/deep_research/utils.py`
+  - Provides local LangChain tools for the deep researcher, including Tavily search for discovery and Tavily exact-URL extraction for article-cited sources
 - `providers/langchain/client.py`
   - LangChain-backed provider routing across OpenAI, Anthropic, and Gemini
   - Chat models are cached per fully resolved route signature (`family`, `model_name`, `temperature`, `timeout_seconds`, `max_retries`) for the lifetime of the provider

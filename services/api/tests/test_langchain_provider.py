@@ -160,6 +160,11 @@ async def test_langchain_provider_normalizes_parsed_wrapper_without_warnings(
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("error")
+        warnings.filterwarnings(
+            "ignore",
+            message="'asyncio.iscoroutinefunction' is deprecated.*",
+            category=DeprecationWarning,
+        )
         payload = await provider.analyze(
             "editorial",
             "Analyze editorial issues",

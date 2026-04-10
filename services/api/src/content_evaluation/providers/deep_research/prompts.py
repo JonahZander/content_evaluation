@@ -147,22 +147,24 @@ You can use any of the tools provided to you to find resources that can help ans
 </Task>
 
 <Available Tools>
-You have access to two main tools:
-1. **tavily_search**: For conducting web searches to gather information
-2. **think_tool**: For reflection and strategic planning during research
+You have access to three main tools:
+1. **tavily_search**: For discovering outside sources, official references, and similar public articles
+2. **tavily_extract_urls**: For retrieving exact URLs already supplied in the article or research task
+3. **think_tool**: For reflection and strategic planning during research
 {mcp_prompt}
 
-**CRITICAL: Use think_tool after each search to reflect on results and plan next steps. Do not call think_tool with the tavily_search or any other tools. It should be to reflect on the results of the search.**
+**CRITICAL: Use think_tool after each search or extraction step to reflect on results and plan next steps. Do not call think_tool with tavily_search, tavily_extract_urls, or any other tools. It should be used to reflect on completed tool results.**
 </Available Tools>
 
 <Instructions>
 Think like a human researcher with limited time. Follow these steps:
 
 1. **Read the question carefully** - What specific information does the user need?
-2. **Start with broader searches** - Use broad, comprehensive queries first
-3. **After each search, pause and assess** - Do I have enough to answer? What's still missing?
-4. **Execute narrower searches as you gather information** - Fill in the gaps
-5. **Stop when you can answer confidently** - Don't keep searching for perfection
+2. **Inspect known URLs first when provided** - If the task includes exact URLs from the article, use tavily_extract_urls to retrieve those sources before broader search
+3. **Use broader searches for discovery** - Use tavily_search to find official sources, primary sources, and similar public articles
+4. **After each search or extraction, pause and assess** - Do I have enough to answer? What's still missing?
+5. **Execute narrower searches as you gather information** - Fill in the gaps
+6. **Stop when you can answer confidently** - Don't keep searching for perfection
 </Instructions>
 
 <Hard Limits>
@@ -248,24 +250,52 @@ Today's date is {date}.
 Output a JSON object with this exact shape — no markdown wrapper, no explanation, only valid JSON:
 
 {{
-  "findings": [
+  "claim_findings": [
     {{
-      "excerpt": "<exact verbatim short quote from the ORIGINAL ARTICLE containing the claim or section being assessed>",
-      "rationale": "<concise explanation: verdict (SUPPORTED/REFUTED/MIXED/UNVERIFIABLE or OVERLAP/UNIQUE), key evidence found, and relevant source URLs inline>",
-      "confidence": <float 0.0–1.0 where 1.0 = fully verified or clearly unique, 0.5 = mixed/uncertain, 0.0 = refuted or fully redundant>,
-      "suggestion": "<one actionable suggestion: e.g. 'Correct X to Y per [url]', 'Add citation: [url]', 'Differentiate by adding [specific angle]', or 'Well-supported — no change needed'>"
+      "claim_text": "<concise factual claim being assessed>",
+      "verdict": "SUPPORTED | REFUTED | MIXED | UNVERIFIABLE",
+      "evidence_summary": "<concise source-backed explanation with key URLs inline>",
+      "source_links": ["<url1>", "<url2>"],
+      "anchor_excerpt": "<exact verbatim short quote from the ORIGINAL ARTICLE containing the claim>",
+      "confidence": <float 0.0–1.0 where 1.0 = fully verified, 0.5 = mixed/uncertain, 0.0 = refuted>,
+      "suggestion": "<one actionable suggestion: e.g. 'Correct X to Y per [url]', 'Add citation: [url]', or 'Well-supported — no change needed'>",
+      "value_add": "<short note on whether this claim adds value or needs stronger differentiation>",
+      "official_source_links": ["<official-or-primary-url>"],
+      "related_post_links": ["<similar-article-url>"],
+      "article_cited_links_checked": [
+        {{
+          "url": "<article-cited-url>",
+          "supports_claim": "yes | partly | no | unclear",
+          "note": "<brief explanation of whether the cited source supports the nearby claim>"
+        }}
+      ]
     }}
   ],
-  "summary": "<one sentence: overall factual accuracy verdict and originality assessment>",
+  "overlap_items": [
+    {{
+      "title": "<similar public article title>",
+      "url": "<similar public article URL>",
+      "overlap_note": "<brief note on overlap or differentiation>",
+      "score": <float 0.0–1.0 where 1.0 = highly overlapping>
+    }}
+  ],
+  "summary": "<one sentence: overall factual accuracy and differentiation assessment>",
+  "research_summary": "<short fact-check oriented summary suitable for the review summary panel>",
+  "tl_dr": "<short article summary>",
   "metadata": {{
-    "sources": ["<url1>", "<url2>"]
+    "sources": ["<url1>", "<url2>"],
+    "suggested_research_prompt": "<one useful follow-up research question>",
+    "audience": "<likely reader audience>"
   }}
 }}
 
 Rules:
-- One finding per verified claim plus one finding for the redundancy/differentiation assessment.
-- For the redundancy finding, use the article title or opening sentence as the excerpt.
-- The excerpt MUST be a short exact quote from the ORIGINAL ARTICLE (not the research notes).
+- Return 3–5 claim_findings for the highest-trust-impact verifiable claims.
+- Prefer claims from the whole article, not only the opening.
+- If a selected claim has nearby article-cited links, report each checked URL in article_cited_links_checked.
+- Use tavily_extract_urls research notes to decide whether article-cited links support, partly support, do not support, or are unclear for the claim.
+- Include overlap_items for similar public articles found during redundancy/differentiation research.
+- anchor_excerpt MUST be a short exact quote from the ORIGINAL ARTICLE (not the research notes).
 - The sources array must aggregate every URL referenced in the research findings.
 - Return ONLY valid JSON — nothing else.
 """

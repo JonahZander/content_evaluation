@@ -383,6 +383,9 @@ class LangChainAnalysisProvider:
                     "level": block.level,
                     "language": block.language,
                     "marks": [mark.model_dump(mode="json") for mark in block.marks],
+                    "list_items": [item.model_dump(mode="json") for item in block.list_items],
+                    "ordered": block.ordered,
+                    "start_number": block.start_number,
                 }
                 for block in blocks
             ],

@@ -17,6 +17,7 @@ from content_evaluation.domain.models import (
     ArtifactDocument,
     ArtifactInlineMark,
     ArtifactInlineMarkKind,
+    ArtifactListItem,
     CleanerRemovalReason,
     ContentFormat,
     RunInput,
@@ -28,6 +29,7 @@ OVERSIZED_BLOCK_SENTENCE_LIMIT = 12
 TARGET_CHUNK_MIN = 700
 TARGET_CHUNK_MAX = 1100
 SENTENCE_PATTERN = re.compile(r".+?(?:[.!?](?=\s|$)|$)", re.S)
+TASK_LIST_ITEM_PATTERN = re.compile(r"^\[[ xX]\](?:\s|$)")
 PROMPT_INJECTION_PATTERNS = (
     re.compile(r"\bignore previous instructions\b", re.I),
     re.compile(r"\byou are chatgpt\b", re.I),
@@ -158,6 +160,14 @@ def _normalize_markdown_blocks(cleaned_text: str) -> list[ArtifactBlock]:
             token_index += 3
             continue
 
+        if token.type in {"bullet_list_open", "ordered_list_open"}:
+            list_block, next_token_index = _normalize_markdown_list_block(tokens, token_index, lines, index)
+            if list_block is not None:
+                blocks.append(list_block)
+                index += 1
+                token_index = next_token_index
+                continue
+
         if token.type == "paragraph_open" and token_index + 1 < len(tokens):
             inline_token = tokens[token_index + 1]
             text, marks = _extract_inline_content(inline_token)
@@ -213,6 +223,9 @@ def _split_oversized_blocks(blocks: list[ArtifactBlock]) -> list[ArtifactBlock]:
             level=block.level,
             language=block.language,
             marks=list(block.marks),
+            list_items=list(block.list_items),
+            ordered=block.ordered,
+            start_number=block.start_number,
         )
         for index, block in enumerate(expanded)
     ]
@@ -370,6 +383,8 @@ def _split_block_if_needed(block: ArtifactBlock) -> list[ArtifactBlock]:
             level=block.level,
             language=block.language,
             marks=[],
+            ordered=block.ordered,
+            start_number=block.start_number,
         )
         for chunk in chunks
     ]
@@ -397,6 +412,128 @@ def _source_slice(lines: list[str], mapping: list[int] | None) -> str:
         return ""
     start, end = mapping
     return "\n".join(lines[start:end]).strip()
+
+
+def _normalize_markdown_list_block(
+    tokens: list[Token],
+    start_index: int,
+    lines: list[str],
+    block_index: int,
+) -> tuple[ArtifactBlock | None, int]:
+    """Collapse one simple top-level markdown list into a single block."""
+
+    list_token = tokens[start_index]
+    if list_token.type not in {"bullet_list_open", "ordered_list_open"}:
+        return None, start_index + 1
+    if list_token.level != 0:
+        return None, start_index + 1
+
+    closing_type = "bullet_list_close" if list_token.type == "bullet_list_open" else "ordered_list_close"
+    token_index = start_index + 1
+    item_texts: list[str] = []
+    item_marks: list[list[ArtifactInlineMark]] = []
+    while token_index < len(tokens):
+        token = tokens[token_index]
+        if token.type == closing_type:
+            break
+
+        if token.type != "list_item_open":
+            return None, start_index + 1
+
+        if token_index + 4 >= len(tokens):
+            return None, start_index + 1
+
+        paragraph_open = tokens[token_index + 1]
+        inline_token = tokens[token_index + 2]
+        paragraph_close = tokens[token_index + 3]
+        list_item_close = tokens[token_index + 4]
+
+        if (
+            paragraph_open.type != "paragraph_open"
+            or inline_token.type != "inline"
+            or paragraph_close.type != "paragraph_close"
+            or list_item_close.type != "list_item_close"
+        ):
+            return None, start_index + 1
+
+        if TASK_LIST_ITEM_PATTERN.match(inline_token.content.strip()):
+            return None, start_index + 1
+
+        text, marks = _extract_inline_content(inline_token)
+        if not text.strip():
+            return None, start_index + 1
+
+        item_texts.append(text)
+        item_marks.append(marks)
+        token_index += 5
+
+    if token_index >= len(tokens) or tokens[token_index].type != closing_type or not item_texts:
+        return None, start_index + 1
+
+    block_text, list_items, marks = _build_list_text_and_metadata(item_texts, item_marks)
+    start_number = None
+    if list_token.type == "ordered_list_open":
+        raw_start = list_token.attrGet("start")
+        parsed_start = int(raw_start) if raw_start is not None else 1
+        if parsed_start != 1:
+            start_number = parsed_start
+
+    return (
+        ArtifactBlock(
+            index=block_index,
+            text=block_text,
+            kind=ArtifactBlockKind.LIST,
+            markdown=_source_slice(lines, list_token.map) or block_text,
+            marks=marks,
+            list_items=list_items,
+            ordered=list_token.type == "ordered_list_open",
+            start_number=start_number,
+        ),
+        token_index + 1,
+    )
+
+
+def _build_list_text_and_metadata(
+    item_texts: list[str],
+    item_marks: list[list[ArtifactInlineMark]],
+) -> tuple[str, list[ArtifactListItem], list[ArtifactInlineMark]]:
+    """Build joined list text plus rebased items and marks."""
+
+    joined_parts: list[str] = []
+    list_items: list[ArtifactListItem] = []
+    rebased_marks: list[ArtifactInlineMark] = []
+    offset = 0
+
+    for item_index, item_text in enumerate(item_texts):
+        if item_index > 0:
+            joined_parts.append("\n")
+            offset += 1
+
+        item_start = offset
+        joined_parts.append(item_text)
+        offset += len(item_text)
+        list_items.append(
+            ArtifactListItem(
+                text=item_text,
+                start_offset=item_start,
+                end_offset=offset,
+            )
+        )
+        rebased_marks.extend(
+            ArtifactInlineMark(
+                start_offset=item_start + mark.start_offset,
+                end_offset=item_start + mark.end_offset,
+                kind=mark.kind,
+                href=mark.href,
+            )
+            for mark in item_marks[item_index]
+        )
+
+    return (
+        "".join(joined_parts),
+        list_items,
+        sorted(rebased_marks, key=lambda mark: (mark.start_offset, mark.end_offset, mark.kind.value)),
+    )
 
 
 def _extract_inline_content(token: Token) -> tuple[str, list[ArtifactInlineMark]]:
@@ -467,7 +604,8 @@ def _extract_inline_content(token: Token) -> tuple[str, list[ArtifactInlineMark]
                 )
             continue
         if child.type == "link_open":
-            open_links.append((offset, child.attrGet("href")))
+            href = child.attrGet("href")
+            open_links.append((offset, href if isinstance(href, str) else None))
             continue
         if child.type == "link_close" and open_links:
             start, href = open_links.pop()

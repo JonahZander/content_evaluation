@@ -12,6 +12,7 @@ import {
   type ArtifactDocument,
   type ArtifactInlineMark,
   type ArtifactInlineMarkKind,
+  type ArtifactListItem,
   type ArtifactThread,
   type ReviewState,
   type SelectionDraft,
@@ -51,6 +52,11 @@ interface PlainRenderGroup {
   kind: "plain";
   key: string;
   content: ReactNode;
+}
+
+interface BlockTextSlice {
+  startOffset: number;
+  endOffset: number;
 }
 
 interface DocumentPaneProps {
@@ -181,11 +187,17 @@ function buildTextSegments(
   block: ArtifactBlock,
   anchors: ArtifactAnchor[],
   anchorThreadMap: Map<string, AnchorThread>,
+  slice: BlockTextSlice = { startOffset: 0, endOffset: block.text.length },
+  assignedRefAnchorIds: Set<string> = new Set(),
 ): TextSegment[] {
   const blockAnchors = anchors
     .flatMap((anchor) =>
       anchorSegments(anchor)
-        .filter((segment) => segment.block_id === block.id)
+        .filter((segment) =>
+          segment.block_id === block.id
+          && segment.end_offset > slice.startOffset
+          && segment.start_offset < slice.endOffset,
+        )
         .map((segment) => ({
           anchor,
           segment,
@@ -204,18 +216,20 @@ function buildTextSegments(
       return left.anchor.id.localeCompare(right.anchor.id);
     });
 
-  const boundaries = new Set<number>([0, block.text.length]);
+  const boundaries = new Set<number>([slice.startOffset, slice.endOffset]);
   blockAnchors.forEach((anchor) => {
-    boundaries.add(anchor.segment.start_offset);
-    boundaries.add(anchor.segment.end_offset);
+    boundaries.add(Math.max(slice.startOffset, anchor.segment.start_offset));
+    boundaries.add(Math.min(slice.endOffset, anchor.segment.end_offset));
   });
   (block.marks ?? []).forEach((mark) => {
-    boundaries.add(mark.start_offset);
-    boundaries.add(mark.end_offset);
+    if (mark.end_offset <= slice.startOffset || mark.start_offset >= slice.endOffset) {
+      return;
+    }
+    boundaries.add(Math.max(slice.startOffset, mark.start_offset));
+    boundaries.add(Math.min(slice.endOffset, mark.end_offset));
   });
 
   const orderedBoundaries = [...boundaries].sort((left, right) => left - right);
-  const assignedRefAnchorIds = new Set<string>();
   const segments: TextSegment[] = [];
   for (let index = 0; index < orderedBoundaries.length - 1; index += 1) {
     const startOffset = orderedBoundaries[index];
@@ -269,10 +283,12 @@ function renderBlockText(
   hoveredAnchorId: string | null,
   anchorRefs: MutableRefObject<Record<string, HTMLSpanElement | null>>,
   onHoverAnchor: (anchorId: string | null) => void,
+  slice: BlockTextSlice = { startOffset: 0, endOffset: block.text.length },
+  assignedRefAnchorIds: Set<string> = new Set(),
 ): ReactNode {
-  const segments = buildTextSegments(block, anchors, anchorThreadMap);
+  const segments = buildTextSegments(block, anchors, anchorThreadMap, slice, assignedRefAnchorIds);
   const renderedSegments = segments.map((segment) => {
-    const key = `${block.id}-${segment.startOffset}-${segment.endOffset}`;
+    const key = `${block.id}-${slice.startOffset}-${slice.endOffset}-${segment.startOffset}-${segment.endOffset}`;
     const content = wrapInlineMarks(segment.text, segment.marks, key);
     if (segment.anchors.length === 0) {
       return { key, kind: "plain" as const, content: <span key={key}>{content}</span> };
@@ -346,10 +362,18 @@ function areSameAnchorSet(left: SegmentAnchor[], right: SegmentAnchor[]): boolea
   return left.every((anchor, index) => anchor.anchor.id === right[index]?.anchor.id);
 }
 
+function listItemSlice(item: ArtifactListItem): BlockTextSlice {
+  return {
+    startOffset: item.start_offset,
+    endOffset: item.end_offset,
+  };
+}
+
 function resolveSelectionDraft(
   container: HTMLElement,
   selection: Selection | null,
   blockId: string,
+  blockOffsetBase = 0,
 ): SelectionDraft | null {
   if (selection === null || selection.rangeCount === 0 || selection.isCollapsed) {
     return null;
@@ -372,8 +396,8 @@ function resolveSelectionDraft(
 
   return {
     blockId,
-    startOffset,
-    endOffset: startOffset + selectedText.length,
+    startOffset: blockOffsetBase + startOffset,
+    endOffset: blockOffsetBase + startOffset + selectedText.length,
     quote: selectedText,
   };
 }
@@ -861,6 +885,7 @@ export function DocumentPane({
         document.blocks.map((block) => (
           (() => {
             const isPreviewHidden = hiddenBlockIdSet.has(block.id);
+            const refAnchorIdsForBlock = new Set<string>();
             return (
               <div
                 key={block.id}
@@ -877,13 +902,15 @@ export function DocumentPane({
                       ? styles.documentBlockHeading
                       : block.kind === "code"
                         ? styles.documentBlockCode
+                        : block.kind === "list"
+                          ? styles.documentBlockList
                         : styles.paragraph
                   } ${isPreviewHidden ? styles.previewBlockMuted : ""}`}
                   data-block-id={block.id}
                   data-block-origin={block.origin ?? "source"}
                   data-preview-hidden={isPreviewHidden ? "true" : "false"}
                   onMouseUp={(event) => {
-                    if (!selectionEnabled) {
+                    if (!selectionEnabled || block.kind === "list") {
                       return;
                     }
                     const draft = resolveSelectionDraft(event.currentTarget, window.getSelection(), block.id);
@@ -908,8 +935,88 @@ export function DocumentPane({
                     <pre className={styles.codeBlock}>
                       <code>{renderBlockText(block, anchors, anchorThreadMap, hoveredAnchorId, anchorRefs, onHoverAnchor)}</code>
                     </pre>
+                  ) : block.kind === "list" ? (
+                    block.ordered ? (
+                      <ol
+                        className={styles.listBlock}
+                        start={block.start_number ?? undefined}
+                      >
+                        {(block.list_items ?? []).map((item, itemIndex) => (
+                          <li key={`${block.id}-item-${itemIndex}`} className={styles.listItem}>
+                            <span
+                              className={styles.listItemContent}
+                              onMouseUp={(event) => {
+                                if (!selectionEnabled) {
+                                  return;
+                                }
+                                const draft = resolveSelectionDraft(
+                                  event.currentTarget,
+                                  window.getSelection(),
+                                  block.id,
+                                  item.start_offset,
+                                );
+                                onSelectionDraft(draft);
+                              }}
+                            >
+                              {renderBlockText(
+                                block,
+                                anchors,
+                                anchorThreadMap,
+                                hoveredAnchorId,
+                                anchorRefs,
+                                onHoverAnchor,
+                                listItemSlice(item),
+                                refAnchorIdsForBlock,
+                              )}
+                            </span>
+                          </li>
+                        ))}
+                      </ol>
+                    ) : (
+                      <ul className={styles.listBlock}>
+                        {(block.list_items ?? []).map((item, itemIndex) => (
+                          <li key={`${block.id}-item-${itemIndex}`} className={styles.listItem}>
+                            <span
+                              className={styles.listItemContent}
+                              onMouseUp={(event) => {
+                                if (!selectionEnabled) {
+                                  return;
+                                }
+                                const draft = resolveSelectionDraft(
+                                  event.currentTarget,
+                                  window.getSelection(),
+                                  block.id,
+                                  item.start_offset,
+                                );
+                                onSelectionDraft(draft);
+                              }}
+                            >
+                              {renderBlockText(
+                                block,
+                                anchors,
+                                anchorThreadMap,
+                                hoveredAnchorId,
+                                anchorRefs,
+                                onHoverAnchor,
+                                listItemSlice(item),
+                                refAnchorIdsForBlock,
+                              )}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )
                   ) : (
-                    renderBlockText(block, anchors, anchorThreadMap, hoveredAnchorId, anchorRefs, onHoverAnchor)
+                    renderBlockText(
+                      block,
+                      anchors,
+                      anchorThreadMap,
+                      hoveredAnchorId,
+                      anchorRefs,
+                      onHoverAnchor,
+                      { startOffset: 0, endOffset: block.text.length },
+                      refAnchorIdsForBlock,
+                    )
                   )}
                 </div>
                 <div className={styles.paragraphComments}>

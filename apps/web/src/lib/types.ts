@@ -10,7 +10,7 @@ export type AgentPlanStatus = "pending" | "queued" | "running" | "completed" | "
 export type AgentExecutionMode = "single_turn" | "multi_step";
 export type ProviderKind = "deep_research" | "search" | "analysis" | "extract";
 export type EventType = "run" | "artifact" | "agent";
-export type ArtifactBlockKind = "paragraph" | "heading" | "code";
+export type ArtifactBlockKind = "paragraph" | "heading" | "code" | "list";
 export type ArtifactBlockOrigin = "source" | "synthetic_unmatched";
 export type ArtifactInlineMarkKind = "strong" | "emphasis" | "code" | "link";
 export type ArtifactAnchorMatchKind = "source" | "synthetic_unmatched";
@@ -34,6 +34,9 @@ export interface ArtifactBlock {
   level?: number | null;
   language?: string | null;
   marks?: ArtifactInlineMark[];
+  list_items?: ArtifactListItem[];
+  ordered?: boolean | null;
+  start_number?: number | null;
 }
 
 export interface ArtifactInlineMark {
@@ -41,6 +44,12 @@ export interface ArtifactInlineMark {
   end_offset: number;
   kind: ArtifactInlineMarkKind;
   href?: string | null;
+}
+
+export interface ArtifactListItem {
+  text: string;
+  start_offset: number;
+  end_offset: number;
 }
 
 export interface ArtifactDocument {

@@ -179,6 +179,7 @@ class ArtifactBlockKind(StrEnum):
     PARAGRAPH = "paragraph"
     HEADING = "heading"
     CODE = "code"
+    LIST = "list"
 
 
 class ArtifactBlockOrigin(StrEnum):
@@ -224,6 +225,14 @@ class ArtifactInlineMark(BaseModel):
     href: str | None = None
 
 
+class ArtifactListItem(BaseModel):
+    """Store one list item inside a normalized list block."""
+
+    text: str
+    start_offset: int
+    end_offset: int
+
+
 class ArtifactBlock(BaseModel):
     """Store one normalized text block."""
 
@@ -236,6 +245,9 @@ class ArtifactBlock(BaseModel):
     level: int | None = None
     language: str | None = None
     marks: list[ArtifactInlineMark] = Field(default_factory=list)
+    list_items: list[ArtifactListItem] = Field(default_factory=list)
+    ordered: bool | None = None
+    start_number: int | None = None
 
 
 class ArtifactCleanerRemovedBlock(BaseModel):

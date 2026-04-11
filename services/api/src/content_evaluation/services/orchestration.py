@@ -207,6 +207,18 @@ class FactCheckOverlap(TypedDict):
     score: float | None
 
 
+class OverviewData(TypedDict):
+    """Store typed summary-only article overview fields."""
+
+    tl_dr: str
+    inferred_audience: str
+    word_count: int
+    estimated_reading_time_minutes: int
+    article_format: str
+    reading_difficulty: str
+    structural_completeness: ArtifactStructuralCompleteness
+
+
 class RunOrchestrator:
     """Create artifacts and orchestrate all analysis steps."""
 
@@ -449,7 +461,7 @@ class RunOrchestrator:
                 raise ValidationError("Accept at least one agent suggestion before generating revised markdown.")
 
             original_markdown = artifact.document.raw_content or _document_markdown(artifact.document)
-            suggestion_payload = [
+            suggestion_payload: list[dict[str, object]] = [
                 {
                     "comment_id": item.comment_id,
                     "quote": item.quote,
@@ -466,6 +478,7 @@ class RunOrchestrator:
                 direction_prompt=direction_prompt,
                 route=_route_for_revision(self._runtime_mode, self._analysis_provider),
             )
+            candidate_markdown: str | None
             if mode is RevisionMode.SURGICAL:
                 replacements = _coerce_revision_replacements(rewrite_payload.get("replacements"))
                 candidate_markdown = _apply_replacements(original_markdown, replacements)
@@ -1647,7 +1660,7 @@ class RunOrchestrator:
     ) -> None:
         """Append a standardized failed run event and persist it."""
 
-        metadata = {"mode": mode.value} if mode is not None else None
+        metadata: dict[str, object] | None = {"mode": mode.value} if mode is not None else None
         error_kind = error.kind if isinstance(error, ProviderError) else None
         provider_name = error.provider_name if isinstance(error, ProviderError) else None
         await self._append_event(
@@ -2440,7 +2453,7 @@ def _fact_check_value_summary(result: ArtifactAgentResult | None) -> str:
 def _build_overview_data(
     artifact: AnalysisArtifact,
     fact_check_result: ArtifactAgentResult | None,
-) -> dict[str, object]:
+) -> OverviewData:
     """Build overview-only summary data directly from the article and artifact."""
 
     document = artifact.document
@@ -2609,8 +2622,8 @@ def _coerce_revision_replacements(value: object) -> list[RevisionReplacement]:
     for item in value:
         if not isinstance(item, dict):
             continue
-        anchor = _coerce_str(item.get("anchor")).strip()
-        replacement = _coerce_str(item.get("replacement")).strip()
+        anchor = (_coerce_str(item.get("anchor")) or "").strip()
+        replacement = (_coerce_str(item.get("replacement")) or "").strip()
         if not anchor or not replacement:
             continue
         replacements.append(RevisionReplacement(anchor=anchor, replacement=replacement))

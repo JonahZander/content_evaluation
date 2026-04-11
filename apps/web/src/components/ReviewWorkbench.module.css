@@ -1136,6 +1136,10 @@
   margin: 0;
 }
 
+.documentBlockList {
+  margin: 0;
+}
+
 .documentBlockSynthetic {
   padding: 14px 16px;
   border-radius: 0;
@@ -1174,6 +1178,26 @@
   font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
   font-size: 0.96rem;
   line-height: 1.7;
+}
+
+.listBlock {
+  margin: 0;
+  padding-left: 1.45em;
+  font-size: 1.18rem;
+  line-height: 1.82;
+  color: var(--ink);
+}
+
+.listItem {
+  margin: 0 0 0.58em;
+}
+
+.listItem:last-child {
+  margin-bottom: 0;
+}
+
+.listItemContent {
+  display: inline;
 }
 
 .inlineCode {
@@ -1272,7 +1296,7 @@
   background: rgba(0, 0, 0, 0.04);
 }
 
-.previewBlockMuted :is(.headingLevel1, .headingLevel2, .headingLevel3, .codeBlock, .paragraph) {
+.previewBlockMuted :is(.headingLevel1, .headingLevel2, .headingLevel3, .codeBlock, .paragraph, .listBlock) {
   opacity: 1;
 }
 

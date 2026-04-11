@@ -10,13 +10,15 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile, status
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from fastapi.routing import APIRoute
 from pydantic import TypeAdapter
 from sse_starlette.sse import EventSourceResponse
+from starlette.datastructures import UploadFile as StarletteUploadFile
 from starlette.routing import Match
+from starlette.types import Scope
 
 from content_evaluation.api.dependencies import (
     AppServices,
@@ -62,7 +64,7 @@ _BOOL_ADAPTER = TypeAdapter(bool)
 _PERSISTENCE_MODE_ADAPTER = TypeAdapter(PersistenceMode)
 
 
-def _content_type_matches(scope: dict[str, object], prefix: str) -> bool:
+def _content_type_matches(scope: Scope, prefix: str) -> bool:
     """Return whether one request content type starts with the requested prefix."""
 
     headers = scope.get("headers")
@@ -77,7 +79,7 @@ def _content_type_matches(scope: dict[str, object], prefix: str) -> bool:
 class _JsonRunRoute(APIRoute):
     """Match JSON run submissions and ignore multipart uploads."""
 
-    def matches(self, scope: dict[str, object]) -> tuple[Match, dict[str, object]]:
+    def matches(self, scope: Scope) -> tuple[Match, Scope]:
         match, child_scope = super().matches(scope)
         if match == Match.FULL and not _content_type_matches(scope, "multipart/form-data"):
             return match, child_scope
@@ -87,7 +89,7 @@ class _JsonRunRoute(APIRoute):
 class _MultipartRunRoute(APIRoute):
     """Match multipart run submissions and ignore JSON bodies."""
 
-    def matches(self, scope: dict[str, object]) -> tuple[Match, dict[str, object]]:
+    def matches(self, scope: Scope) -> tuple[Match, Scope]:
         match, child_scope = super().matches(scope)
         if match == Match.FULL and _content_type_matches(scope, "multipart/form-data"):
             return match, child_scope
@@ -170,19 +172,17 @@ async def create_run_multipart(
 
     form = await request.form()
     file = form.get("file")
-    if file is None or not hasattr(file, "read"):
+    if not isinstance(file, StarletteUploadFile):
         raise HTTPException(status_code=422, detail="A file upload is required")
-    title = form.get("title")
-    if title == "":
-        title = None
-    selected_agents = form.getlist("selected_agents") if hasattr(form, "getlist") else []
+    raw_title = form.get("title")
+    title = raw_title if isinstance(raw_title, str) and raw_title else None
+    raw_selected_agents = form.getlist("selected_agents")
+    selected_agents = [item for item in raw_selected_agents if isinstance(item, str)]
     persistence_mode = _PERSISTENCE_MODE_ADAPTER.validate_python(
         form.get("persistence_mode", PersistenceMode.SESSION)
     )
     include_debug_trace = _BOOL_ADAPTER.validate_python(form.get("include_debug_trace", False))
 
-    if file is None:
-        raise HTTPException(status_code=422, detail="A file upload is required")
     input_data = await _run_input_from_file(
         file,
         services,
@@ -442,7 +442,7 @@ async def handle_domain_errors(_: object, error: ContentEvaluationError) -> Resp
 
 
 async def _run_input_from_file(
-    file: UploadFile,
+    file: StarletteUploadFile,
     services: AppServices,
     *,
     title: str | None,

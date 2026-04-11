@@ -28,7 +28,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
   - Surgical revisions should read as one flowing document with inline keep/discard controls and word-level change highlights embedded directly in context
 - Source text pane
   - Selectable text with highlighted spans in paragraph rows
-  - Supports lightweight markdown presentation for headings, inline emphasis, inline links, and fenced code blocks
+  - Supports lightweight markdown presentation for headings, simple ordered and unordered lists, inline emphasis, inline links, and fenced code blocks
 - Comment area
   - Each paragraph row owns its own right-side comment stack so later text does not continue until that paragraph's comments end
   - Agent comment cards should stay compact when multiple comments target the same section
@@ -110,10 +110,13 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Completed fact-check should stay visible in the selector but show a clear `Already run` lock state instead of behaving like a generic disabled option.
 - Supported markdown rendering is intentionally narrow in v1:
   - headings
+  - simple ordered lists
+  - simple unordered lists
   - `strong`
   - `em`
   - inline links
   - fenced code blocks
+- Nested lists and task-list syntax should remain readable through paragraph fallback instead of partially rendering as rich list UI.
 - URL mode should not display the pasted-text textarea because analysis runs from the imported URL preview content.
 - File-upload preview should reuse the shared document preview shell but should not enable preview pruning; uploads remain intact until analysis starts.
 - URL preview pruning is preview-only: excluded blocks stay visible in place with subdued styling, are omitted from the pending run, can be restored before analysis, and do not mutate persisted artifact state before a run starts.

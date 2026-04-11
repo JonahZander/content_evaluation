@@ -50,11 +50,12 @@ export interface WorkbenchState {
   hasDownloadedJson: boolean;
 }
 
-export type IntakeLocalErrorKey = "submit" | "urlImport" | "artifactImport";
+export type IntakeLocalErrorKey = "submit" | "urlImport" | "filePreview" | "artifactImport";
 
 export interface IntakeLocalErrors {
   submit: string | null;
   urlImport: string | null;
+  filePreview: string | null;
   artifactImport: string | null;
 }
 
@@ -99,6 +100,7 @@ export const initialWorkbenchState: WorkbenchState = {
   intakeLocalErrors: {
     submit: null,
     urlImport: null,
+    filePreview: null,
     artifactImport: null,
   },
 
@@ -233,6 +235,7 @@ export function workbenchReducer(state: WorkbenchState, action: WorkbenchAction)
         intakeLocalErrors: {
           submit: null,
           urlImport: null,
+          filePreview: null,
           artifactImport: null,
         },
       };
@@ -321,6 +324,7 @@ export function workbenchReducer(state: WorkbenchState, action: WorkbenchAction)
         intakeLocalErrors: {
           submit: null,
           urlImport: null,
+          filePreview: null,
           artifactImport: null,
         },
         formState: resetFormState,
@@ -341,6 +345,7 @@ export function workbenchReducer(state: WorkbenchState, action: WorkbenchAction)
         intakeLocalErrors: {
           submit: null,
           urlImport: null,
+          filePreview: null,
           artifactImport: null,
         },
         reviewLocalErrors: {

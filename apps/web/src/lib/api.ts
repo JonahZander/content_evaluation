@@ -2,6 +2,7 @@ import {
   AgentCatalogEntry,
   AnalysisArtifact,
   ArtifactDocument,
+  ContentFormat,
   PersistenceMode,
   RevisionMode,
   RevisedMarkdownDiffDecision,
@@ -15,6 +16,7 @@ export interface CreateRunPayload {
   sourceLabel: string;
   title?: string;
   text?: string;
+  contentFormat?: ContentFormat;
   url?: string;
   selectedAgents: string[];
   persistenceMode: PersistenceMode;
@@ -104,6 +106,7 @@ export async function createRun(payload: CreateRunPayload, signal?: AbortSignal)
         source_label: payload.sourceLabel,
         title: payload.title,
         text: payload.text,
+        content_format: payload.contentFormat,
         url: payload.url,
         selected_agents: payload.selectedAgents,
         persistence_mode: payload.persistenceMode,
@@ -126,6 +129,7 @@ export async function previewSource(payload: Omit<CreateRunPayload, "selectedAge
         source_label: payload.sourceLabel,
         title: payload.title,
         text: payload.text,
+        content_format: payload.contentFormat,
         url: payload.url,
       }),
       signal,

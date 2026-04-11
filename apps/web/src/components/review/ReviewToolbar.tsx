@@ -36,11 +36,13 @@ interface ReviewToolbarProps {
   hasLoadedContent: boolean;
   submitLocalError: string | null;
   urlImportLocalError: string | null;
+  filePreviewLocalError: string | null;
   artifactImportLocalError: string | null;
   onFormChange: (updater: (current: ReviewFormState) => ReviewFormState) => void;
   onFileChange: (file: File | null) => void;
   onImportFileChange: (file: File | null) => void;
   onPreviewText: () => void;
+  onPreviewFile: () => void;
   onPreviewUrl: () => void;
   onSubmit: () => void;
   onGenerateRevision: () => void;
@@ -73,11 +75,13 @@ export function ReviewToolbar({
   hasLoadedContent,
   submitLocalError,
   urlImportLocalError,
+  filePreviewLocalError,
   artifactImportLocalError,
   onFormChange,
   onFileChange,
   onImportFileChange,
   onPreviewText,
+  onPreviewFile,
   onPreviewUrl,
   onSubmit,
   onGenerateRevision,
@@ -88,6 +92,7 @@ export function ReviewToolbar({
   const showReadOnlyTextComposer = hasLoadedContent && formState.sourceType === "text";
   const shouldRenderSourceComposer = !hasLoadedContent || showReadOnlyTextComposer;
   const canPreviewText = !hasLoadedContent && formState.sourceType === "text" && formState.text.trim().length > 0;
+  const canPreviewFile = !hasLoadedContent && formState.sourceType === "file" && selectedFile !== null;
 
   return (
     <section className={styles.toolbar}>
@@ -197,6 +202,11 @@ export function ReviewToolbar({
                 onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
               />
               {selectedFile ? <span className={styles.fileMeta}>{selectedFile.name}</span> : null}
+              {filePreviewLocalError ? (
+                <p className={styles.errorBanner} data-testid="file-preview-local-error" role="alert">
+                  {filePreviewLocalError}
+                </p>
+              ) : null}
             </div>
           ) : formState.sourceType === "text" ? (
             <textarea
@@ -258,6 +268,17 @@ export function ReviewToolbar({
             onClick={onPreviewText}
           >
             Preview
+          </button>
+        ) : null}
+        {canPreviewFile ? (
+          <button
+            className={styles.ghostButton}
+            data-testid="preview-file-button"
+            type="button"
+            onClick={onPreviewFile}
+            disabled={previewing}
+          >
+            {previewing ? "Previewing..." : "Preview"}
           </button>
         ) : null}
         {canStopRun ? (

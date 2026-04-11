@@ -18,5 +18,6 @@ The workbench intake form is intentionally minimal:
 - No debug trace toggle — debug trace is always enabled. The `includeDebugTrace` field remains in `ReviewFormState`.
 - A "Choose content" label appears above a source type dropdown with four options: Pasted text, URL, Text file, Import artifact. The dropdown is hidden once content has loaded, but pasted-text runs keep the textarea visible as a read-only preview of the submitted content.
 - Pasted-text intake shows a `Preview` action before analysis starts so the reviewer can inspect the full text without leaving the intake shell.
+- Text-file intake shows an explicit `Preview` action before analysis starts so `.txt` and `.md` uploads can be inspected in the same intake preview shell used for URL imports.
 - "Import artifact" is one of the source type options, not a standalone button. Selecting it shows a JSON file picker inline in the source composer area.
 - Artifact import is a first-class intake path for reopening a previously exported review state without rerunning analysis.

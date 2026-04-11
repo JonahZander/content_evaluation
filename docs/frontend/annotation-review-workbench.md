@@ -65,6 +65,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Selecting a text span opens a reviewer comment composer for a new standalone human comment.
 - URL sources should be imported and previewed before analysis starts so the reviewer can inspect the normalized draft first.
 - Pasted-text intake should expose a lightweight preview toggle before analysis starts so the reviewer can inspect the raw submission without leaving Phase 1.
+- Text-file intake should expose an explicit preview action before analysis starts so uploaded `.txt` and `.md` drafts can be inspected in the Phase 1 document preview shell.
 - Imported URL previews should support reversible per-block removal before analysis so boilerplate or irrelevant sections can be excluded without editing the raw draft.
 - Imported URL previews should keep removed blocks in place with muted styling and a remove/restore toggle so the layout does not shift while the reviewer prunes the draft.
 - URL preview pruning stays in Phase 1 so the reviewer can normalize the draft before the first run.
@@ -114,6 +115,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
   - inline links
   - fenced code blocks
 - URL mode should not display the pasted-text textarea because analysis runs from the imported URL preview content.
+- File-upload preview should reuse the shared document preview shell but should not enable preview pruning; uploads remain intact until analysis starts.
 - URL preview pruning is preview-only: excluded blocks stay visible in place with subdued styling, are omitted from the pending run, can be restored before analysis, and do not mutate persisted artifact state before a run starts.
 - Unsupported markdown should stay readable as text rather than render rich embeds or media.
 - Agent comments are immutable in content; reviewer input happens through replies and review-state actions.

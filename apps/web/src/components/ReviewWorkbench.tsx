@@ -47,6 +47,7 @@ import type {
   ArtifactDocument,
   ArtifactComment,
   ArtifactThread,
+  ContentFormat,
   ReviewState,
   RevisionMode,
   RunStatus,
@@ -171,7 +172,10 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     return mutationRequestIdRef.current === requestId;
   }
 
-  function setIntakeLocalError(key: "submit" | "urlImport" | "artifactImport", message: string | null) {
+  function setIntakeLocalError(
+    key: "submit" | "urlImport" | "filePreview" | "artifactImport",
+    message: string | null,
+  ) {
     dispatch({ type: "SET_INTAKE_LOCAL_ERROR", key, message });
   }
 
@@ -701,8 +705,11 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       return;
     }
 
-    const isUrlPreviewRun = formState.sourceType === "url" && previewDocument !== null && artifact === null;
-    if (!isUrlPreviewRun && (artifact !== null || previewDocument !== null)) {
+    const isIntakePreviewRun =
+      artifact === null
+      && previewDocument !== null
+      && (formState.sourceType === "url" || formState.sourceType === "file");
+    if (!isIntakePreviewRun && (artifact !== null || previewDocument !== null)) {
       const replaced = await maybeReplaceCurrentAnalysis(false);
       if (!replaced) {
         return;
@@ -722,7 +729,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
           dispatch({ type: "SET_STATUS_MESSAGE", message });
           return;
         }
-        if (!/\.(txt|md)$/i.test(selectedFile.name)) {
+        if (contentFormatForFileName(selectedFile.name) === null) {
           const message = "Only .txt and .md uploads are supported.";
           setIntakeLocalError("submit", message);
           dispatch({ type: "SET_STATUS_MESSAGE", message });
@@ -898,6 +905,86 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       return;
     }
     dispatch({ type: "TOGGLE_TEXT_PREVIEW" });
+  }
+
+  async function handlePreviewFile() {
+    if (formState.sourceType !== "file") {
+      return;
+    }
+    if (selectedFile === null) {
+      const message = "Choose a .txt or .md file to preview.";
+      setIntakeLocalError("filePreview", message);
+      dispatch({ type: "SET_STATUS_MESSAGE", message });
+      return;
+    }
+
+    const contentFormat = contentFormatForFileName(selectedFile.name);
+    if (contentFormat === null) {
+      const message = "Only .txt and .md uploads are supported.";
+      setIntakeLocalError("filePreview", message);
+      dispatch({ type: "SET_STATUS_MESSAGE", message });
+      return;
+    }
+
+    const { signal, requestId } = startSubmissionRequest();
+    setIntakeLocalError("filePreview", null);
+    dispatch({ type: "SET_IS_PREVIEWING", value: true });
+    dispatch({ type: "SET_STATUS_MESSAGE", message: `Preparing preview for ${selectedFile.name}...` });
+
+    try {
+      const fileText = await readFileText(selectedFile);
+      const previewTitle = extractTitleFromText(fileText) || selectedFile.name;
+      const document = await previewSource({
+        sourceType: "file",
+        sourceLabel: selectedFile.name,
+        title: previewTitle,
+        text: fileText,
+        contentFormat,
+      }, signal);
+      if (!isCurrentSubmissionRequest(requestId)) {
+        return;
+      }
+      dispatch({ type: "SET_PREVIEW_DOCUMENT", document });
+      dispatch({ type: "SET_HAS_DOWNLOADED_JSON", value: false });
+      dispatch({ type: "SET_STATUS_MESSAGE", message: `Previewed ${selectedFile.name}` });
+      setIntakeLocalError("filePreview", null);
+      dispatch({
+        type: "UPDATE_FORM_STATE",
+        updater: (current) => ({
+          ...current,
+          title: document.title || previewTitle,
+          sourceLabel: selectedFile.name,
+        }),
+      });
+    } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
+      const message = error instanceof Error && error.message
+        ? error.message
+        : "Could not preview this upload. Check the file and try again.";
+      setIntakeLocalError("filePreview", message);
+      dispatch({ type: "SET_STATUS_MESSAGE", message });
+    } finally {
+      if (isCurrentSubmissionRequest(requestId)) {
+        dispatch({ type: "SET_IS_PREVIEWING", value: false });
+      }
+    }
+  }
+
+  function handleSelectedFile(file: File | null) {
+    dispatch({ type: "SET_PREVIEW_DOCUMENT", document: null });
+    dispatch({ type: "SET_SELECTED_FILE", file });
+    dispatch({ type: "BUMP_FILE_INPUT_KEY" });
+    dispatch({ type: "SET_INTAKE_LOCAL_ERROR", key: "submit", message: null });
+    dispatch({ type: "SET_INTAKE_LOCAL_ERROR", key: "filePreview", message: null });
+    dispatch({
+      type: "UPDATE_FORM_STATE",
+      updater: (current) => ({
+        ...current,
+        sourceLabel: file?.name ?? "upload",
+      }),
+    });
   }
 
   async function handleImportFile(file: File | null) {
@@ -1469,6 +1556,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
               statusMessage={statusMessage}
               submitLocalError={intakeLocalErrors.submit}
               urlImportLocalError={intakeLocalErrors.urlImport}
+              filePreviewLocalError={intakeLocalErrors.filePreview}
               artifactImportLocalError={intakeLocalErrors.artifactImport}
               submitting={isSubmitting}
               previewing={isPreviewing}
@@ -1487,20 +1575,10 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
               showUrlImportGuidance={showUrlImportGuidance}
               hasLoadedContent={false}
               onFormChange={handleFormChange}
-              onFileChange={(file) => {
-                dispatch({ type: "SET_SELECTED_FILE", file });
-                dispatch({ type: "BUMP_FILE_INPUT_KEY" });
-                dispatch({ type: "SET_INTAKE_LOCAL_ERROR", key: "submit", message: null });
-                dispatch({
-                  type: "UPDATE_FORM_STATE",
-                  updater: (current) => ({
-                    ...current,
-                    sourceLabel: file?.name ?? "upload",
-                  }),
-                });
-              }}
+              onFileChange={handleSelectedFile}
               onImportFileChange={handleImportFile}
               onPreviewText={handlePreviewText}
+              onPreviewFile={handlePreviewFile}
               onPreviewUrl={handlePreviewUrl}
               onSubmit={handleSubmit}
               onGenerateRevision={() => void handleGenerateRevision("surgical")}
@@ -1584,6 +1662,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
               statusMessage={statusMessage}
               submitLocalError={intakeLocalErrors.submit}
               urlImportLocalError={intakeLocalErrors.urlImport}
+              filePreviewLocalError={intakeLocalErrors.filePreview}
               artifactImportLocalError={intakeLocalErrors.artifactImport}
               submitting={isSubmitting}
               previewing={isPreviewing}
@@ -1602,20 +1681,10 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
               showUrlImportGuidance={false}
               hasLoadedContent={true}
               onFormChange={handleFormChange}
-              onFileChange={(file) => {
-                dispatch({ type: "SET_SELECTED_FILE", file });
-                dispatch({ type: "BUMP_FILE_INPUT_KEY" });
-                dispatch({ type: "SET_INTAKE_LOCAL_ERROR", key: "submit", message: null });
-                dispatch({
-                  type: "UPDATE_FORM_STATE",
-                  updater: (current) => ({
-                    ...current,
-                    sourceLabel: file?.name ?? "upload",
-                  }),
-                });
-              }}
+              onFileChange={handleSelectedFile}
               onImportFileChange={handleImportFile}
               onPreviewText={handlePreviewText}
+              onPreviewFile={handlePreviewFile}
               onPreviewUrl={handlePreviewUrl}
               onSubmit={handleSubmit}
               onGenerateRevision={() => void handleGenerateRevision("surgical")}
@@ -2498,6 +2567,17 @@ async function readFileText(file: File): Promise<string> {
     };
     reader.readAsText(file);
   });
+}
+
+function contentFormatForFileName(fileName: string): ContentFormat | null {
+  const normalized = fileName.trim().toLowerCase();
+  if (normalized.endsWith(".md")) {
+    return "markdown";
+  }
+  if (normalized.endsWith(".txt")) {
+    return "plain_text";
+  }
+  return null;
 }
 
 function buildPreviewSubmissionText(document: ArtifactDocument, hiddenBlockIds: string[]): string {

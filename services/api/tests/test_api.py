@@ -426,6 +426,60 @@ def test_preview_source_returns_normalized_document(monkeypatch: pytest.MonkeyPa
     assert payload["blocks"]
 
 
+@pytest.mark.parametrize(
+    ("file_name", "content_format", "text", "expected_title", "expected_block_kind", "expected_block_text"),
+    [
+        (
+            "preview.txt",
+            ContentFormat.PLAIN_TEXT,
+            "Alpha paragraph.\n\nBeta paragraph.",
+            "preview.txt",
+            "paragraph",
+            "Alpha paragraph.",
+        ),
+        (
+            "preview.md",
+            ContentFormat.MARKDOWN,
+            "# Preview Heading\n\nBody paragraph.",
+            "preview.md",
+            "heading",
+            "Preview Heading",
+        ),
+    ],
+)
+def test_preview_source_accepts_inline_file_content(
+    monkeypatch: pytest.MonkeyPatch,
+    file_name: str,
+    content_format: ContentFormat,
+    text: str,
+    expected_title: str,
+    expected_block_kind: str,
+    expected_block_text: str,
+) -> None:
+    """Preview uploaded-file content through the shared preview endpoint."""
+
+    monkeypatch.setattr("content_evaluation.api.main.build_services", lambda: AppServices(_mock_settings()))
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/sources/preview",
+            json={
+                "source_type": "file",
+                "source_label": file_name,
+                "title": file_name,
+                "text": text,
+                "content_format": content_format.value,
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source_type"] == "file"
+    assert payload["content_format"] == content_format.value
+    assert payload["title"] == expected_title
+    assert payload["blocks"][0]["kind"] == expected_block_kind
+    assert payload["blocks"][0]["text"] == expected_block_text
+
+
 def test_api_returns_404_for_unknown_run(monkeypatch: pytest.MonkeyPatch) -> None:
     """Return 404 for a run ID that does not exist."""
 

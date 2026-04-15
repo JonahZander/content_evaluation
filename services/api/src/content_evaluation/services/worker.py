@@ -48,7 +48,7 @@ class RunWorker:
         sem = asyncio.Semaphore(self._settings.worker_max_concurrent_runs)
 
         while not self._stop_event.is_set():
-            if sem._value == 0:
+            if sem.locked():
                 await asyncio.sleep(self._settings.worker_poll_interval_seconds)
                 continue
 

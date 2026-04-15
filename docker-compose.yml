@@ -3,6 +3,7 @@ name: content_evaluation_dev
 services:
   postgres:
     image: postgres:16-alpine
+    # Local development only — not used in production deployments.
     environment:
       POSTGRES_DB: content_evaluation
       POSTGRES_USER: postgres

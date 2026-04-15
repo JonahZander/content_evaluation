@@ -5,9 +5,8 @@ export async function waitForWorkbenchReady(page: Page): Promise<void> {
   await expect(page.getByTestId("agent-toggle-fact_check")).toBeVisible({ timeout: 15_000 });
 }
 
-export async function submitDraft(page: Page, title: string, text: string): Promise<void> {
+export async function submitDraft(page: Page, text: string): Promise<void> {
   await waitForWorkbenchReady(page);
-  await page.getByTestId("draft-title-input").fill(title);
   await page.getByTestId("draft-text-input").fill(text);
   await page.getByTestId("analyze-button").click();
   await expect(page.getByTestId("run-status")).toContainText("Run completed", {
@@ -15,10 +14,9 @@ export async function submitDraft(page: Page, title: string, text: string): Prom
   });
 }
 
-export async function expectRunLoaded(page: Page, title: string): Promise<void> {
-  await expect(page.getByRole("heading", { name: title })).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByTestId("connector-canvas")).toBeVisible();
-  await expect(page.locator("[data-testid^='thread-anchor-']").first()).toBeVisible({ timeout: 15_000 });
+export async function expectRunLoaded(page: Page): Promise<void> {
+  await expect(page.getByTestId("document-title")).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator("[data-testid^='comment-comment-']").first()).toBeVisible({ timeout: 15_000 });
 }
 
 export async function selectText(block: Locator, startOffset: number, endOffset: number): Promise<void> {
@@ -62,7 +60,8 @@ export async function selectText(block: Locator, startOffset: number, endOffset:
       range.setEnd(endNode, endNodeOffset);
       selection.removeAllRanges();
       selection.addRange(range);
-      paragraph.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+      const target = startNode.parentElement ?? paragraph;
+      target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
     },
     { startOffset, endOffset },
   );

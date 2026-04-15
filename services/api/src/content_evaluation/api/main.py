@@ -43,8 +43,11 @@ from content_evaluation.api.schemas import (
 from content_evaluation.config import get_settings
 from content_evaluation.domain.exceptions import ContentEvaluationError, NotFoundError
 from content_evaluation.domain.models import (
+    AgentCatalogEntry,
     AnalysisArtifact,
+    ArtifactComment,
     ArtifactDocument,
+    ArtifactReply,
     ContentFormat,
     PersistenceMode,
     RunInput,
@@ -145,8 +148,8 @@ async def ready(services: ServicesDependency) -> JSONResponse:
     return JSONResponse(content=report.model_dump(mode="json"), status_code=status_code)
 
 
-@app.get("/api/v1/agents")
-async def list_agents(services: ServicesDependency) -> object:
+@app.get("/api/v1/agents", response_model=list[AgentCatalogEntry])
+async def list_agents(services: ServicesDependency) -> list[AgentCatalogEntry]:
     """Return the available agent catalog."""
 
     return services.orchestrator.list_agents()
@@ -196,21 +199,21 @@ async def create_run_multipart(
     return artifact
 
 
-@app.post("/api/v1/sources/preview")
+@app.post("/api/v1/sources/preview", response_model=ArtifactDocument)
 async def preview_source(payload: PreviewSourceRequest, services: ServicesDependency) -> ArtifactDocument:
     """Resolve and normalize one source without queueing a run."""
 
     return await services.orchestrator.preview_source_document(RunInput.model_validate(payload.model_dump()))
 
 
-@app.post("/api/v1/artifacts/import")
+@app.post("/api/v1/artifacts/import", response_model=AnalysisArtifact)
 async def import_artifact(payload: ImportArtifactRequest, services: ServicesDependency) -> AnalysisArtifact:
     """Import one saved artifact into the current backend session."""
 
     return await services.orchestrator.import_artifact(payload.artifact)
 
 
-@app.get("/api/v1/runs/{run_id}")
+@app.get("/api/v1/runs/{run_id}", response_model=AnalysisArtifact)
 async def get_run(run_id: UUID, repository: RepositoryDependency) -> AnalysisArtifact:
     """Return one artifact snapshot."""
 
@@ -220,7 +223,7 @@ async def get_run(run_id: UUID, repository: RepositoryDependency) -> AnalysisArt
     return artifact
 
 
-@app.post("/api/v1/runs/{run_id}/agents")
+@app.post("/api/v1/runs/{run_id}/agents", response_model=AnalysisArtifact)
 async def append_agents(
     run_id: UUID,
     request: AppendAgentsRequest,
@@ -233,7 +236,7 @@ async def append_agents(
     return artifact
 
 
-@app.post("/api/v1/runs/{run_id}/research")
+@app.post("/api/v1/runs/{run_id}/research", response_model=AnalysisArtifact)
 async def queue_targeted_research(
     run_id: UUID,
     request: ResearchRequest,
@@ -254,7 +257,7 @@ async def queue_targeted_research(
     return artifact
 
 
-@app.post("/api/v1/runs/{run_id}/revised-markdown")
+@app.post("/api/v1/runs/{run_id}/revised-markdown", response_model=AnalysisArtifact)
 async def generate_revised_markdown(
     run_id: UUID,
     request: GenerateRevisedMarkdownRequest,
@@ -269,7 +272,7 @@ async def generate_revised_markdown(
     )
 
 
-@app.patch("/api/v1/runs/{run_id}/revised-markdown/diff-review")
+@app.patch("/api/v1/runs/{run_id}/revised-markdown/diff-review", response_model=AnalysisArtifact)
 async def update_revised_markdown_diff_review(
     run_id: UUID,
     request: UpdateDiffReviewRequest,
@@ -281,14 +284,14 @@ async def update_revised_markdown_diff_review(
     return await services.orchestrator.update_diff_review(run_id, decisions)
 
 
-@app.post("/api/v1/runs/{run_id}/revised-markdown/apply")
+@app.post("/api/v1/runs/{run_id}/revised-markdown/apply", response_model=AnalysisArtifact)
 async def apply_revised_markdown(run_id: UUID, services: ServicesDependency) -> AnalysisArtifact:
     """Promote reviewed revised markdown to the working artifact."""
 
     return await services.orchestrator.apply_diff_review(run_id)
 
 
-@app.post("/api/v1/runs/{run_id}/cancel")
+@app.post("/api/v1/runs/{run_id}/cancel", response_model=AnalysisArtifact)
 async def cancel_run(run_id: UUID, services: ServicesDependency) -> AnalysisArtifact:
     """Stop one queued or running artifact run."""
 
@@ -336,11 +339,11 @@ async def stream_run_events(
     return EventSourceResponse(event_generator())
 
 
-@app.post("/api/v1/comments")
+@app.post("/api/v1/comments", response_model=ArtifactComment)
 async def create_comment(
     request: CreateCommentRequest,
     comments: CommentServiceDependency,
-) -> object:
+) -> ArtifactComment:
     """Create one human standalone comment."""
 
     return await comments.create_comment(
@@ -354,12 +357,12 @@ async def create_comment(
     )
 
 
-@app.patch("/api/v1/comments/{comment_id}")
+@app.patch("/api/v1/comments/{comment_id}", response_model=ArtifactComment)
 async def update_comment(
     comment_id: str,
     request: UpdateCommentRequest,
     comments: CommentServiceDependency,
-) -> object:
+) -> ArtifactComment:
     """Update one human standalone comment."""
 
     return await comments.update_comment(comment_id, request.body)
@@ -373,12 +376,12 @@ async def delete_comment(comment_id: str, comments: CommentServiceDependency) ->
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@app.post("/api/v1/comments/{comment_id}/replies")
+@app.post("/api/v1/comments/{comment_id}/replies", response_model=ArtifactReply)
 async def create_reply(
     comment_id: str,
     request: CreateReplyRequest,
     comments: CommentServiceDependency,
-) -> object:
+) -> ArtifactReply:
     """Create one reply beneath a comment."""
 
     return await comments.add_reply(comment_id, request.body)
@@ -392,12 +395,12 @@ async def delete_reply(reply_id: str, comments: CommentServiceDependency) -> Res
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@app.patch("/api/v1/comments/{comment_id}/review-state")
+@app.patch("/api/v1/comments/{comment_id}/review-state", response_model=ArtifactComment)
 async def update_review_state(
     comment_id: str,
     request: UpdateReviewStateRequest,
     comments: CommentServiceDependency,
-) -> object:
+) -> ArtifactComment:
     """Update one agent comment review state."""
 
     return await comments.set_review_state(comment_id, request.review_state)

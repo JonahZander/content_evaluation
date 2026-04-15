@@ -33,7 +33,7 @@ test("previews a markdown upload with heading-aware rendering", async ({ page })
   await page.getByTestId("preview-file-button").click();
 
   await expect(page.getByTestId("intake-preview-shell")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Preview Heading" })).toBeVisible();
+  await expect(page.getByTestId("document-title")).toHaveText("Preview Heading");
   await expect(page.getByTestId("document-block-1")).toContainText("Body paragraph.");
 });
 
@@ -59,7 +59,7 @@ test("analyzes a previewed upload without prompting to replace the draft", async
   await page.getByTestId("analyze-button").click();
 
   await expect(page.getByTestId("run-status")).toContainText("Run completed", { timeout: 15_000 });
-  await expect(page.getByText("Overall evaluation")).toBeVisible();
+  await expect(page.getByText("Overall score")).toBeVisible();
   expect(dialogSeen).toBe(false);
 });
 
@@ -75,7 +75,7 @@ test("clears a stale file preview when a different upload is selected", async ({
 
   await page.getByTestId("preview-file-button").click();
   await expect(page.getByTestId("intake-preview-shell")).toBeVisible();
-  await expect(page.getByText("First preview body.")).toBeVisible();
+  await expect(page.getByTestId("document-block-0")).toContainText("First preview body.");
 
   await page.getByTestId("draft-file-input").setInputFiles({
     name: "second.txt",
@@ -84,6 +84,6 @@ test("clears a stale file preview when a different upload is selected", async ({
   });
 
   await expect(page.getByTestId("intake-preview-shell")).toBeHidden();
-  await expect(page.getByText("First preview body.")).toHaveCount(0);
+  await expect(page.getByTestId("document-block-0")).toBeHidden();
   await expect(page.getByText("second.txt")).toBeVisible();
 });

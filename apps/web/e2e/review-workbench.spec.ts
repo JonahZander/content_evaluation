@@ -2,7 +2,6 @@ import { expect, test } from "@playwright/test";
 
 import { expectRunLoaded, selectText, submitDraft } from "./helpers";
 
-const draftTitle = "Playwright review draft";
 const draftText = [
   "Editorial teams need a fast way to decide whether a post is original, useful, and worth reader attention.",
   "The strongest value of this draft is that it turns vague editorial instincts into a review workflow with concrete review signals.",
@@ -10,20 +9,18 @@ const draftText = [
 ].join("\n\n");
 
 test("submits pasted text and renders the analyzed review state", async ({ page }) => {
-  await submitDraft(page, draftTitle, draftText);
+  await submitDraft(page, draftText);
 
-  await expectRunLoaded(page, draftTitle);
+  await expectRunLoaded(page);
   await expect(page.getByTestId("run-status")).toContainText("Run completed");
-  await expect(page.getByText("Overall evaluation")).toBeVisible();
-  await expect(page.getByText("Run log")).toBeVisible();
+  await expect(page.getByText("Overall score")).toBeVisible();
   await expect(page.getByTestId("review-summary-panel")).toBeVisible();
-  await expect(page.getByTestId("claim-evidence-0")).toBeVisible();
   await expect(page.locator("[data-testid^='comment-comment-']").first()).toBeVisible();
 });
 
 test("allows replying to and reviewing an agent comment", async ({ page }) => {
-  await submitDraft(page, draftTitle, draftText);
-  await expectRunLoaded(page, draftTitle);
+  await submitDraft(page, draftText);
+  await expectRunLoaded(page);
 
   const firstComment = page.locator("[data-testid^='comment-comment-']").first();
   const commentId = await firstComment.getAttribute("data-testid");
@@ -32,6 +29,7 @@ test("allows replying to and reviewing an agent comment", async ({ page }) => {
   }
   const rawCommentId = commentId.replace("comment-", "");
 
+  await page.getByTestId(`reply-toggle-${rawCommentId}`).click();
   await page.getByTestId(`reply-input-${rawCommentId}`).fill("Playwright reviewer reply");
   await page.getByTestId(`reply-submit-${rawCommentId}`).click();
   await expect(firstComment.getByText("Playwright reviewer reply")).toBeVisible();
@@ -41,10 +39,11 @@ test("allows replying to and reviewing an agent comment", async ({ page }) => {
 });
 
 test("creates a standalone reviewer comment from a text selection", async ({ page }) => {
-  await submitDraft(page, draftTitle, draftText);
-  await expectRunLoaded(page, draftTitle);
+  await submitDraft(page, draftText);
+  await expectRunLoaded(page);
 
   const firstBlock = page.getByTestId("document-block-0");
+  await firstBlock.scrollIntoViewIfNeeded();
   await selectText(firstBlock, 0, 16);
 
   await expect(page.getByText("Create a reviewer comment")).toBeVisible();
@@ -56,8 +55,8 @@ test("creates a standalone reviewer comment from a text selection", async ({ pag
 });
 
 test("opens export endpoints for markdown and json", async ({ page }) => {
-  await submitDraft(page, draftTitle, draftText);
-  await expectRunLoaded(page, draftTitle);
+  await submitDraft(page, draftText);
+  await expectRunLoaded(page);
 
   const markdownPopupPromise = page.waitForEvent("popup");
   await page.getByTestId("export-markdown-button").click();

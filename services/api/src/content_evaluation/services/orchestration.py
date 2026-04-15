@@ -954,7 +954,7 @@ class RunOrchestrator:
         )
         graph = cast(Any, self._build_langgraph_app(state.resolved_agents))
         try:
-            await graph.ainvoke(self._graph_state_to_dict(state))
+            await graph.ainvoke(self._graph_state_to_dict(state), {"recursion_limit": 50})
         except RunCancelledError:
             artifact = await self._require_artifact(artifact_id)
             artifact.status = RunStatus.CANCELED

@@ -286,7 +286,7 @@ async def supervisor_tools(state: SupervisorState, config: RunnableConfig) -> Co
                 update_payload["raw_notes"] = [raw_notes_concat]
 
         except Exception as e:
-            if is_token_limit_exceeded(e, configurable.research_model) or True:
+            if is_token_limit_exceeded(e, configurable.research_model):
                 return Command(
                     goto=END,
                     update={
@@ -302,7 +302,7 @@ async def supervisor_tools(state: SupervisorState, config: RunnableConfig) -> Co
     )
 
 
-supervisor_builder = StateGraph(SupervisorState, config_schema=Configuration)
+supervisor_builder = StateGraph(SupervisorState, context_schema=Configuration)
 supervisor_builder.add_node("supervisor", supervisor)
 supervisor_builder.add_node("supervisor_tools", supervisor_tools)
 supervisor_builder.add_edge(START, "supervisor")
@@ -478,8 +478,8 @@ async def compress_research(state: ResearcherState, config: RunnableConfig):
 
 researcher_builder = StateGraph(
     ResearcherState,
-    output=ResearcherOutputState,
-    config_schema=Configuration
+    output_schema=ResearcherOutputState,
+    context_schema=Configuration
 )
 researcher_builder.add_node("researcher", researcher)
 researcher_builder.add_node("researcher_tools", researcher_tools)
@@ -561,8 +561,8 @@ async def final_report_generation(state: AgentState, config: RunnableConfig):
 
 deep_researcher_builder = StateGraph(
     AgentState,
-    input=AgentInputState,
-    config_schema=Configuration
+    input_schema=AgentInputState,
+    context_schema=Configuration
 )
 deep_researcher_builder.add_node("clarify_with_user", clarify_with_user)
 deep_researcher_builder.add_node("write_research_brief", write_research_brief)

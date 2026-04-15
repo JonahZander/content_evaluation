@@ -39,9 +39,9 @@
   - `apps/web/playwright.config.ts`
 - The browser tests live in:
   - `apps/web/e2e/`
-- The Playwright config starts both:
-  - the FastAPI API in `CONTENT_EVAL_APP_ENV=test`
-  - the Next.js app on `127.0.0.1:3000`
+- The Playwright config starts dedicated test servers on separate ports so they don't collide with a running dev environment:
+  - the FastAPI API on `127.0.0.1:8001` in forced mock mode (`CONTENT_EVAL_APP_ENV=test`, API keys cleared)
+  - the Next.js app on `127.0.0.1:3001`
 
 ## Playwright Notes
 

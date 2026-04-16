@@ -99,7 +99,7 @@ export function AgentUsageSummary({ agentResults, agentPlan }: AgentUsageSummary
     const displayName = planItem?.display_name ?? result.agent_id;
     const usageByModel = extractUsageByModel(result.metadata);
     const hasMixedModels = usageByModel.length > 1;
-    const modelName = hasMixedModels ? "mixed" : (planItem?.model_name ?? usageByModel[0]?.modelName ?? null);
+    const modelName = hasMixedModels ? "mixed" : (usageByModel[0]?.modelName ?? planItem?.model_name ?? null);
 
     const cost =
       hasMixedModels

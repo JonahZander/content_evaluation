@@ -1817,10 +1817,13 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
               />
             ) : null}
             <section className={styles.analysisContextPanel}>
-              <AgentUsageSummary
-                agentResults={artifact?.agent_results ?? []}
-                agentPlan={artifact?.agent_plan ?? []}
-              />
+              <details className={styles.runLogDetails}>
+                <summary className={styles.runLogToggle}>Token usage</summary>
+                <AgentUsageSummary
+                  agentResults={artifact?.agent_results ?? []}
+                  agentPlan={artifact?.agent_plan ?? []}
+                />
+              </details>
             </section>
 
             <section className={styles.workspace} ref={workspaceRef} data-testid="review-workbench">

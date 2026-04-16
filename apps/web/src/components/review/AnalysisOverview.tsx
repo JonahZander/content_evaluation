@@ -51,6 +51,13 @@ function humanVoiceScore(aiLikelihood: number | null | undefined): number | null
   return Math.max(0, Math.min(1, 1 - aiLikelihood));
 }
 
+const OVERALL_SCORE_EXPLANATION =
+  "Overall score starts at 72 and is adjusted by fact-check confidence (+), AI-likelihood penalty (−), and research overlap (−). Higher is better.";
+const NOVELTY_SCORE_EXPLANATION =
+  "Originality signal = 1 − the highest topical overlap detected with related articles found during research. Higher means more differentiated framing.";
+const VOICE_SCORE_EXPLANATION =
+  "Voice signal = 1 − AI-likelihood estimated by the Human Voice agent. Higher means fewer AI-pattern tells in the draft.";
+
 function humanVoiceHeadline(score: number | null): string {
   if (score === null) {
     return "Human voice analysis pending.";
@@ -151,10 +158,23 @@ export function AnalysisOverview({
     formatReadingTime(overview?.estimated_reading_time_minutes ?? summary.estimated_reading_time_minutes),
   ].filter((item): item is string => Boolean(item));
 
-  const completenessItems = [
-    { label: "Intro", complete: structuralCompleteness?.has_intro ?? false },
-    { label: "Headings", complete: structuralCompleteness?.has_headings ?? false },
-    { label: "Conclusion", complete: structuralCompleteness?.has_conclusion ?? false },
+  const completenessItems: Array<{ label: string; complete: boolean; tooltip: string }> = [
+    {
+      label: "Intro",
+      complete: structuralCompleteness?.has_intro ?? false,
+      tooltip: "Detected by checking whether the opening source block contains non-empty text.",
+    },
+    {
+      label: "Headings",
+      complete: structuralCompleteness?.has_headings ?? false,
+      tooltip: "Detected by checking whether the draft contains at least one heading in the source blocks.",
+    },
+    {
+      label: "Conclusion",
+      complete: structuralCompleteness?.has_conclusion ?? false,
+      tooltip:
+        'Detected by scanning the closing block for phrases like "in summary", "overall", "bottom line", "in conclusion", or "to sum up". A section titled "Conclusion" alone will not match this heuristic.',
+    },
   ];
 
   return (
@@ -165,7 +185,13 @@ export function AnalysisOverview({
           <div className={styles.analysisOverviewHero}>
             <div className={styles.analysisOverviewScorePanel}>
               <div className={styles.metricLabel}>Overall score</div>
-              <div className={styles.analysisOverviewScoreValue}>{summary.overall_score != null ? `${summary.overall_score}%` : "\u2014"}</div>
+              <div
+                className={styles.analysisOverviewScoreValue}
+                title={OVERALL_SCORE_EXPLANATION}
+                aria-label={`Overall score. ${OVERALL_SCORE_EXPLANATION}`}
+              >
+                {summary.overall_score != null ? `${summary.overall_score}%` : "\u2014"}
+              </div>
             </div>
             <p className={styles.analysisOverviewVerdict}>{summary.verdict || "Analysis completed."}</p>
           </div>
@@ -190,7 +216,12 @@ export function AnalysisOverview({
             </div>
             <div className={styles.analysisOverviewPills}>
               {completenessItems.map((item) => (
-                <span key={item.label} className={styles.pill}>
+                <span
+                  key={item.label}
+                  className={styles.pill}
+                  title={item.tooltip}
+                  aria-label={`${item.label}: ${item.complete ? "present" : "needs work"}. ${item.tooltip}`}
+                >
                   {item.label}: {item.complete ? "present" : "needs work"}
                 </span>
               ))}
@@ -200,7 +231,11 @@ export function AnalysisOverview({
           <article className={styles.analysisOverviewCard} data-testid="overlap-research-card">
             <div className={styles.analysisOverviewCardHeader}>
               <div className={styles.metricLabel}>Overlap research</div>
-              <span className={styles.analysisOverviewMeta}>
+              <span
+                className={styles.analysisOverviewMeta}
+                title={NOVELTY_SCORE_EXPLANATION}
+                aria-label={`Originality signal ${formatPercent(summary.novelty_score)}. ${NOVELTY_SCORE_EXPLANATION}`}
+              >
                 Originality signal {formatPercent(summary.novelty_score)}
               </span>
             </div>
@@ -222,7 +257,13 @@ export function AnalysisOverview({
           <article className={styles.analysisOverviewCard} data-testid="human-voice-card">
             <div className={styles.analysisOverviewCardHeader}>
               <div className={styles.metricLabel}>Human voice</div>
-              <span className={styles.analysisOverviewMeta}>Voice signal {formatPercent(voiceScore)}</span>
+              <span
+                className={styles.analysisOverviewMeta}
+                title={VOICE_SCORE_EXPLANATION}
+                aria-label={`Voice signal ${formatPercent(voiceScore)}. ${VOICE_SCORE_EXPLANATION}`}
+              >
+                Voice signal {formatPercent(voiceScore)}
+              </span>
             </div>
             <p className={styles.analysisOverviewBody}>{humanVoiceHeadline(voiceScore)}</p>
             <div className={styles.analysisOverviewSupportingCopy}>

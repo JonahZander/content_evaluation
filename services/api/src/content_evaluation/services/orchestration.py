@@ -3015,16 +3015,27 @@ def _guess_article_format(document: ArtifactDocument) -> str:
     """Guess the article format from the title and block structure."""
 
     title = document.title.lower()
-    text = document.text.lower()
     if "how to" in title or "tutorial" in title or any(
         block.kind is ArtifactBlockKind.CODE for block in document.blocks
     ):
         return "tutorial"
     if "announcing" in title or "launch" in title or "release" in title:
         return "announcement"
-    if "case study" in title or "we " in text[:400] or "i " in text[:400]:
+    if "case study" in title:
         return "case_study"
-    if len([block for block in document.blocks if block.kind is ArtifactBlockKind.HEADING]) >= 4:
+    source_headings = [
+        block
+        for block in document.blocks
+        if block.kind is ArtifactBlockKind.HEADING
+        and block.origin is ArtifactBlockOrigin.SOURCE
+    ]
+    if source_headings and all(
+        heading.text.strip().endswith("?")
+        or heading.text.strip()[:2].rstrip(".").isdigit()
+        for heading in source_headings
+    ):
+        return "checklist"
+    if len(source_headings) >= 4:
         return "roundup"
     return "article"
 

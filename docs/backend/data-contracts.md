@@ -179,7 +179,7 @@ Narrative review context shown above the source text pane.
 | `inferred_audience` | `str` | Audience inference shown as summary text. |
 | `word_count` | `int` | Word count based on source blocks. |
 | `estimated_reading_time_minutes` | `int` | Estimated reading time from the canonical cleaner output. |
-| `article_format` | `str` | Heuristic article-type guess such as `tutorial`, `announcement`, or `case_study`. |
+| `article_format` | `str` | Heuristic article-type guess such as `tutorial`, `announcement`, `case_study`, `checklist`, or `roundup`. |
 | `reading_difficulty` | `str` | Coarse density indicator such as `accessible`, `moderate`, or `dense`. |
 | `structural_completeness` | `ArtifactStructuralCompleteness` | Lightweight intro/headings/conclusion signals. |
 | `main_claims` | `list[ArtifactClaimSummary]` | Legacy fact-check claim summary kept for import compatibility; the UI no longer renders it by default. |

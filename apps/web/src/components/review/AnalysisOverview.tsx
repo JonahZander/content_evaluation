@@ -118,6 +118,10 @@ function findAgentResult(
   return fallback;
 }
 
+function normalizeSummary(value: string | null | undefined): string {
+  return (value ?? "").trim().toLowerCase();
+}
+
 export function AnalysisOverview({
   summary,
   reviewSummary,
@@ -149,7 +153,11 @@ export function AnalysisOverview({
   }
 
   const tlDr = overview?.tl_dr || summary.tl_dr || overview?.content_summary || "Pending";
-  const researchSummary = overview?.research_summary || "Pending";
+  const researchSummaryRaw = overview?.research_summary?.trim() ?? "";
+  const researchSummary =
+    researchSummaryRaw && normalizeSummary(researchSummaryRaw) !== normalizeSummary(tlDr)
+      ? researchSummaryRaw
+      : null;
   const audienceSummary = overview?.inferred_audience || summary.audience_summary || "Pending";
   const articleProfileItems = [
     titleCase(overview?.article_format),
@@ -283,10 +291,12 @@ export function AnalysisOverview({
           </article>
         </div>
 
-        <div className={styles.analysisOverviewTextBlock}>
-          <div className={styles.metricLabel}>Research summary</div>
-          <p className={styles.analysisOverviewBody}>{researchSummary}</p>
-        </div>
+        {researchSummary ? (
+          <div className={styles.analysisOverviewTextBlock}>
+            <div className={styles.metricLabel}>Research summary</div>
+            <p className={styles.analysisOverviewBody}>{researchSummary}</p>
+          </div>
+        ) : null}
       </div>
     </section>
   );

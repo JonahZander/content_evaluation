@@ -7,6 +7,14 @@ describe("pricing", () => {
     expect(estimateCost("gpt-5.4", 1_000_000, 1_000_000)).toBe(17.5);
   });
 
+  it("matches GPT-5.4 mini pricing from the official docs", () => {
+    expect(estimateCost("gpt-5.4-mini-2026-03-17", 1_000_000, 1_000_000)).toBe(5.25);
+  });
+
+  it("matches GPT-5.4 nano pricing from the official docs", () => {
+    expect(estimateCost("gpt-5.4-nano-2026-03-17", 1_000_000, 1_000_000)).toBe(1.45);
+  });
+
   it("matches GPT-5 mini pricing from the official docs", () => {
     expect(estimateCost("gpt-5-mini-2025-08-07", 1_000_000, 1_000_000)).toBe(2.25);
   });
@@ -42,11 +50,11 @@ describe("pricing", () => {
           outputTokens: 40_000,
         },
         {
-          modelName: "openai:gpt-5.4-2026-03-17",
+          modelName: "openai:gpt-5.4-2026-03-05",
           inputTokens: 20_000,
           outputTokens: 5_000,
         },
       ]),
-    ).toBeCloseTo(1.725, 6);
+    ).toBeCloseTo(0.255, 6);
   });
 });

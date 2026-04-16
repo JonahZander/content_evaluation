@@ -12,12 +12,22 @@ export interface OpenAIPricingManifest {
 
 export const OPENAI_PRICING_MANIFEST: OpenAIPricingManifest = {
   source: "https://openai.com/api/pricing/",
-  lastVerifiedAt: "2026-03-17",
+  lastVerifiedAt: "2026-04-16",
   models: {
     "gpt-5.4": {
       inputPerM: 2.5,
       outputPerM: 15,
       aliases: ["gpt-5.4-*"],
+    },
+    "gpt-5.4-mini": {
+      inputPerM: 0.75,
+      outputPerM: 4.5,
+      aliases: ["gpt-5.4-mini-*"],
+    },
+    "gpt-5.4-nano": {
+      inputPerM: 0.2,
+      outputPerM: 1.25,
+      aliases: ["gpt-5.4-nano-*"],
     },
     "gpt-5": {
       inputPerM: 1.25,

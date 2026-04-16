@@ -61,9 +61,9 @@ class LiveDeepResearchProvider:
         # Light model: used for cheap webpage-summarisation (HTML processing).
         summarization_name = settings.deep_research_summarization_model or model_name
         summarization_model = f"{prefix}:{summarization_name}"
-        # Heavy model: used for supervisor reasoning, researcher agents, compression,
-        # and final JSON synthesis. Falls back to the same model when not separately
-        # configured via CONTENT_EVAL_DEEP_RESEARCH_MODEL_NAME.
+        # Heavy model: used for supervisor reasoning, researcher agents, and final
+        # JSON synthesis. Falls back to the same model when not separately configured
+        # via CONTENT_EVAL_DEEP_RESEARCH_MODEL_NAME.
         heavy_name = settings.deep_research_model_name or model_name
         heavy_model = f"{prefix}:{heavy_name}"
 
@@ -74,7 +74,7 @@ class LiveDeepResearchProvider:
             "max_react_tool_calls": max_react_tool_calls,
             "max_concurrent_research_units": max_concurrent_research_units,
             "research_model": heavy_model,
-            "compression_model": heavy_model,
+            "compression_model": summarization_model,
             "final_report_model": heavy_model,
             "summarization_model": summarization_model,
         }

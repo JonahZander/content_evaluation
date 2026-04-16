@@ -87,13 +87,13 @@ describe("AgentUsageSummary", () => {
     expect(screen.getByText("openai:gpt-5.4-nano-2026-03-17")).toBeInTheDocument();
     expect(screen.getByText("openai:gpt-5.4-2026-03-17")).toBeInTheDocument();
     expect(
-      screen.getByText(hasExactText("400,000 in / 40,000 out · $1.6000")),
+      screen.getByText(hasExactText("400,000 in / 40,000 out · $0.1300")),
     ).toBeInTheDocument();
     expect(
       screen.getByText(hasExactText("20,000 in / 5,000 out · $0.1250")),
     ).toBeInTheDocument();
-    expect(screen.getByText("$1.7250")).toBeInTheDocument();
-    expect(screen.getByText("$17.5000")).toBeInTheDocument();
-    expect(screen.getByText("$19.2250")).toBeInTheDocument();
+    expect(screen.getByText("$0.2550")).toBeInTheDocument();
+    expect(screen.getByText("$1.4500")).toBeInTheDocument();
+    expect(screen.getByText("$1.7050")).toBeInTheDocument();
   });
 });

@@ -16,6 +16,8 @@ const manifestPath = path.resolve(process.cwd(), "src/lib/openai-pricing-manifes
 
 const models = [
   { name: "gpt-5.4", inputPerM: 2.5, outputPerM: 15, aliases: ["gpt-5.4-*"] },
+  { name: "gpt-5.4-mini", inputPerM: 0.75, outputPerM: 4.5, aliases: ["gpt-5.4-mini-*"] },
+  { name: "gpt-5.4-nano", inputPerM: 0.2, outputPerM: 1.25, aliases: ["gpt-5.4-nano-*"] },
   { name: "gpt-5", inputPerM: 1.25, outputPerM: 10, aliases: ["gpt-5-*", "chatgpt-5-latest"] },
   { name: "gpt-5-mini", inputPerM: 0.25, outputPerM: 2, aliases: ["gpt-5-mini-*"] },
   { name: "gpt-5-nano", inputPerM: 0.05, outputPerM: 0.4, aliases: ["gpt-5-nano-*"] },

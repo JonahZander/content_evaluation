@@ -32,8 +32,18 @@ Minimum OpenAI-backed settings:
 ```env
 CONTENT_EVAL_ANALYSIS_PROVIDER_FAMILY=openai
 CONTENT_EVAL_OPENAI_API_KEY=YOUR_OPENAI_KEY
-CONTENT_EVAL_OPENAI_MODEL_NAME=gpt-4.1-mini
+CONTENT_EVAL_OPENAI_MODEL_NAME=gpt-5.4-2026-03-05
 CONTENT_EVAL_TAVILY_API_KEY=YOUR_TAVILY_KEY
+```
+
+Deep-research model routing (used by `fact_check` and `research` agents):
+
+```env
+# Heavy model: supervisor reasoning, researcher agents, final JSON synthesis.
+# Leave blank to fall back to CONTENT_EVAL_OPENAI_MODEL_NAME.
+CONTENT_EVAL_DEEP_RESEARCH_MODEL_NAME=gpt-5.4-2026-03-05
+# Light model: Tavily webpage summarisation + sub-agent findings compression.
+CONTENT_EVAL_DEEP_RESEARCH_SUMMARIZATION_MODEL=gpt-5.4-mini-2026-03-17
 ```
 
 Important:

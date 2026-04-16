@@ -154,8 +154,11 @@ export function AnalysisOverview({
 
   const tlDr = overview?.tl_dr || summary.tl_dr || overview?.content_summary || "Pending";
   const researchSummaryRaw = overview?.research_summary?.trim() ?? "";
+  const researchSummaryNormalized = normalizeSummary(researchSummaryRaw);
   const researchSummary =
-    researchSummaryRaw && normalizeSummary(researchSummaryRaw) !== normalizeSummary(tlDr)
+    researchSummaryRaw &&
+    researchSummaryNormalized !== normalizeSummary(tlDr) &&
+    researchSummaryNormalized !== normalizeSummary(summary.verdict)
       ? researchSummaryRaw
       : null;
   const audienceSummary = overview?.inferred_audience || summary.audience_summary || "Pending";

@@ -34,7 +34,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
    - Keep uncertain blocks by default and record both removed and suspicious blocks in `ArtifactDocument.cleaner_audit`
    - Treat the cleaner output as the canonical `raw_content` used by downstream analysis
    - Normalize markdown-aware content into ordered document blocks with render metadata, inline link marks, and plain-text anchor offsets
-   - Preserve plain-text intent for normal pasted text and `.txt` uploads while keeping reviewer-pruned URL previews and markdown-signaled inputs in markdown mode
+   - Default all import paths to markdown format; `.txt` uploads are the only source that resolves to plain-text mode
    - Conservatively split oversized plain-text paragraph blocks so collapsed imports do not become one giant review span
    - Save the normalized document into the artifact
 5. Agent planning

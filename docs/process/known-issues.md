@@ -69,7 +69,7 @@ These findings have been resolved in prior commits or the current codebase state
 | M6 | Extraction fallback now uses structured `ProviderError.fallback_eligible` metadata instead of string matching. |
 | M7 | Legacy full-run orchestration path retired; settings now reject the removed legacy backend and full runs always use LangGraph. |
 | M8 | `_ensure_run_active` now uses a narrow repository `get_run_status()` lookup instead of loading full artifacts. |
-| M9 | Inline text input now preserves plain-text intent by default while keeping markdown-aware sources in markdown mode. |
+| M9 | All inline content now defaults to markdown format. The earlier plain-text auto-detection was removed; pasted text, URL imports, and file uploads all resolve to markdown unless the file extension is `.txt`. |
 | M10 | Downstream agent context is verified to exclude `raw_output`; tests assert the trimmed payload shape on the active LangGraph path. |
 | M11 | Worker sequential: `asyncio.Semaphore(worker_max_concurrent_runs)` |
 | M12 | Worker now respects `ProviderError.retriable` when requeueing or failing runs. |

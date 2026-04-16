@@ -119,7 +119,6 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     isGeneratingRevision,
     isSavingDiffReview,
     isApplyingRevision,
-    showTextPreview,
     selectedFile,
     fileInputKey,
     importInputKey,
@@ -615,15 +614,16 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       : nextFormState;
 
     if (
-      showTextPreview
-      && (resolvedFormState.sourceType !== "text" || resolvedFormState.text.trim().length === 0)
+      previewDocument !== null
+      && resolvedFormState.sourceType === "text"
+      && resolvedFormState.text.trim().length === 0
     ) {
-      dispatch({ type: "TOGGLE_TEXT_PREVIEW" });
+      dispatch({ type: "SET_PREVIEW_DOCUMENT", document: null });
     }
 
     dispatch({ type: "SET_FORM_STATE", formState: resolvedFormState });
     dispatch({ type: "CLEAR_INTAKE_LOCAL_ERRORS" });
-  }, [agents, formState, showTextPreview]);
+  }, [agents, formState, previewDocument]);
 
   async function maybeReplaceCurrentAnalysis(resetForm: boolean) {
     const hasCurrentAnalysis = artifact !== null || previewDocument !== null;
@@ -708,7 +708,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     const isIntakePreviewRun =
       artifact === null
       && previewDocument !== null
-      && (formState.sourceType === "url" || formState.sourceType === "file");
+      && (formState.sourceType === "url" || formState.sourceType === "file" || formState.sourceType === "text");
     if (!isIntakePreviewRun && (artifact !== null || previewDocument !== null)) {
       const replaced = await maybeReplaceCurrentAnalysis(false);
       if (!replaced) {
@@ -802,6 +802,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
           sourceLabel: formState.sourceLabel || "Manual input",
           title: extractTitleFromText(formState.text),
           text: formState.text,
+          contentFormat: "markdown",
           selectedAgents: resolveSelectedAgents(formState.selectedAgents, agents),
           persistenceMode: formState.persistenceMode,
           includeDebugTrace: formState.includeDebugTrace,
@@ -900,11 +901,56 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     }
   }
 
-  function handlePreviewText() {
+  async function handlePreviewText() {
     if (formState.sourceType !== "text" || formState.text.trim().length === 0) {
       return;
     }
-    dispatch({ type: "TOGGLE_TEXT_PREVIEW" });
+
+    if (previewDocument !== null) {
+      dispatch({ type: "SET_PREVIEW_DOCUMENT", document: null });
+      return;
+    }
+
+    const { signal, requestId } = startSubmissionRequest();
+    dispatch({ type: "SET_IS_PREVIEWING", value: true });
+    dispatch({ type: "SET_STATUS_MESSAGE", message: "Preparing preview..." });
+
+    try {
+      const previewTitle = extractTitleFromText(formState.text) || "Pasted text";
+      const document = await previewSource({
+        sourceType: "text",
+        sourceLabel: "Pasted text",
+        title: previewTitle,
+        text: formState.text,
+        contentFormat: "markdown",
+      }, signal);
+      if (!isCurrentSubmissionRequest(requestId)) {
+        return;
+      }
+      dispatch({ type: "SET_PREVIEW_DOCUMENT", document });
+      dispatch({ type: "SET_HAS_DOWNLOADED_JSON", value: false });
+      dispatch({ type: "SET_STATUS_MESSAGE", message: "Preview ready" });
+      dispatch({
+        type: "UPDATE_FORM_STATE",
+        updater: (current) => ({
+          ...current,
+          title: document.title || previewTitle,
+          sourceLabel: "Pasted text",
+        }),
+      });
+    } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
+      const message = error instanceof Error && error.message
+        ? error.message
+        : "Could not preview pasted text. Please try again.";
+      dispatch({ type: "SET_STATUS_MESSAGE", message });
+    } finally {
+      if (isCurrentSubmissionRequest(requestId)) {
+        dispatch({ type: "SET_IS_PREVIEWING", value: false });
+      }
+    }
   }
 
   async function handlePreviewFile() {
@@ -1586,15 +1632,6 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
               onStartNewAnalysis={handleStartNewAnalysis}
               onExport={handleExport}
             />
-
-            {showTextPreview && formState.sourceType === "text" && formState.text.trim().length > 0 ? (
-              <section
-                className={`${styles.reviewSummaryCard} ${styles.textPreviewSection}`}
-                data-testid="text-preview-section"
-              >
-                <pre data-testid="text-preview-body">{formState.text}</pre>
-              </section>
-            ) : null}
 
             {displayDocument !== null ? (
               <section className={styles.intakePreviewShell} data-testid="intake-preview-shell">

@@ -25,7 +25,6 @@ export interface WorkbenchState {
   isGeneratingRevision: boolean;
   isSavingDiffReview: boolean;
   isApplyingRevision: boolean;
-  showTextPreview: boolean;
   formState: ReviewFormState;
   hiddenPreviewBlockIds: string[];
   selectedFile: File | null;
@@ -91,7 +90,6 @@ export const initialWorkbenchState: WorkbenchState = {
   isGeneratingRevision: false,
   isSavingDiffReview: false,
   isApplyingRevision: false,
-  showTextPreview: false,
   formState: DEFAULT_FORM_STATE,
   hiddenPreviewBlockIds: [],
   selectedFile: null,
@@ -138,7 +136,6 @@ export type WorkbenchAction =
   | { type: "SET_IS_GENERATING_REVISION"; value: boolean }
   | { type: "SET_IS_SAVING_DIFF_REVIEW"; value: boolean }
   | { type: "SET_IS_APPLYING_REVISION"; value: boolean }
-  | { type: "TOGGLE_TEXT_PREVIEW" }
   | { type: "SET_FORM_STATE"; formState: ReviewFormState }
   | { type: "UPDATE_FORM_STATE"; updater: (current: ReviewFormState) => ReviewFormState }
   | { type: "HIDE_PREVIEW_BLOCK"; blockId: string }
@@ -179,9 +176,9 @@ export type WorkbenchAction =
 export function workbenchReducer(state: WorkbenchState, action: WorkbenchAction): WorkbenchState {
   switch (action.type) {
     case "SET_ARTIFACT":
-      return { ...state, artifact: action.artifact, showTextPreview: false };
+      return { ...state, artifact: action.artifact };
     case "SET_PREVIEW_DOCUMENT":
-      return { ...state, previewDocument: action.document, hiddenPreviewBlockIds: [], showTextPreview: false };
+      return { ...state, previewDocument: action.document, hiddenPreviewBlockIds: [] };
     case "SET_ACTIVE_ARTIFACT_ID":
       return { ...state, activeArtifactId: action.id };
     case "SET_STATUS_MESSAGE":
@@ -198,8 +195,6 @@ export function workbenchReducer(state: WorkbenchState, action: WorkbenchAction)
       return { ...state, isSavingDiffReview: action.value };
     case "SET_IS_APPLYING_REVISION":
       return { ...state, isApplyingRevision: action.value };
-    case "TOGGLE_TEXT_PREVIEW":
-      return { ...state, showTextPreview: !state.showTextPreview };
     case "SET_FORM_STATE":
       return { ...state, formState: action.formState };
     case "UPDATE_FORM_STATE":
@@ -303,7 +298,7 @@ export function workbenchReducer(state: WorkbenchState, action: WorkbenchAction)
         isGeneratingRevision: false,
         isSavingDiffReview: false,
         isApplyingRevision: false,
-        showTextPreview: false,
+
         selectionDraft: null,
         commentDraft: "",
         replyDrafts: {},
@@ -341,7 +336,7 @@ export function workbenchReducer(state: WorkbenchState, action: WorkbenchAction)
         isGeneratingRevision: false,
         isSavingDiffReview: false,
         isApplyingRevision: false,
-        showTextPreview: false,
+
         intakeLocalErrors: {
           submit: null,
           urlImport: null,

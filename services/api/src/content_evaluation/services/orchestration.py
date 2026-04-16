@@ -121,30 +121,12 @@ class RevisionSuggestionInput:
     sort_key: tuple[int, int, int, str, datetime, str]
 
 
-_INLINE_MARKDOWN_PATTERNS = (
-    re.compile(r"(?m)^\s{0,3}#{1,6}\s+\S"),
-    re.compile(r"(?m)^```"),
-    re.compile(r"(?m)^\s*>\s+\S"),
-    re.compile(r"(?m)^\s*[-*+]\s+\S"),
-    re.compile(r"(?m)^\s*\d+\.\s+\S"),
-    re.compile(r"\[[^\]]+\]\([^)]+\)"),
-    re.compile(r"(?<!\*)\*\*[^*\n]+\*\*(?!\*)"),
-    re.compile(r"(?<!\*)\*[^*\n]+\*(?!\*)"),
-    re.compile(r"`[^`\n]+`"),
-)
-
-
 def _resolve_inline_content_format(input_data: RunInput) -> ContentFormat:
     """Infer the intended format for inline text supplied with a run."""
 
     if input_data.content_format is not None:
         return input_data.content_format
-    if input_data.source_type is SourceType.URL and input_data.url:
-        return ContentFormat.MARKDOWN
-    text = input_data.text or ""
-    if any(pattern.search(text) for pattern in _INLINE_MARKDOWN_PATTERNS):
-        return ContentFormat.MARKDOWN
-    return ContentFormat.PLAIN_TEXT
+    return ContentFormat.MARKDOWN
 
 
 @dataclass(frozen=True, slots=True)
@@ -267,7 +249,7 @@ class RunOrchestrator:
                 url=input_data.url,
             ),
             run_config=RunConfig(
-                selected_agents=input_data.selected_agents or _default_agent_ids(),
+                selected_agents=input_data.selected_agents if input_data.selected_agents is not None else _default_agent_ids(),
                 resolved_agents=resolved_agent_ids,
                 runtime_mode=self._runtime_mode,
                 orchestrator_backend=self._orchestrator_backend,
@@ -1987,7 +1969,7 @@ def _default_agent_ids() -> list[str]:
 def _expand_agent_ids(selected_agents: list[str]) -> list[str]:
     """Expand selected agent ids to include dependencies."""
 
-    requested = selected_agents or _default_agent_ids()
+    requested = selected_agents if selected_agents is not None else _default_agent_ids()
     visited: list[str] = []
     visiting: set[str] = set()
 

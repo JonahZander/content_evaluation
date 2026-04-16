@@ -64,7 +64,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 
 - Selecting a text span opens a reviewer comment composer for a new standalone human comment.
 - URL sources should be imported and previewed before analysis starts so the reviewer can inspect the normalized draft first.
-- Pasted-text intake should expose a lightweight preview toggle before analysis starts so the reviewer can inspect the raw submission without leaving Phase 1.
+- Pasted-text intake should expose a preview action before analysis starts that calls the backend to parse and normalize the markdown, matching the file-upload and URL preview pipeline.
 - Text-file intake should expose an explicit preview action before analysis starts so uploaded `.txt` and `.md` drafts can be inspected in the Phase 1 document preview shell.
 - Imported URL previews should support reversible per-block removal before analysis so boilerplate or irrelevant sections can be excluded without editing the raw draft.
 - Imported URL previews should keep removed blocks in place with muted styling and a remove/restore toggle so the layout does not shift while the reviewer prunes the draft.

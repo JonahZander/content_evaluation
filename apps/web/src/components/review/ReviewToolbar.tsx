@@ -89,8 +89,7 @@ export function ReviewToolbar({
   onStartNewAnalysis,
   onExport,
 }: ReviewToolbarProps) {
-  const showReadOnlyTextComposer = hasLoadedContent && formState.sourceType === "text";
-  const shouldRenderSourceComposer = !hasLoadedContent || showReadOnlyTextComposer;
+  const shouldRenderSourceComposer = !hasLoadedContent;
   const canPreviewText = !hasLoadedContent && formState.sourceType === "text" && formState.text.trim().length > 0;
   const canPreviewFile = !hasLoadedContent && formState.sourceType === "file" && selectedFile !== null;
 
@@ -150,9 +149,7 @@ export function ReviewToolbar({
       </div>
 
       {shouldRenderSourceComposer ? (
-        <div
-          className={`${styles.sourceComposer} ${showReadOnlyTextComposer ? styles.sourceComposerReadOnly : ""}`.trim()}
-        >
+        <div className={styles.sourceComposer}>
           {formState.sourceType === "url" ? (
             <>
               <div className={styles.urlInputStack}>
@@ -213,7 +210,6 @@ export function ReviewToolbar({
               className={styles.toolbarTextarea}
               data-testid="draft-text-input"
               value={formState.text}
-              readOnly={showReadOnlyTextComposer}
               onChange={(event) => onFormChange((current) => ({ ...current, text: event.target.value }))}
               placeholder="Paste draft text"
             />

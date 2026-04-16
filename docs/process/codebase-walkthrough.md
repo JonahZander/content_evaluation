@@ -49,11 +49,10 @@ The presentational pieces live in:
 
 - `apps/web/src/components/review/ReviewHero.tsx`
 - `apps/web/src/components/review/ReviewToolbar.tsx`
+- `apps/web/src/components/review/AnalysisOverview.tsx`
 - `apps/web/src/components/review/DocumentPane.tsx`
 - `apps/web/src/components/review/CommentRail.tsx`
-- `apps/web/src/components/review/ReviewSummaryPanel.tsx`
 - `apps/web/src/components/review/RevisedMarkdownPanel.tsx`
-- `apps/web/src/components/review/RunMetrics.tsx`
 - `apps/web/src/components/review/SelectionBanner.tsx`
 
 The browser API contract lives in:

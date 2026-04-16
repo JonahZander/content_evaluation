@@ -53,7 +53,7 @@ Load only the section needed for the current task.
 - Inputs: URL, pasted text, `.txt`, `.md`, imported artifact JSON
 - Primary contract: `AnalysisArtifact` produced by the API and rendered by the UI
 - Default UI path: `workspace` persistence with session restore metadata kept in the browser; imported artifacts and session-mode runs remain supported
-- Review UI: URL/text/file/artifact intake, paragraph-row text and comment layout, inline highlights, review summary panel, fact-check and targeted-research comment rails, live agent progress, agent selection, artifact import/export
+- Review UI: URL/text/file/artifact intake, paragraph-row text and comment layout, unified analysis overview, inline highlights, fact-check and targeted-research comment rails, live agent progress, agent selection, artifact import/export
 - Review actions: reply to comments, create reviewer comments, accept/reject/uncertain agent comments
 - Agents: fact-check, targeted research, AI-likelihood, and editorial; overlap research now hangs off fact-check instead of a standalone top-level similarity surface, and revised markdown is a post-run workflow rather than a first-pass agent
 - Backend surfaces now include a dedicated targeted-research endpoint for prompt-scoped follow-ups on terminal artifacts

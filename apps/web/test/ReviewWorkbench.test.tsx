@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import { ReviewWorkbench } from "@/components/ReviewWorkbench";
-import type { AnalysisArtifact, ArtifactComment, ArtifactThread } from "@/lib/types";
+import type { AnalysisArtifact, ArtifactBlock, ArtifactComment, ArtifactThread } from "@/lib/types";
 import * as api from "@/lib/api";
 import reproDuplicateSections from "./fixtures/repro-duplicate-sections.json";
 
@@ -566,7 +566,29 @@ describe("ReviewWorkbench", () => {
     expect(screen.queryByTestId("revised-markdown-panel")).not.toBeInTheDocument();
   });
 
-  it("toggles a pasted-text preview before analysis starts", () => {
+  it("toggles a pasted-text preview before analysis starts", async () => {
+    vi.mocked(api.previewSource).mockResolvedValueOnce({
+      id: "text-preview-doc",
+      revision_id: "text-preview-doc",
+      title: "Preview this draft before running analysis.",
+      source_type: "text",
+      source_label: "Manual input",
+      content_format: "markdown",
+      raw_content: "Preview this draft before running analysis.",
+      text: "Preview this draft before running analysis.",
+      blocks: [
+        {
+          id: "text-preview-block-1",
+          index: 0,
+          text: "Preview this draft before running analysis.",
+          kind: "paragraph",
+          origin: "source",
+          markdown: "Preview this draft before running analysis.",
+          marks: [],
+        },
+      ],
+    });
+
     render(<ReviewWorkbench initialArtifact={null} />);
 
     fireEvent.change(screen.getByTestId("draft-text-input"), {
@@ -575,12 +597,14 @@ describe("ReviewWorkbench", () => {
 
     fireEvent.click(screen.getByTestId("preview-text-button"));
 
-    expect(screen.getByTestId("text-preview-section")).toBeInTheDocument();
-    expect(screen.getByTestId("text-preview-body")).toHaveTextContent("Preview this draft before running analysis.");
+    const previewShell = await screen.findByTestId("intake-preview-shell");
+    expect(previewShell).toBeInTheDocument();
+    expect(within(previewShell).getByTestId("document-title")).toHaveTextContent("Preview this draft before running analysis.");
+    expect(within(previewShell).getByTestId("document-block-0")).toHaveTextContent("Preview this draft before running analysis.");
 
     fireEvent.click(screen.getByTestId("preview-text-button"));
 
-    expect(screen.queryByTestId("text-preview-section")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByTestId("intake-preview-shell")).not.toBeInTheDocument());
   });
 
   it("renders the running shell for a fresh in-flight run", () => {
@@ -590,7 +614,7 @@ describe("ReviewWorkbench", () => {
     expect(screen.getByTestId("progress-track")).toBeInTheDocument();
     expect(screen.getByTestId("running-preview-card")).toHaveTextContent("Waiting for the first agent result.");
     expect(screen.queryByTestId("review-workbench")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("review-summary-panel")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("analysis-overview")).not.toBeInTheDocument();
   });
 
   it("marks completed fact-check as already run in the agent selector", async () => {
@@ -600,14 +624,14 @@ describe("ReviewWorkbench", () => {
     expect(screen.getByTestId("agent-lock-fact_check")).toHaveTextContent("Already run");
   });
 
-  it("keeps pasted text visible as a read-only reference after content loads", () => {
+  it("hides pasted text after content loads while keeping review actions visible", () => {
     render(<ReviewWorkbench initialArtifact={mockArtifact} />);
 
-    const textInput = screen.getByTestId("draft-text-input");
-
-    expect(textInput).toBeInTheDocument();
-    expect(textInput).toHaveAttribute("readonly");
-    expect(textInput).toHaveValue(mockArtifact.document?.raw_content ?? "");
+    expect(screen.queryByTestId("draft-text-input")).not.toBeInTheDocument();
+    expect(screen.getByTestId("new-analysis-button")).toBeInTheDocument();
+    expect(screen.getByTestId("export-todo-button")).toBeInTheDocument();
+    expect(screen.getByTestId("export-markdown-button")).toBeInTheDocument();
+    expect(screen.getByTestId("export-json-button")).toBeInTheDocument();
   });
 
   it("cycles through partial findings in the running preview card", () => {
@@ -659,7 +683,7 @@ describe("ReviewWorkbench", () => {
     expect(screen.getByTestId("review-workbench")).toBeInTheDocument();
     expect(screen.getByTestId("follow-up-progress")).toBeInTheDocument();
     expect(screen.queryByTestId("running-stage-panel")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("review-summary-panel")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("analysis-overview")).not.toBeInTheDocument();
   });
 
   it("renders the research panel with a suggested prompt fallback", () => {
@@ -696,7 +720,7 @@ describe("ReviewWorkbench", () => {
     expect(screen.getByTestId("diff-review-shell")).toBeInTheDocument();
     expect(screen.queryByTestId("review-workbench")).not.toBeInTheDocument();
     expect(screen.queryByTestId("progress-track")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("review-summary-panel")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("analysis-overview")).not.toBeInTheDocument();
   });
 
   it("keeps imported draft artifacts in the intake shell", () => {
@@ -763,6 +787,67 @@ describe("ReviewWorkbench", () => {
     expect(screen.getByTestId("thread-anchor-2")).toBeInTheDocument();
     expect(screen.queryByTestId("connector-canvas")).not.toBeInTheDocument();
     expect(await screen.findByTestId("comment-comment-2")).toBeInTheDocument();
+  });
+
+  it("renders the document title only once when the first block repeats it", () => {
+    const artifact = structuredClone(mockArtifact);
+    const document = artifact.document;
+    if (document === null) {
+      throw new Error("Expected document for duplicate-title test");
+    }
+
+    const titleBlock: ArtifactBlock = {
+      id: "block-title-repeat",
+      index: 0,
+      text: document.title,
+      kind: "heading" as const,
+      origin: "source" as const,
+      markdown: `# ${document.title}`,
+      level: 1,
+      marks: [],
+    };
+
+    artifact.document = {
+      ...document,
+      text: [document.title, document.text].join("\n\n"),
+      blocks: [titleBlock, ...document.blocks].map((block, index) => ({ ...block, index })),
+    };
+
+    render(<ReviewWorkbench initialArtifact={artifact} />);
+
+    expect(screen.getAllByRole("heading", { name: document.title })).toHaveLength(1);
+  });
+
+  it("keeps a distinct first heading when it does not match the extracted title", () => {
+    const artifact = structuredClone(mockArtifact);
+    const document = artifact.document;
+    if (document === null) {
+      throw new Error("Expected document for distinct-heading test");
+    }
+
+    artifact.document = {
+      ...document,
+      title: "Editorial review draft",
+      text: ["Separate intro heading", document.text].join("\n\n"),
+      blocks: [
+        {
+          id: "block-title-distinct",
+          index: 0,
+          text: "Separate intro heading",
+          kind: "heading" as const,
+          origin: "source" as const,
+          markdown: "# Separate intro heading",
+          level: 1,
+          marks: [],
+        } satisfies ArtifactBlock,
+        ...document.blocks,
+      ].map((block, index) => ({ ...block, index })),
+    };
+
+    render(<ReviewWorkbench initialArtifact={artifact} />);
+
+    expect(screen.getByTestId("document-title")).toHaveTextContent("Editorial review draft");
+    expect(screen.getAllByRole("heading", { name: "Separate intro heading" })).toHaveLength(1);
   });
 
   it("shows review buttons and reply controls", () => {
@@ -901,8 +986,8 @@ describe("ReviewWorkbench", () => {
     fireEvent.click(screen.getByTestId("import-url-button"));
     await waitFor(() => expect(screen.getByTestId("document-title")).toHaveTextContent("Imported URL Preview"));
 
-    fireEvent.click(screen.getByTestId("hide-preview-block-url-block-1"));
     fireEvent.click(screen.getByTestId("hide-preview-block-url-block-2"));
+    fireEvent.click(screen.getByTestId("hide-preview-block-url-block-3"));
     fireEvent.click(screen.getByTestId("restore-all-preview-blocks"));
 
     expect(screen.queryByText("Hidden from analysis")).not.toBeInTheDocument();
@@ -1528,15 +1613,17 @@ describe("ReviewWorkbench", () => {
     expect(progressHeading.compareDocumentPosition(runLogToggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("renders the review summary panel above the text pane", () => {
+  it("renders the analysis overview above the text pane with contextualized scores", () => {
     render(<ReviewWorkbench initialArtifact={mockArtifact} />);
 
-    expect(screen.getByTestId("review-summary-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("analysis-overview")).toBeInTheDocument();
+    expect(screen.getByTestId("overlap-research-card")).toHaveTextContent("Originality signal 58%");
+    expect(screen.getByTestId("human-voice-card")).toHaveTextContent("Voice signal 63%");
     expect(screen.getByText("Research summary")).toBeInTheDocument();
     expect(screen.getByText("Editorial review systems for AI content")).toBeInTheDocument();
   });
 
-  it("renders unavailable sub-scores as em dashes while keeping real zero values as 0%", () => {
+  it("renders unavailable contextual score labels as em dashes and inverts human voice from ai_likelihood", () => {
     const missingScoresArtifact = structuredClone(mockArtifact);
     if (missingScoresArtifact.summary === null) {
       throw new Error("Expected summary data in mock artifact");
@@ -1546,8 +1633,8 @@ describe("ReviewWorkbench", () => {
 
     const { unmount } = render(<ReviewWorkbench initialArtifact={missingScoresArtifact} />);
 
-    expect(screen.getByText("Novelty").closest("article")).toHaveTextContent("—");
-    expect(screen.getByText("Human voice").closest("article")).toHaveTextContent("—");
+    expect(screen.getByTestId("overlap-research-card")).toHaveTextContent("Originality signal —");
+    expect(screen.getByTestId("human-voice-card")).toHaveTextContent("Voice signal —");
 
     unmount();
 
@@ -1560,8 +1647,8 @@ describe("ReviewWorkbench", () => {
 
     render(<ReviewWorkbench initialArtifact={zeroScoresArtifact} />);
 
-    expect(screen.getByText("Novelty").closest("article")).toHaveTextContent("0%");
-    expect(screen.getByText("Human voice").closest("article")).toHaveTextContent("0%");
+    expect(screen.getByTestId("overlap-research-card")).toHaveTextContent("Originality signal 0%");
+    expect(screen.getByTestId("human-voice-card")).toHaveTextContent("Voice signal 100%");
   });
 
   it("renders fact-check details in the comment thread rail", () => {

@@ -4,13 +4,12 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 
 import styles from "@/components/ReviewWorkbench.module.css";
 import { AgentUsageSummary } from "@/components/review/AgentUsageSummary";
+import { AnalysisOverview } from "@/components/review/AnalysisOverview";
 import { CommentRail } from "@/components/review/CommentRail";
 import { DocumentPane } from "@/components/review/DocumentPane";
 import { RevisedMarkdownPanel } from "@/components/review/RevisedMarkdownPanel";
 import { ReviewHero } from "@/components/review/ReviewHero";
-import { ReviewSummaryPanel } from "@/components/review/ReviewSummaryPanel";
 import { ReviewToolbar, type ReviewFormState } from "@/components/review/ReviewToolbar";
-import { RunMetrics } from "@/components/review/RunMetrics";
 import { SelectionBanner } from "@/components/review/SelectionBanner";
 import { categoryColors } from "@/components/review/category-colors";
 import {
@@ -86,6 +85,11 @@ const STORED_WORKBENCH_STATE_VERSION = 3;
 const MAX_STORED_DRAFT_CHARS = 75_000;
 const SESSION_STORAGE_WRITE_DEBOUNCE_MS = 150;
 const TERMINAL_RUN_STATUSES = new Set<RunStatus>(["completed", "failed", "canceled"]);
+
+// eslint-disable-next-line @typescript-eslint/no-empty-function
+const noop = () => undefined as void;
+const emptyAnchorThreadMap = new Map<string, { colors: string[] }>();
+const emptyReplyDrafts: Record<string, string> = {};
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
@@ -1684,6 +1688,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
             agentResults={artifact?.agent_results ?? []}
             events={artifact?.events ?? []}
             sourceText={artifact?.document?.raw_content ?? artifact?.document?.text ?? formState.text}
+            sourceDocument={artifact?.document ?? null}
             onStopRun={handleStopRun}
             canStopRun={canStopRun}
           />
@@ -1789,9 +1794,13 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
             ) : null}
 
             {artifact !== null && artifact.summary !== null && !isFollowUpRunInProgress ? (
-              <RunMetrics summary={artifact.summary} />
+              <AnalysisOverview
+                summary={artifact.summary}
+                reviewSummary={artifact.review_summary ?? null}
+                agentResults={artifact.agent_results}
+                documentRevisionId={artifact.document?.revision_id ?? null}
+              />
             ) : null}
-            <ReviewSummaryPanel reviewSummary={artifact?.review_summary ?? null} />
             {hasHistoricalFindings ? (
               <section className={styles.historicalNotice} data-testid="historical-findings-indicator">
                 Fact-check and research findings below reflect the previous draft. They are preserved as historical context and do not count as current-draft revision input.
@@ -2096,6 +2105,7 @@ function RunningStagePanel({
   agentResults,
   events,
   sourceText,
+  sourceDocument,
   onStopRun,
   canStopRun,
 }: {
@@ -2106,10 +2116,13 @@ function RunningStagePanel({
   agentResults: AnalysisArtifact["agent_results"];
   events: AnalysisArtifact["events"];
   sourceText: string;
+  sourceDocument: ArtifactDocument | null;
   onStopRun: () => void;
   canStopRun: boolean;
 }) {
   const [sourceCollapsed, setSourceCollapsed] = useState(false);
+  const sourceAnchorRefs = useRef<Record<string, HTMLSpanElement | null>>({});
+  const sourceCommentRefs = useRef<Record<string, HTMLElement | null>>({});
   const findings = useMemo(
     () =>
           agentResults.flatMap((result) =>
@@ -2179,7 +2192,43 @@ function RunningStagePanel({
           </button>
           {!sourceCollapsed ? (
             <div className={styles.runningSourceBody}>
-              <pre className={styles.runningSourceText}>{sourceText}</pre>
+              {sourceDocument !== null && sourceDocument.blocks.length > 0 ? (
+                <DocumentPane
+                  document={sourceDocument}
+                  anchors={[]}
+                  threads={[]}
+                  anchorThreadMap={emptyAnchorThreadMap}
+                  activeDocumentRevisionId={null}
+                  selectionEnabled={false}
+                  hoveredAnchorId={null}
+                  hiddenBlockIds={[]}
+                  previewPruningEnabled={false}
+                  anchorRefs={sourceAnchorRefs}
+                  commentRefs={sourceCommentRefs}
+                  onHoverAnchor={noop}
+                  onSelectionDraft={noop}
+                  onHideBlock={noop}
+                  onRestoreBlock={noop}
+                  onRestoreAllBlocks={noop}
+                  replyDrafts={emptyReplyDrafts}
+                  activeReplyComposerId={null}
+                  editingCommentId={null}
+                  editingBody=""
+                  onReplyDraftChange={noop}
+                  onToggleReplyComposer={noop}
+                  onAddReply={noop}
+                  onDeleteReply={noop}
+                  onReviewState={noop}
+                  onStartEditing={noop}
+                  onEditingBodyChange={noop}
+                  onSaveEdit={noop}
+                  onCancelEdit={noop}
+                  onDeleteComment={noop}
+                  threadActionLocalError={{ commentId: null, message: null }}
+                />
+              ) : (
+                <pre className={styles.runningSourceText}>{sourceText}</pre>
+              )}
             </div>
           ) : null}
         </section>

@@ -12,13 +12,11 @@ Provide a high-legibility review surface where users can inspect source text, wa
   - Phase-2-only running view with progress bar, per-agent status, stage timeline, retry/resume notices, partial findings, and run log
 - Run log
   - Full-width activity list inside the running view so users can inspect retries, resumptions, and failures without leaving Phase 2
-- Analysis summary
-  - Overall score, novelty, Human voice, TL;DR, and article-length overview metrics shown only in the terminal review phase
-- Review summary panel
+- Analysis overview
   - Lives above the source text pane in Phase 3 only
-  - Shows TL;DR, article profile, structural completeness, inferred audience, research summary, and overlap links from fact-check-backed artifact data
+  - Combines the old metrics row and review summary into one section with overall score + verdict, TL;DR, article profile, overlap research, Human voice narrative context, audience, and research summary
 - Research panel
-  - Lives below the review summary panel and above the workspace in Phase 3
+  - Lives below the analysis overview and above the workspace in Phase 3
   - Starts compact and prompt-focused, with a single editable prompt field and one research action
   - Prefills from suggested fact-check research prompts when available, otherwise opens empty
 - Revised markdown panel
@@ -98,7 +96,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - The review shell should repeat the revision action row near the bottom of the page so reviewers can trigger revision after finishing a full scroll through comments and source text.
 - The toolbar should expose a stop-run action for queued/running work and a new-analysis reset action.
 - The toolbar should keep the pasted-text composer in its own full-width source row beneath source selection controls.
-- Pasted-text runs should keep that composer visible in later phases as a dimmed read-only reference instead of removing it once the run begins.
+- Pasted-text runs should remove that composer once review content has loaded, while keeping the toolbar actions visible.
 - Invalid review actions should be disabled when no real artifact is loaded.
 - Similarity research is no longer a selectable top-level agent in new runs; overlap research is surfaced through fact-check.
 
@@ -123,7 +121,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Unsupported markdown should stay readable as text rather than render rich embeds or media.
 - Agent comments are immutable in content; reviewer input happens through replies and review-state actions.
 - Audience analysis is summary-first in the current UI and should not create new inline annotation-heavy threads for newly generated artifacts.
-- The review summary panel should be fact-check-backed and compact rather than recreating old standalone value, audience, or claim-summary agent surfaces.
+- The analysis overview should stay fact-check-backed and compact rather than recreating old standalone value, audience, or claim-summary agent surfaces.
 - The research panel should remain minimal rather than becoming a separate chat surface.
 - Reviewer comments use the `human` category and are attached to an existing or newly created anchor.
 - Reviewer replies can be deleted inline, but agent-authored content remains immutable.

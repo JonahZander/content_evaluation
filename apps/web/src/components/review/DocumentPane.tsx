@@ -882,8 +882,17 @@ export function DocumentPane({
         </div>
       ) : null}
       {document?.blocks.length ? (
-        document.blocks.map((block) => (
+        document.blocks.map((block, index) => (
           (() => {
+            const isDuplicateTitleHeading =
+              index === 0 &&
+              block.kind === "heading" &&
+              block.text.trim() === document.title.trim();
+
+            if (isDuplicateTitleHeading) {
+              return null;
+            }
+
             const isPreviewHidden = hiddenBlockIdSet.has(block.id);
             const refAnchorIdsForBlock = new Set<string>();
             return (

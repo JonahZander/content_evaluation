@@ -43,6 +43,10 @@ services/api/graphs/
 # Playwright MCP cache
 .playwright-mcp/
 
+# Playwright test run output
+test-results/
+playwright-report/
+
 # Symlinked skill directories
 .codex
 .codex/

@@ -347,9 +347,58 @@ async def test_apply_diff_review_preserves_historical_fact_check_only_for_previo
     assert all(result.document_revision_id == previous_revision_id for result in applied.agent_results)
     assert all(
         comment.document_revision_id == previous_revision_id
-        for thread in applied.threads
+        for thread in applied.previous_draft_snapshot.threads
         for comment in thread.comments
     )
 
     with pytest.raises(ValidationError):
         await orchestrator.generate_revised_markdown(applied.artifact_id, mode=RevisionMode.SURGICAL)
+
+
+@pytest.mark.asyncio
+async def test_apply_diff_review_keeps_historical_threads_only_in_snapshot() -> None:
+    """Historical fact-check threads stay in previous_draft_snapshot, not the live artifact."""
+
+    orchestrator = _orchestrator()
+    artifact = await orchestrator.create_run(
+        RunInput(
+            source_type=SourceType.TEXT,
+            source_label="Draft",
+            title="Draft",
+            text="Alpha paragraph.\n\nBeta paragraph.",
+            selected_agents=["fact_check", "editorial"],
+        )
+    )
+    await orchestrator.process_run(
+        artifact.artifact_id,
+        RunInput(
+            source_type=SourceType.TEXT,
+            source_label="Draft",
+            title="Draft",
+            text="Alpha paragraph.\n\nBeta paragraph.",
+            selected_agents=["fact_check", "editorial"],
+        ),
+    )
+
+    stored = await orchestrator._require_artifact(artifact.artifact_id)  # noqa: SLF001
+    for thread in stored.threads:
+        for comment in thread.comments:
+            if comment.suggestion:
+                comment.review_state = ReviewState.ACCEPTED
+    await orchestrator._repository.update_artifact(stored)  # noqa: SLF001
+
+    generated = await orchestrator.generate_revised_markdown(artifact.artifact_id, mode=RevisionMode.SURGICAL)
+    await orchestrator.update_diff_review(
+        artifact.artifact_id,
+        [(item.id, RevisedMarkdownDiffDecision.ACCEPTED) for item in generated.diff_review.diff_items],
+    )
+
+    applied = await orchestrator.apply_diff_review(artifact.artifact_id)
+    assert applied.document is not None
+    current_revision_id = applied.document.revision_id
+    for thread in applied.threads:
+        assert thread.document_revision_id in (None, current_revision_id), (
+            f"Thread {thread.anchor.id} has document_revision_id {thread.document_revision_id} "
+            f"but the live article should only contain threads tied to {current_revision_id}"
+        )
+    assert applied.previous_draft_snapshot is not None

@@ -487,32 +487,18 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     }
     return count;
   }, [artifact]);
-  const inlineHistoricalThreads = useMemo(
-    () => normalizedThreads.filter((thread) => isHistoricalThread(thread, currentRevisionId)),
-    [currentRevisionId, normalizedThreads],
-  );
   const previousDraftSnapshot = artifact?.previous_draft_snapshot ?? null;
-  const inlineHistoricalCommentIds = useMemo(
-    () => new Set(inlineHistoricalThreads.flatMap((thread) => thread.comments.map((comment) => comment.id))),
-    [inlineHistoricalThreads],
-  );
   const historicalSnapshotThreads = useMemo(() => {
     if (previousDraftSnapshot === null) {
       return [] as ArtifactThread[];
     }
-    const filteredThreads = previousDraftSnapshot.threads
-      .map((thread) => ({
-        ...thread,
-        comments: thread.comments.filter((comment) => !inlineHistoricalCommentIds.has(comment.id)),
-      }))
-      .filter((thread) => thread.comments.length > 0);
-    return normalizeThreads(previousDraftSnapshot.document, filteredThreads);
-  }, [inlineHistoricalCommentIds, previousDraftSnapshot]);
+    return normalizeThreads(previousDraftSnapshot.document, previousDraftSnapshot.threads);
+  }, [previousDraftSnapshot]);
   const historicalAnchorThreadMap = useMemo(
     () => buildAnchorThreadMap(historicalSnapshotThreads, previousDraftSnapshot?.agent_results ?? []),
     [historicalSnapshotThreads, previousDraftSnapshot?.agent_results],
   );
-  const hasHistoricalFindings = inlineHistoricalThreads.length > 0 || historicalSnapshotThreads.length > 0;
+  const hasHistoricalFindings = previousDraftSnapshot !== null && historicalSnapshotThreads.length > 0;
 
   const workbenchPhase = useMemo(
     () => getWorkbenchPhase(artifact),
@@ -2480,13 +2466,6 @@ function buildAnchorThreadMap(
     });
   });
   return map;
-}
-
-function isHistoricalThread(thread: ArtifactThread, currentRevisionId: string | null): boolean {
-  if (currentRevisionId == null) {
-    return false;
-  }
-  return thread.document_revision_id != null && thread.document_revision_id !== currentRevisionId;
 }
 
 function toDiffItemView(value: unknown): ArtifactDiffItemView[] {

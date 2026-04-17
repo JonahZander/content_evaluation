@@ -88,7 +88,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
    - Compute diff-review items deterministically from whole-document markdown comparison
    - Replace the canonical markdown by applying explicitly accepted diff decisions while leaving rejected and pending diff text in place
    - On apply, keep one live mutable artifact, archive the immediately previous draft as `previous_draft_snapshot`, preserve only fact-check and targeted-research findings against that prior revision, and clear current-draft summaries/revision suggestions
-   - Preserved fact-check and research remain tagged to the previous document revision; only findings that remap honestly into the new draft stay inline, and unmatched preserved findings remain inspectable in the archived previous-draft section
+   - Preserved fact-check and research remain tagged to the previous document revision; all preserved findings move into the archived previous-draft section; the live article only shows findings tied to the current revision
    - Reopen a saved artifact without rerunning the pipeline
 
 ## Artifact-First Rules

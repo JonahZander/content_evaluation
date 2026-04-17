@@ -150,7 +150,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - Inline apply copy should make clear that only accepted changes are promoted while pending or unreviewed changes stay unchanged.
 - If revised-markdown review state is stale and the backend no longer has that diff review, the frontend should exit Phase 4 and return the reviewer to the main comment/review shell with a clear status message instead of leaving a dead diff screen visible.
 - Preserved historical fact-check and research findings should stay visible after apply, but they must be clearly marked as `original draft` findings and must not count as current-draft accepted suggestions.
-- When preserved historical findings still map honestly into the revised draft they may render inline with an original-draft indicator; otherwise they should appear in a separate clearly labeled original-draft section backed by the archived previous snapshot.
+- All preserved historical findings live in a separate clearly labeled original-draft section backed by the archived previous snapshot; the live article only shows findings tied to the current revision.
 - Debug visibility should be toggleable when the artifact includes debug trace data.
 - Empty states are shown when no artifact or no comment threads are present.
 - Synthetic unmatched-reference blocks should render with visibly distinct fallback styling so reviewers can tell they are not original article text.

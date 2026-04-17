@@ -558,25 +558,11 @@ class RunOrchestrator:
                 previous_snapshot.agent_results,
                 document_revision_id=previous_revision_id,
             )
-            preserved_threads = _remap_preserved_threads_to_revision(
-                artifact,
-                previous_snapshot.threads,
-                document_revision_id=previous_revision_id,
-            )
-            preserved_anchor_ids = {
-                thread.anchor.id
-                for thread in preserved_threads
-            }
-            preserved_anchors = [
-                anchor
-                for anchor in artifact.anchors
-                if anchor.id in preserved_anchor_ids
-            ]
             artifact.source.title = artifact.document.title
             artifact.agent_plan = []
             artifact.agent_results = preserved_agent_results
-            artifact.anchors = preserved_anchors
-            artifact.threads = preserved_threads
+            artifact.anchors = []
+            artifact.threads = []
             artifact.summary = None
             artifact.review_summary = None
             artifact.error_message = None
@@ -2692,35 +2678,6 @@ def _preserve_historical_agent_results(
         clone.metadata["document_revision_id"] = document_revision_id
         preserved.append(clone)
     return preserved
-
-
-def _remap_preserved_threads_to_revision(
-    artifact: AnalysisArtifact,
-    threads: list[ArtifactThread],
-    *,
-    document_revision_id: str,
-) -> list[ArtifactThread]:
-    """Clone preserved historical threads that still anchor honestly into the new draft."""
-
-    if artifact.document is None:
-        raise ValidationError("Artifact document is missing")
-
-    remapped_threads: list[ArtifactThread] = []
-    for thread in threads:
-        matched_anchor = create_anchor_from_excerpt(artifact.document.blocks, thread.anchor.quote)
-        if matched_anchor is None:
-            continue
-        existing_anchor = _resolve_anchor(artifact, thread.anchor.quote, block_id=matched_anchor.segments[0].block_id)
-        existing_anchor.document_revision_id = document_revision_id
-        clone = thread.model_copy(deep=True)
-        clone.anchor = existing_anchor
-        clone.document_revision_id = document_revision_id
-        for comment in clone.comments:
-            comment.document_revision_id = document_revision_id
-            comment.metadata["historical"] = True
-            comment.metadata["document_revision_id"] = document_revision_id
-        remapped_threads.append(clone)
-    return remapped_threads
 
 
 def _document_markdown(document: ArtifactDocument) -> str:

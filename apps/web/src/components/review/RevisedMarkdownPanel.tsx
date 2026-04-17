@@ -451,7 +451,33 @@ function buildWordDiffSegments(beforeText: string, afterText: string): WordDiffS
     afterIndex += 1;
   }
 
-  return mergeWordDiffSegments(segments);
+  const merged = mergeWordDiffSegments(segments);
+  if (isFragmentedWordDiff(merged)) {
+    return [
+      ...(beforeText ? [{ kind: "removed" as const, text: beforeText }] : []),
+      ...(afterText ? [{ kind: "added" as const, text: afterText }] : []),
+    ];
+  }
+  return merged;
+}
+
+function isFragmentedWordDiff(segments: WordDiffSegment[]): boolean {
+  const changeRuns = segments.filter((segment) => segment.kind !== "equal").length;
+  if (changeRuns < 2) {
+    return false;
+  }
+  let equalChars = 0;
+  let changedChars = 0;
+  for (const segment of segments) {
+    if (segment.kind === "equal") {
+      equalChars += segment.text.length;
+    } else {
+      changedChars += segment.text.length;
+    }
+  }
+  const totalChars = equalChars + changedChars;
+  const equalRatio = totalChars === 0 ? 1 : equalChars / totalChars;
+  return changeRuns >= 4 || equalRatio < 0.3;
 }
 
 function tokenizeDiffText(text: string): string[] {

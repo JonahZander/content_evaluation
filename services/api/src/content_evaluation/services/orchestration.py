@@ -789,6 +789,7 @@ class RunOrchestrator:
                 artifact.document,
                 input_data.prompt or "",
                 target_anchor_id=target_anchor_id,
+                previous_draft_snapshot=artifact.previous_draft_snapshot,
             )
             raw_output = await self._deep_research_provider.research(brief, article_text)
             claim_findings = _normalize_fact_check_claims(raw_output)
@@ -1354,7 +1355,11 @@ class RunOrchestrator:
                     "CONTENT_EVAL_TAVILY_API_KEY are set for live mode."
                 )
             instruction = load_instruction_text(definition)
-            brief = _build_deep_research_brief(instruction, artifact.document)
+            brief = _build_deep_research_brief(
+                instruction,
+                artifact.document,
+                previous_draft_snapshot=artifact.previous_draft_snapshot,
+            )
             article_text = "\n\n".join(b.text for b in artifact.document.blocks if b.text)
             raw_output = await self._deep_research_provider.fact_check(brief, article_text)
             claim_findings = _normalize_fact_check_claims(raw_output)
@@ -1822,14 +1827,65 @@ def _merged_agent_plan(
     return merged
 
 
-def _build_deep_research_brief(instruction: str, document: ArtifactDocument) -> str:
+def _build_deep_research_brief(
+    instruction: str,
+    document: ArtifactDocument,
+    *,
+    previous_draft_snapshot: ArtifactPreviousDraftSnapshot | None = None,
+) -> str:
     """Build fact-check task context without duplicating article body text."""
 
-    return _build_deep_research_lead_text(
+    base = _build_deep_research_lead_text(
         instruction,
         document,
         mode_label="FACT-CHECK RESEARCH TASK",
     )
+    prior = _format_prior_research_context(previous_draft_snapshot)
+    if prior:
+        return f"{base}\n\n{prior}"
+    return base
+
+
+def _format_prior_research_context(snapshot: ArtifactPreviousDraftSnapshot | None) -> str | None:
+    """Return a compact 'already investigated' block from the previous-draft snapshot."""
+
+    if snapshot is None:
+        return None
+    overlap_lines: list[str] = []
+    verdict_lines: list[str] = []
+    for result in snapshot.agent_results:
+        if result.agent_id != "fact_check":
+            continue
+        metadata = result.metadata if isinstance(result.metadata, dict) else {}
+        overlap_items = metadata.get("overlap_items")
+        if isinstance(overlap_items, list):
+            for item in overlap_items[:6]:
+                if not isinstance(item, dict):
+                    continue
+                title = (item.get("title") or "").strip()
+                url = (item.get("url") or "").strip()
+                if url:
+                    overlap_lines.append(f"- {title or url}: {url}")
+        for finding in result.findings[:8]:
+            finding_metadata = finding.metadata if isinstance(finding.metadata, dict) else {}
+            verdict = finding_metadata.get("verdict")
+            excerpt_value = finding_metadata.get("excerpt")
+            excerpt = str(excerpt_value).strip() if excerpt_value else ""
+            if verdict and excerpt:
+                verdict_lines.append(f"- {str(verdict).upper()}: {excerpt[:160]}")
+    if not overlap_lines and not verdict_lines:
+        return None
+    sections: list[str] = ["PREVIOUSLY INVESTIGATED (context only — verify if anything has changed):"]
+    if overlap_lines:
+        sections.append("Sources already reviewed for overlap:")
+        sections.extend(overlap_lines)
+    if verdict_lines:
+        sections.append("Claims already adjudicated in the previous draft:")
+        sections.extend(verdict_lines)
+    sections.append(
+        "Use this only to avoid duplicate work. If a claim has materially changed in the current draft, re-evaluate it."
+    )
+    return "\n".join(sections)
 
 
 def _build_targeted_research_brief(
@@ -1838,6 +1894,7 @@ def _build_targeted_research_brief(
     prompt: str,
     *,
     target_anchor_id: str | None = None,
+    previous_draft_snapshot: ArtifactPreviousDraftSnapshot | None = None,
 ) -> str:
     """Combine a targeted prompt with article metadata for follow-up research."""
 
@@ -1845,6 +1902,9 @@ def _build_targeted_research_brief(
     lines = [instruction, "", "TARGETED RESEARCH REQUEST:", prompt_line]
     if target_anchor_id is not None:
         lines.extend(["Target anchor id:", target_anchor_id])
+    prior = _format_prior_research_context(previous_draft_snapshot)
+    if prior:
+        lines.extend(["", prior])
     lines.extend(
         [
             "",

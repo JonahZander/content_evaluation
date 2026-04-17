@@ -31,6 +31,7 @@ This project uses a code-orchestrated multi-agent model:
   - Runs through `POST /api/v1/runs/{run_id}/research` with a prompt and optional `anchor_id` / `comment_id`
   - Reuses the existing normalized artifact, appends `research`-category comments, and does not replace prior fact-check findings
   - Uses the same deep-research provider family with a prompt-scoped research method
+  - When the artifact has a `previous_draft_snapshot`, the targeted-research and fact-check briefs include a "previously investigated" block (prior overlap sources and adjudicated claims) as deduplication context, not ground truth
 - Similarity research agent
   - Legacy compatibility path only
   - Hidden from the selectable agent catalog for new runs

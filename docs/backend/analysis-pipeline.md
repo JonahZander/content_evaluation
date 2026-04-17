@@ -53,6 +53,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
   - Retry transient provider timeouts and network failures inside the individual agent execution loop before failing the run
   - Fact-check and targeted research pass the full normalized article text into deep research by default
   - Deep-research prompt assembly sends article metadata and cited-link context separately from the full article body, so the article text appears once in the final research brief
+  - On re-runs after a revision, both briefs include a "previously investigated" block built from `previous_draft_snapshot` (prior overlap sources and adjudicated claims) as deduplication context, not ground truth
   - Fact-check and targeted research expose article-cited links to the researcher and instruct it to inspect relevant cited URLs before broader web search
   - If a deep-research model rejects the full article for token length, retry once with a deterministic paragraph-preserving reduced article body and record that fallback in metadata
   - LangGraph agent nodes re-check the latest durable checkpoint before commit so a worker retry can reuse already-persisted agent output without duplicating comments or losing human replies

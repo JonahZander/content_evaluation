@@ -3,13 +3,21 @@
 from __future__ import annotations
 
 from content_evaluation.domain.models import (
+    AgentCategory,
+    AgentFinding,
+    AgentPlanStatus,
+    ArtifactAgentResult,
     ArtifactBlock,
     ArtifactBlockKind,
     ArtifactBlockOrigin,
     ArtifactDocument,
+    ArtifactPreviousDraftSnapshot,
     SourceType,
 )
-from content_evaluation.services.orchestration import _guess_article_format
+from content_evaluation.services.orchestration import (
+    _format_prior_research_context,
+    _guess_article_format,
+)
 
 
 def _block(
@@ -136,3 +144,66 @@ def test_plain_article_falls_through_to_article() -> None:
     )
 
     assert _guess_article_format(doc) == "article"
+
+
+def _minimal_document() -> ArtifactDocument:
+    return _doc("Prior draft", [_block("Prior draft body text.")])
+
+
+def test_format_prior_research_context_returns_none_without_snapshot() -> None:
+    assert _format_prior_research_context(None) is None
+
+
+def test_format_prior_research_context_returns_none_when_no_fact_check_results() -> None:
+    snapshot = ArtifactPreviousDraftSnapshot(
+        document_revision_id="rev-1",
+        document=_minimal_document(),
+        agent_results=[
+            ArtifactAgentResult(
+                agent_id="editorial",
+                document_revision_id="rev-1",
+                category=AgentCategory.EDITORIAL,
+                status=AgentPlanStatus.COMPLETED,
+            )
+        ],
+    )
+
+    assert _format_prior_research_context(snapshot) is None
+
+
+def test_format_prior_research_context_builds_dedup_block() -> None:
+    finding = AgentFinding(
+        category=AgentCategory.FACT_CHECK,
+        agent_name="fact_check",
+        anchor_ids=["anchor-1"],
+        rationale="Supported by a reputable source.",
+        confidence=0.9,
+        model_name="test-model",
+        metadata={"verdict": "supported", "excerpt": "A claim about X"},
+    )
+    snapshot = ArtifactPreviousDraftSnapshot(
+        document_revision_id="rev-1",
+        document=_minimal_document(),
+        agent_results=[
+            ArtifactAgentResult(
+                agent_id="fact_check",
+                document_revision_id="rev-1",
+                category=AgentCategory.FACT_CHECK,
+                status=AgentPlanStatus.COMPLETED,
+                findings=[finding],
+                metadata={
+                    "overlap_items": [
+                        {"title": "Survey", "url": "https://example.com/survey", "note": "n"}
+                    ]
+                },
+            )
+        ],
+    )
+
+    output = _format_prior_research_context(snapshot)
+
+    assert output is not None
+    assert "PREVIOUSLY INVESTIGATED" in output
+    assert "https://example.com/survey" in output
+    assert "SUPPORTED: A claim about X" in output
+    assert "Use this only to avoid duplicate work" in output

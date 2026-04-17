@@ -84,6 +84,7 @@ Turn raw content into a complete, explainable `AnalysisArtifact` that can be pro
    - Generate candidate revised markdown only after current-revision accepted suggestions exist
    - Revised markdown generation now takes an explicit request body with `mode: surgical | rewrite` and an optional rewrite `direction_prompt`
    - Surgical mode produces targeted replacement instructions and a narrow diff; rewrite mode produces a full candidate draft
+   - Each accepted suggestion forwards its `sources` list into the rewrite prompt so cited URLs are embedded as inline markdown links in the revised draft
    - Compute diff-review items deterministically from whole-document markdown comparison
    - Replace the canonical markdown by applying explicitly accepted diff decisions while leaving rejected and pending diff text in place
    - On apply, keep one live mutable artifact, archive the immediately previous draft as `previous_draft_snapshot`, preserve only fact-check and targeted-research findings against that prior revision, and clear current-draft summaries/revision suggestions

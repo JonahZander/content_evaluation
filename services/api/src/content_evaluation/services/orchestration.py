@@ -116,6 +116,7 @@ class RevisionSuggestionInput:
     quote: str
     comment: str
     suggestion: str
+    sources: tuple[str, ...]
     author_label: str
     document_revision_id: str | None
     sort_key: tuple[int, int, int, str, datetime, str]
@@ -449,6 +450,7 @@ class RunOrchestrator:
                     "quote": item.quote,
                     "comment": item.comment,
                     "suggestion": item.suggestion,
+                    "sources": list(item.sources),
                     "author_label": item.author_label,
                 }
                 for item in accepted_items
@@ -2579,6 +2581,7 @@ def _accepted_revision_inputs(artifact: AnalysisArtifact) -> list[RevisionSugges
                     quote=_compact_text(thread.anchor.quote),
                     comment=_compact_text(comment.body),
                     suggestion=_compact_text(comment.suggestion),
+                    sources=tuple(comment.sources),
                     author_label=comment.author_label,
                     document_revision_id=comment.document_revision_id or thread.document_revision_id,
                     sort_key=(

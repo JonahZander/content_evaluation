@@ -299,6 +299,26 @@ def test_extract_usage_handles_missing_fields_in_model_entry() -> None:
     assert result["total_tokens"] == 50
 
 
+def test_rewrite_prompt_instructs_embedding_suggestion_sources() -> None:
+    """Keep the citation-embedding instruction in both rewrite prompt builders."""
+
+    accepted = [
+        {
+            "quote": "Many teams now use AI across most of their publishing workflow.",
+            "suggestion": "AI is now widely used in content and marketing workflows.",
+            "sources": ["https://example.com/survey"],
+        }
+    ]
+
+    full_prompt = LangChainAnalysisProvider._build_rewrite_prompt("original", accepted)
+    surgical_prompt = LangChainAnalysisProvider._build_surgical_rewrite_prompt("original", accepted)
+
+    for prompt in (full_prompt, surgical_prompt):
+        assert "`sources`" in prompt
+        assert "inline markdown link" in prompt
+        assert "https://example.com/survey" in prompt
+
+
 def test_agent_instructions_define_exact_excerpt_and_ellipsis_rules() -> None:
     """Keep excerpt and ellipsis guidance explicit in finding-producing agent prompts."""
 

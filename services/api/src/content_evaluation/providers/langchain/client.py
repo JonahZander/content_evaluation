@@ -407,7 +407,9 @@ class LangChainAnalysisProvider:
             "Return JSON with a `replacements` array.\n"
             "Each replacement must contain an exact `anchor` quote copied from the original markdown and a "
             "`replacement` string that should replace only that quote.\n"
-            "Skip suggestions that should not produce a direct surgical replacement.\n\n"
+            "Skip suggestions that should not produce a direct surgical replacement.\n"
+            "When a suggestion includes a non-empty `sources` list, embed each URL as an inline markdown link "
+            "inside the replacement sentence it supports. Keep any URLs already present in the original quote.\n\n"
             f"Accepted suggestions:\n{accepted_suggestions}\n\n"
             f"Original markdown:\n{original_markdown}"
         )
@@ -424,7 +426,9 @@ class LangChainAnalysisProvider:
         prompt = (
             "Revise the following markdown article using only the accepted review suggestions.\n"
             "Preserve markdown structure where it still fits. Apply the accepted suggestions, but do not "
-            "add commentary.\n\n"
+            "add commentary.\n"
+            "When a suggestion includes a non-empty `sources` list, embed each URL as an inline markdown link "
+            "inside the sentence it supports. Keep any URLs already present in the original markdown.\n\n"
             f"Accepted suggestions:\n{accepted_suggestions}\n\n"
             f"Original markdown:\n{original_markdown}"
         )

@@ -133,6 +133,59 @@ async def test_generate_revised_markdown_builds_candidate_and_diff_review() -> N
 
 
 @pytest.mark.asyncio
+async def test_generate_revised_markdown_forwards_comment_sources_to_provider() -> None:
+    """Forward accepted-comment `sources` into the revised-markdown provider payload."""
+
+    orchestrator = _orchestrator()
+    artifact = await orchestrator.create_run(
+        RunInput(
+            source_type=SourceType.TEXT,
+            source_label="Draft",
+            title="Draft",
+            text="Alpha paragraph.\n\nBeta paragraph.",
+            selected_agents=["editorial"],
+        )
+    )
+    await orchestrator.process_run(
+        artifact.artifact_id,
+        RunInput(
+            source_type=SourceType.TEXT,
+            source_label="Draft",
+            title="Draft",
+            text="Alpha paragraph.\n\nBeta paragraph.",
+            selected_agents=["editorial"],
+        ),
+    )
+
+    citation = "https://example.com/survey"
+    stored = await orchestrator._require_artifact(artifact.artifact_id)  # noqa: SLF001
+    stored.threads[0].comments[0].review_state = ReviewState.ACCEPTED
+    stored.threads[0].comments[0].sources = [citation]
+    await orchestrator._repository.update_artifact(stored)  # noqa: SLF001
+
+    captured: list[list[dict[str, object]]] = []
+    original = orchestrator._analysis_provider.generate_revised_markdown  # noqa: SLF001
+
+    async def _spy(
+        original_markdown: str,
+        accepted_suggestions: list[dict[str, object]],
+        mode: RevisionMode,
+        **kwargs: object,
+    ) -> dict[str, object]:
+        captured.append(accepted_suggestions)
+        return await original(original_markdown, accepted_suggestions, mode, **kwargs)
+
+    orchestrator._analysis_provider.generate_revised_markdown = _spy  # type: ignore[method-assign]  # noqa: SLF001
+
+    await orchestrator.generate_revised_markdown(artifact.artifact_id, mode=RevisionMode.SURGICAL)
+
+    assert captured, "expected provider to be invoked"
+    payload = captured[0]
+    assert payload, "expected at least one accepted suggestion"
+    assert payload[0].get("sources") == [citation]
+
+
+@pytest.mark.asyncio
 async def test_generate_revised_markdown_persists_rewrite_mode_and_direction() -> None:
     """Persist rewrite-mode metadata on the candidate revision payload."""
 

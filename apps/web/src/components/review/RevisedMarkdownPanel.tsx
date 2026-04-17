@@ -30,6 +30,7 @@ interface RevisedMarkdownPanelProps {
   onDecisionChange: (diffId: string, decision: Exclude<DiffDecision, "pending">) => void;
   onRejectAll: () => void;
   onApply: () => void;
+  uncertainCommentCount: number;
 }
 
 export function RevisedMarkdownPanel({
@@ -45,6 +46,7 @@ export function RevisedMarkdownPanel({
   onDecisionChange,
   onRejectAll,
   onApply,
+  uncertainCommentCount,
 }: RevisedMarkdownPanelProps) {
   const [viewMode, setViewMode] = useState<DiffViewMode>(mode === "rewrite" ? "side-by-side" : "inline");
   useEffect(() => {
@@ -52,6 +54,21 @@ export function RevisedMarkdownPanel({
   }, [mode]);
   const acceptedItems = diffItems.filter((item) => item.decision === "accepted").length;
   const pendingItems = diffItems.filter((item) => item.decision === "pending").length;
+  const uncertainSuffix =
+    uncertainCommentCount > 0
+      ? ` ${uncertainCommentCount} uncertain ${uncertainCommentCount === 1 ? "comment" : "comments"} will stay attached to the new draft.`
+      : "";
+
+  const handleApplyClick = () => {
+    if (uncertainCommentCount > 0) {
+      const noun = uncertainCommentCount === 1 ? "comment" : "comments";
+      const ok = window.confirm(
+        `${uncertainCommentCount} uncertain ${noun} will not be applied and will stay attached to the new draft. Continue?`,
+      );
+      if (!ok) return;
+    }
+    onApply();
+  };
   const canApplyInline = !applied && acceptedItems > 0 && !savingDecision && !applyingRevision;
   const canApplySideBySide = !applied && !savingDecision && !applyingRevision;
   const activeViewMode = mode === "surgical" ? "inline" : viewMode;
@@ -76,8 +93,8 @@ export function RevisedMarkdownPanel({
                 ? "The reviewed revision has been promoted to the working draft. Follow-up analysis is available again."
                 : activeViewMode === "inline" && acceptedItems > 0
                   ? pendingItems > 0
-                    ? `Apply will include ${acceptedItems} accepted change${acceptedItems === 1 ? "" : "s"} and leave ${pendingItems} pending or unreviewed diff ${pendingItems === 1 ? "item" : "items"} unchanged.`
-                    : `Apply will include only the ${acceptedItems} accepted change${acceptedItems === 1 ? "" : "s"} and leave any rejected changes out of the revised draft.`
+                    ? `Apply will include ${acceptedItems} accepted change${acceptedItems === 1 ? "" : "s"} and leave ${pendingItems} pending or unreviewed diff ${pendingItems === 1 ? "item" : "items"} unchanged.${uncertainSuffix}`
+                    : `Apply will include only the ${acceptedItems} accepted change${acceptedItems === 1 ? "" : "s"} and leave any rejected changes out of the revised draft.${uncertainSuffix}`
                   : activeViewMode === "inline" && pendingItems > 0
                     ? "Accept at least one diff item to enable apply. Pending changes will remain as-is in the applied draft."
                   : activeViewMode === "side-by-side"
@@ -131,7 +148,7 @@ export function RevisedMarkdownPanel({
                   className={styles.button}
                   data-testid="apply-revised-markdown-button"
                   type="button"
-                  onClick={onApply}
+                  onClick={handleApplyClick}
                   disabled={!canApplySideBySide}
                 >
                   {applyingRevision ? "Applying revision..." : "Apply full revision"}
@@ -242,7 +259,7 @@ export function RevisedMarkdownPanel({
                   className={styles.button}
                   data-testid="apply-revised-markdown-button"
                   type="button"
-                  onClick={onApply}
+                  onClick={handleApplyClick}
                   disabled={!canApplyInline}
                 >
                   {applyingRevision ? "Applying revision..." : "Apply accepted changes"}

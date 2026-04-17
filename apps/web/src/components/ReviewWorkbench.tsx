@@ -467,6 +467,26 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     return buildAnchorThreadMap(normalizedThreads, artifact?.agent_results ?? []);
   }, [artifact?.agent_results, normalizedThreads]);
   const currentRevisionId = artifact?.document?.revision_id ?? null;
+  const uncertainCommentCount = useMemo(() => {
+    if (!artifact) return 0;
+    const currentRevisionId = artifact.document?.revision_id ?? null;
+    let count = 0;
+    for (const thread of artifact.threads) {
+      if (thread.document_revision_id !== null && thread.document_revision_id !== currentRevisionId) {
+        continue;
+      }
+      for (const comment of thread.comments) {
+        if (
+          comment.author_type === "agent"
+          && comment.review_state === "uncertain"
+          && (comment.document_revision_id ?? currentRevisionId) === currentRevisionId
+        ) {
+          count += 1;
+        }
+      }
+    }
+    return count;
+  }, [artifact]);
   const inlineHistoricalThreads = useMemo(
     () => normalizedThreads.filter((thread) => isHistoricalThread(thread, currentRevisionId)),
     [currentRevisionId, normalizedThreads],
@@ -1955,6 +1975,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
               onDecisionChange={handleDiffDecision}
               onRejectAll={handleRejectAllDiffs}
               onApply={handleApplyRevision}
+              uncertainCommentCount={uncertainCommentCount}
             />
           </section>
         ) : null}

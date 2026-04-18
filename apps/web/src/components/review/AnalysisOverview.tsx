@@ -51,16 +51,12 @@ function humanVoiceScore(aiLikelihood: number | null | undefined): number | null
   return Math.max(0, Math.min(1, 1 - aiLikelihood));
 }
 
-const OVERALL_SCORE_EXPLANATION =
-  "Overall score starts at 72 and is adjusted by fact-check confidence (+), AI-likelihood penalty (−), and research overlap (−). Higher is better.";
-const NOVELTY_SCORE_EXPLANATION =
-  "Originality signal = 1 − the highest topical overlap detected with related articles found during research. Higher means more differentiated framing.";
-const VOICE_SCORE_EXPLANATION =
-  "Voice signal = 1 − AI-likelihood estimated by the Human Voice agent. Higher means fewer AI-pattern tells in the draft.";
+const FACT_CHECK_PLACEHOLDER = "Run Fact Check to populate this section.";
+const HUMAN_VOICE_PLACEHOLDER = "Run Human Voice to estimate AI-writing patterns.";
 
 function humanVoiceHeadline(score: number | null): string {
   if (score === null) {
-    return "Human voice analysis pending.";
+    return HUMAN_VOICE_PLACEHOLDER;
   }
   if (score >= 0.85) {
     return "Strong human voice with only light AI-pattern signals.";
@@ -74,7 +70,14 @@ function humanVoiceHeadline(score: number | null): string {
   return "Heavy AI-pattern signals surfaced in the current draft.";
 }
 
-function overlapHeadline(overlapCount: number, noveltyScore: number | null | undefined): string {
+function overlapHeadline(
+  overlapCount: number,
+  noveltyScore: number | null | undefined,
+  factCheckRan: boolean,
+): string {
+  if (!factCheckRan) {
+    return "Run Fact Check to surface overlapping articles.";
+  }
   if (overlapCount === 0) {
     return "No significant overlap detected in the research pass.";
   }
@@ -118,8 +121,64 @@ function findAgentResult(
   return fallback;
 }
 
+function hasAgentRun(
+  agentResults: ArtifactAgentResult[],
+  agentId: string,
+  documentRevisionId?: string | null,
+): boolean {
+  return findAgentResult(agentResults, agentId, documentRevisionId) !== null;
+}
+
 function normalizeSummary(value: string | null | undefined): string {
   return (value ?? "").trim().toLowerCase();
+}
+
+function humanVoiceDrag(aiLikelihood: number | null | undefined): string {
+  if (aiLikelihood === null || aiLikelihood === undefined) {
+    return "no estimate";
+  }
+  if (aiLikelihood >= 0.7) {
+    return "strong drag";
+  }
+  if (aiLikelihood >= 0.4) {
+    return "moderate drag";
+  }
+  if (aiLikelihood > 0) {
+    return "minor drag";
+  }
+  return "no drag";
+}
+
+function buildScoreBreakdown(
+  summary: ArtifactSummary,
+  overlapCount: number,
+  factCheckRan: boolean,
+  aiLikelihoodRan: boolean,
+): string[] {
+  const lines = ["Baseline 72."];
+  if (aiLikelihoodRan) {
+    const aiPct = formatPercent(summary.ai_likelihood);
+    lines.push(`Human Voice: ${aiPct} AI likelihood (${humanVoiceDrag(summary.ai_likelihood)}).`);
+  } else {
+    lines.push("Human Voice: not run — no AI-pattern drag applied.");
+  }
+  if (factCheckRan) {
+    const novelty = summary.novelty_score;
+    if (overlapCount > 0 && novelty !== null && novelty !== undefined) {
+      const articleLabel = overlapCount === 1 ? "article" : "articles";
+      lines.push(
+        `Fact Check: ${overlapCount} overlapping ${articleLabel} (${formatPercent(novelty)} originality).`,
+      );
+    } else {
+      lines.push("Fact Check: no overlapping articles — no overlap penalty.");
+    }
+  } else {
+    lines.push("Fact Check: not run — no research bonus or overlap penalty applied.");
+  }
+  if (!factCheckRan && !aiLikelihoodRan) {
+    lines.push("Run Fact Check and Human Voice for a meaningful score.");
+  }
+  return lines;
 }
 
 export function AnalysisOverview({
@@ -133,60 +192,66 @@ export function AnalysisOverview({
   }
 
   const overview = reviewSummary;
+  const factCheckRan = hasAgentRun(agentResults, "fact_check", documentRevisionId);
+  const aiLikelihoodRan = hasAgentRun(agentResults, "ai_likelihood", documentRevisionId);
   const aiResult = findAgentResult(agentResults, "ai_likelihood", documentRevisionId);
-  const voiceScore = humanVoiceScore(summary.ai_likelihood);
-  const overlapItems = overview?.overlap_items ?? [];
+
+  const voiceScore = aiLikelihoodRan ? humanVoiceScore(summary.ai_likelihood) : null;
+  const voiceFindingsCount = aiResult?.findings.length ?? 0;
+  const overlapItems = factCheckRan ? overview?.overlap_items ?? [] : [];
   const structuralCompleteness = overview?.structural_completeness;
-  const voiceFindings = aiResult
-    ? [...aiResult.findings]
-        .sort((left, right) => right.confidence - left.confidence)
-        .map((finding) => finding.rationale.trim())
-        .filter(Boolean)
-        .slice(0, 2)
-    : [];
 
-  if (voiceFindings.length === 0 && aiResult?.summary?.trim()) {
-    voiceFindings.push(aiResult.summary.trim());
-  }
-  if (voiceFindings.length === 0) {
-    voiceFindings.push("No AI writing patterns detected.");
-  }
+  const tlDr = factCheckRan
+    ? overview?.tl_dr || summary.tl_dr || overview?.content_summary || null
+    : null;
 
-  const tlDr = overview?.tl_dr || summary.tl_dr || overview?.content_summary || "Pending";
-  const researchSummaryRaw = overview?.research_summary?.trim() ?? "";
+  const researchSummaryRaw = factCheckRan ? overview?.research_summary?.trim() ?? "" : "";
   const researchSummaryNormalized = normalizeSummary(researchSummaryRaw);
   const researchSummary =
     researchSummaryRaw &&
-    researchSummaryNormalized !== normalizeSummary(tlDr) &&
+    researchSummaryNormalized !== normalizeSummary(tlDr ?? "") &&
     researchSummaryNormalized !== normalizeSummary(summary.verdict)
       ? researchSummaryRaw
       : null;
-  const audienceSummary = overview?.inferred_audience || summary.audience_summary || "Pending";
-  const articleProfileItems = [
-    titleCase(overview?.article_format),
-    titleCase(overview?.reading_difficulty),
+
+  const audienceSummary = factCheckRan
+    ? overview?.inferred_audience || summary.audience_summary || null
+    : null;
+
+  const articleProfilePills = factCheckRan
+    ? [titleCase(overview?.article_format), titleCase(overview?.reading_difficulty)].filter(
+        (item): item is string => Boolean(item),
+      )
+    : [];
+
+  const textMetricPills = [
     formatCount(overview?.word_count ?? summary.word_count),
     formatReadingTime(overview?.estimated_reading_time_minutes ?? summary.estimated_reading_time_minutes),
-  ].filter((item): item is string => Boolean(item));
-
-  const completenessItems: Array<{ label: string; complete: boolean; tooltip: string }> = [
-    {
-      label: "Intro",
-      complete: structuralCompleteness?.has_intro ?? false,
-      tooltip: "Detected by checking whether the opening source block contains non-empty text.",
-    },
-    {
-      label: "Headings",
-      complete: structuralCompleteness?.has_headings ?? false,
-      tooltip: "Detected by checking whether the draft contains at least one heading in the source blocks.",
-    },
-    {
-      label: "Conclusion",
-      complete: structuralCompleteness?.has_conclusion ?? false,
-      tooltip:
-        'Detected by scanning the closing block for phrases like "in summary", "overall", "bottom line", "in conclusion", or "to sum up". A section titled "Conclusion" alone will not match this heuristic.',
-    },
   ];
+
+  const completenessItems: Array<{ label: string; complete: boolean; tooltip: string }> = factCheckRan
+    ? [
+        {
+          label: "Intro",
+          complete: structuralCompleteness?.has_intro ?? false,
+          tooltip: "Detected by checking whether the opening source block contains non-empty text.",
+        },
+        {
+          label: "Headings",
+          complete: structuralCompleteness?.has_headings ?? false,
+          tooltip: "Detected by checking whether the draft contains at least one heading in the source blocks.",
+        },
+        {
+          label: "Conclusion",
+          complete: structuralCompleteness?.has_conclusion ?? false,
+          tooltip:
+            'Detected by scanning the closing block for phrases like "in summary", "overall", "bottom line", "in conclusion", or "to sum up". A section titled "Conclusion" alone will not match this heuristic.',
+        },
+      ]
+    : [];
+
+  const showOverallScore = factCheckRan || aiLikelihoodRan;
+  const scoreBreakdownLines = buildScoreBreakdown(summary, overlapItems.length, factCheckRan, aiLikelihoodRan);
 
   return (
     <section className={styles.analysisOverview} data-testid="analysis-overview">
@@ -196,21 +261,27 @@ export function AnalysisOverview({
           <div className={styles.analysisOverviewHero}>
             <div className={styles.analysisOverviewScorePanel}>
               <div className={styles.metricLabel}>Overall score</div>
-              <div
-                className={styles.analysisOverviewScoreValue}
-                title={OVERALL_SCORE_EXPLANATION}
-                aria-label={`Overall score. ${OVERALL_SCORE_EXPLANATION}`}
-              >
-                {summary.overall_score != null ? `${summary.overall_score}%` : "\u2014"}
+              <div className={styles.analysisOverviewScoreValue}>
+                {showOverallScore && summary.overall_score != null ? `${summary.overall_score}%` : "\u2014"}
               </div>
             </div>
-            <p className={styles.analysisOverviewVerdict}>{summary.verdict || "Analysis completed."}</p>
+            <div className={styles.analysisOverviewVerdict} data-testid="overall-score-breakdown">
+              {scoreBreakdownLines.map((line) => (
+                <p key={line} className={styles.analysisOverviewSupportLine}>
+                  {line}
+                </p>
+              ))}
+            </div>
           </div>
         </div>
 
         <div className={styles.analysisOverviewTextBlock}>
           <div className={styles.metricLabel}>TL;DR</div>
-          <p className={styles.analysisOverviewBody}>{tlDr}</p>
+          {tlDr ? (
+            <p className={styles.analysisOverviewBody}>{tlDr}</p>
+          ) : (
+            <p className={styles.analysisOverviewSupportLine}>{FACT_CHECK_PLACEHOLDER}</p>
+          )}
         </div>
 
         <div className={styles.analysisOverviewGrid}>
@@ -219,38 +290,58 @@ export function AnalysisOverview({
               <div className={styles.metricLabel}>Article profile</div>
             </div>
             <div className={styles.analysisOverviewPills}>
-              {articleProfileItems.map((item) => (
+              {textMetricPills.map((item) => (
                 <span key={item} className={styles.pill}>
                   {item}
                 </span>
               ))}
             </div>
-            <div className={styles.analysisOverviewPills}>
-              {completenessItems.map((item) => (
-                <span
-                  key={item.label}
-                  className={styles.pill}
-                  title={item.tooltip}
-                  aria-label={`${item.label}: ${item.complete ? "present" : "needs work"}. ${item.tooltip}`}
-                >
-                  {item.label}: {item.complete ? "present" : "needs work"}
-                </span>
-              ))}
-            </div>
+            {factCheckRan ? (
+              <>
+                {articleProfilePills.length > 0 ? (
+                  <div className={styles.analysisOverviewPills}>
+                    {articleProfilePills.map((item) => (
+                      <span key={item} className={styles.pill}>
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                <div className={styles.analysisOverviewPills}>
+                  {completenessItems.map((item) => (
+                    <span
+                      key={item.label}
+                      className={styles.pill}
+                      title={item.tooltip}
+                      aria-label={`${item.label}: ${item.complete ? "present" : "needs work"}. ${item.tooltip}`}
+                    >
+                      {item.label}: {item.complete ? "present" : "needs work"}
+                    </span>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className={styles.analysisOverviewSupportLine}>
+                Run Fact Check to profile the article (format, density, and structural coverage).
+              </p>
+            )}
           </article>
 
           <article className={styles.analysisOverviewCard} data-testid="overlap-research-card">
             <div className={styles.analysisOverviewCardHeader}>
               <div className={styles.metricLabel}>Overlap research</div>
-              <span
-                className={styles.analysisOverviewMeta}
-                title={NOVELTY_SCORE_EXPLANATION}
-                aria-label={`Originality signal ${formatPercent(summary.novelty_score)}. ${NOVELTY_SCORE_EXPLANATION}`}
-              >
-                Originality signal {formatPercent(summary.novelty_score)}
+              <span className={styles.analysisOverviewMeta}>
+                Originality signal {factCheckRan ? formatPercent(summary.novelty_score) : "\u2014"}
               </span>
             </div>
-            <p className={styles.analysisOverviewBody}>{overlapHeadline(overlapItems.length, summary.novelty_score)}</p>
+            <p className={styles.analysisOverviewBody}>
+              {overlapHeadline(overlapItems.length, summary.novelty_score, factCheckRan)}
+            </p>
+            {factCheckRan ? (
+              <p className={styles.analysisOverviewSupportLine}>
+                From Fact Check&rsquo;s web-research pass. Lower originality means the draft restates ideas already widely covered.
+              </p>
+            ) : null}
             {overlapItems.length > 0 ? (
               <ul className={styles.analysisOverviewLinks}>
                 {overlapItems.map((item) => (
@@ -268,29 +359,29 @@ export function AnalysisOverview({
           <article className={styles.analysisOverviewCard} data-testid="human-voice-card">
             <div className={styles.analysisOverviewCardHeader}>
               <div className={styles.metricLabel}>Human voice</div>
-              <span
-                className={styles.analysisOverviewMeta}
-                title={VOICE_SCORE_EXPLANATION}
-                aria-label={`Voice signal ${formatPercent(voiceScore)}. ${VOICE_SCORE_EXPLANATION}`}
-              >
-                Voice signal {formatPercent(voiceScore)}
-              </span>
+              <span className={styles.analysisOverviewMeta}>Voice signal {formatPercent(voiceScore)}</span>
             </div>
             <p className={styles.analysisOverviewBody}>{humanVoiceHeadline(voiceScore)}</p>
-            <div className={styles.analysisOverviewSupportingCopy}>
-              {voiceFindings.map((finding, index) => (
-                <p key={`${index}-${finding.slice(0, 40)}`} className={styles.analysisOverviewSupportLine}>
-                  {finding}
-                </p>
-              ))}
-            </div>
+            <p className={styles.analysisOverviewSupportLine}>
+              {aiLikelihoodRan
+                ? voiceFindingsCount > 0
+                  ? `From Human Voice. ${voiceFindingsCount} AI-pattern signal${
+                      voiceFindingsCount === 1 ? "" : "s"
+                    } flagged as inline comments below.`
+                  : "From Human Voice. No AI-pattern signals were flagged."
+                : HUMAN_VOICE_PLACEHOLDER}
+            </p>
           </article>
 
           <article className={styles.analysisOverviewCard}>
             <div className={styles.analysisOverviewCardHeader}>
               <div className={styles.metricLabel}>Audience</div>
             </div>
-            <p className={styles.analysisOverviewBody}>{audienceSummary}</p>
+            {audienceSummary ? (
+              <p className={styles.analysisOverviewBody}>{audienceSummary}</p>
+            ) : (
+              <p className={styles.analysisOverviewSupportLine}>{FACT_CHECK_PLACEHOLDER}</p>
+            )}
           </article>
         </div>
 

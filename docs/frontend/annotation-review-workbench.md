@@ -14,7 +14,9 @@ Provide a high-legibility review surface where users can inspect source text, wa
   - Full-width activity list inside the running view so users can inspect retries, resumptions, and failures without leaving Phase 2
 - Analysis overview
   - Lives above the source text pane in Phase 3 only
-  - Combines the old metrics row and review summary into one section with overall score + verdict, TL;DR, article profile, overlap research, Human voice narrative context, audience, and research summary
+  - Combines the overall score with an inline contributor breakdown, TL;DR, article profile, overlap research, Human voice signal, audience, and research summary
+  - Fact-Check-backed fields (TL;DR, audience, article format/density, structural completeness, overlap research, originality signal) render a "Run Fact Check to populate this section" placeholder when the Fact Check agent has not run for the current revision; the Human voice card renders a similar placeholder when Human Voice has not run
+  - The overall score is paired with an inline breakdown ("Baseline 72. Human Voice: … Fact Check: …") rather than a hidden tooltip, so a reader can see which agents contributed and which are still pending
 - Research panel
   - Lives below the analysis overview and above the workspace in Phase 3
   - Starts compact and prompt-focused, with a single editable prompt field and one research action

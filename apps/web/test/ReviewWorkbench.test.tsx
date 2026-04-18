@@ -1651,6 +1651,28 @@ describe("ReviewWorkbench", () => {
     expect(screen.getByTestId("human-voice-card")).toHaveTextContent("Voice signal 100%");
   });
 
+  it("gates fact-check-only overview fields behind a run-fact-check placeholder", () => {
+    const hvOnlyArtifact = structuredClone(mockArtifact);
+    hvOnlyArtifact.agent_results = hvOnlyArtifact.agent_results.filter(
+      (result) => result.agent_id !== "fact_check",
+    );
+
+    render(<ReviewWorkbench initialArtifact={hvOnlyArtifact} />);
+
+    const overlapCard = screen.getByTestId("overlap-research-card");
+    expect(overlapCard).toHaveTextContent("Originality signal —");
+    expect(overlapCard).toHaveTextContent("Run Fact Check to surface overlapping articles.");
+
+    const breakdown = screen.getByTestId("overall-score-breakdown");
+    expect(breakdown).toHaveTextContent("Baseline 72.");
+    expect(breakdown).toHaveTextContent(
+      "Fact Check: not run — no research bonus or overlap penalty applied.",
+    );
+
+    const placeholders = screen.getAllByText("Run Fact Check to populate this section.");
+    expect(placeholders.length).toBeGreaterThanOrEqual(2);
+  });
+
   it("renders fact-check details in the comment thread rail", () => {
     render(<ReviewWorkbench initialArtifact={mockArtifact} />);
 

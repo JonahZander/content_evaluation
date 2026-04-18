@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+from uuid import UUID
+
 import pytest
 
 from content_evaluation.domain.exceptions import ValidationError
 from content_evaluation.domain.models import (
+    AgentCategory,
+    AnalysisArtifact,
+    ArtifactComment,
     ArtifactDiffItem,
     ArtifactDiffReview,
+    ArtifactReply,
+    AuthorType,
     OrchestratorBackend,
     ReviewState,
     RevisedMarkdownDiffDecision,
@@ -40,6 +47,46 @@ def _orchestrator() -> RunOrchestrator:
         OrchestratorBackend.LANGGRAPH,
         deep_research_provider=MockDeepResearchProvider(),
     )
+
+
+async def _build_editorial_artifact(orchestrator: RunOrchestrator) -> AnalysisArtifact:
+    """Create and process one minimal editorial artifact for revision tests."""
+
+    input_data = RunInput(
+        source_type=SourceType.TEXT,
+        source_label="Draft",
+        title="Draft",
+        text="Alpha paragraph.\n\nBeta paragraph.",
+        selected_agents=["editorial"],
+    )
+    artifact = await orchestrator.create_run(input_data)
+    await orchestrator.process_run(artifact.artifact_id, input_data)
+    return await orchestrator._require_artifact(artifact.artifact_id)  # noqa: SLF001
+
+
+async def _capture_revision_payload(
+    orchestrator: RunOrchestrator,
+    artifact_id: UUID,
+) -> list[dict[str, object]]:
+    """Capture the accepted-suggestion payload sent to revised-markdown generation."""
+
+    captured: list[list[dict[str, object]]] = []
+    original = orchestrator._analysis_provider.generate_revised_markdown  # noqa: SLF001
+
+    async def _spy(
+        original_markdown: str,
+        accepted_suggestions: list[dict[str, object]],
+        mode: RevisionMode,
+        **kwargs: object,
+    ) -> dict[str, object]:
+        captured.append(accepted_suggestions)
+        return await original(original_markdown, accepted_suggestions, mode, **kwargs)
+
+    orchestrator._analysis_provider.generate_revised_markdown = _spy  # type: ignore[method-assign]  # noqa: SLF001
+    await orchestrator.generate_revised_markdown(artifact_id, mode=RevisionMode.SURGICAL)
+
+    assert captured, "expected provider to be invoked"
+    return captured[0]
 
 
 def _render_applied_markdown(diff_review: ArtifactDiffReview) -> str:
@@ -183,6 +230,164 @@ async def test_generate_revised_markdown_forwards_comment_sources_to_provider() 
     payload = captured[0]
     assert payload, "expected at least one accepted suggestion"
     assert payload[0].get("sources") == [citation]
+
+
+@pytest.mark.asyncio
+async def test_generate_revised_markdown_forwards_human_replies_as_reviewer_notes() -> None:
+    """Forward human replies on accepted agent comments as reviewer notes."""
+
+    orchestrator = _orchestrator()
+    stored = await _build_editorial_artifact(orchestrator)
+    assert stored.document is not None
+
+    comment = stored.threads[0].comments[0]
+    comment.review_state = ReviewState.ACCEPTED
+    comment.replies.extend(
+        [
+            ArtifactReply(
+                comment_id=comment.id,
+                author_type=AuthorType.HUMAN,
+                author_label="Workspace reviewer",
+                body="Please keep the phrase plain language intact.",
+            ),
+            ArtifactReply(
+                comment_id=comment.id,
+                author_type=AuthorType.HUMAN,
+                author_label="Workspace reviewer",
+                body="Keep the subheading short.",
+            ),
+        ]
+    )
+    await orchestrator._repository.update_artifact(stored)  # noqa: SLF001
+
+    payload = await _capture_revision_payload(orchestrator, stored.artifact_id)
+
+    assert payload[0]["comment_id"] == comment.id
+    assert payload[0]["reviewer_notes"] == [
+        "Please keep the phrase plain language intact.",
+        "Keep the subheading short.",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_generate_revised_markdown_forwards_standalone_human_comments() -> None:
+    """Forward standalone human comments as direct reviewer instructions."""
+
+    orchestrator = _orchestrator()
+    stored = await _build_editorial_artifact(orchestrator)
+    assert stored.document is not None
+
+    stored.threads[0].comments[0].review_state = ReviewState.ACCEPTED
+    human_comment = ArtifactComment(
+        artifact_id=stored.artifact_id,
+        anchor_id=stored.threads[0].anchor.id,
+        document_revision_id=stored.document.revision_id,
+        author_type=AuthorType.HUMAN,
+        author_label="Workspace reviewer",
+        category=AgentCategory.HUMAN,
+        body="Replace this with a direct call-to-action.",
+    )
+    stored.threads[0].comments.append(human_comment)
+    await orchestrator._repository.update_artifact(stored)  # noqa: SLF001
+
+    payload = await _capture_revision_payload(orchestrator, stored.artifact_id)
+    human_item = next(item for item in payload if item["comment_id"] == human_comment.id)
+
+    assert human_item["comment"] == "Replace this with a direct call-to-action."
+    assert human_item["suggestion"] == ""
+    assert human_item["reviewer_notes"] == []
+    assert human_item["author_label"] == "Workspace reviewer"
+
+
+@pytest.mark.asyncio
+async def test_generate_revised_markdown_skips_replies_under_rejected_or_uncertain_comments() -> None:
+    """Ignore human replies that sit under non-accepted agent comments."""
+
+    orchestrator = _orchestrator()
+    stored = await _build_editorial_artifact(orchestrator)
+    assert stored.document is not None
+
+    accepted_comment = stored.threads[0].comments[0]
+    accepted_comment.review_state = ReviewState.ACCEPTED
+    rejected_comment = ArtifactComment(
+        artifact_id=stored.artifact_id,
+        anchor_id=stored.threads[0].anchor.id,
+        document_revision_id=stored.document.revision_id,
+        author_type=AuthorType.AGENT,
+        author_label="editorial agent",
+        category=AgentCategory.EDITORIAL,
+        body="Rejected note.",
+        suggestion="Rejected suggestion.",
+        review_state=ReviewState.REJECTED,
+        replies=[
+            ArtifactReply(
+                comment_id="placeholder",
+                author_type=AuthorType.HUMAN,
+                author_label="Workspace reviewer",
+                body="Do not forward this rejected reply.",
+            )
+        ],
+    )
+    rejected_comment.replies[0].comment_id = rejected_comment.id
+    uncertain_comment = ArtifactComment(
+        artifact_id=stored.artifact_id,
+        anchor_id=stored.threads[0].anchor.id,
+        document_revision_id=stored.document.revision_id,
+        author_type=AuthorType.AGENT,
+        author_label="editorial agent",
+        category=AgentCategory.EDITORIAL,
+        body="Uncertain note.",
+        suggestion="Uncertain suggestion.",
+        review_state=ReviewState.UNCERTAIN,
+        replies=[
+            ArtifactReply(
+                comment_id="placeholder",
+                author_type=AuthorType.HUMAN,
+                author_label="Workspace reviewer",
+                body="Do not forward this uncertain reply.",
+            )
+        ],
+    )
+    uncertain_comment.replies[0].comment_id = uncertain_comment.id
+    stored.threads[0].comments.extend([rejected_comment, uncertain_comment])
+    await orchestrator._repository.update_artifact(stored)  # noqa: SLF001
+
+    payload = await _capture_revision_payload(orchestrator, stored.artifact_id)
+
+    payload_ids = {item["comment_id"] for item in payload}
+    reviewer_notes = [note for item in payload for note in item.get("reviewer_notes", [])]
+
+    assert accepted_comment.id in payload_ids
+    assert rejected_comment.id not in payload_ids
+    assert uncertain_comment.id not in payload_ids
+    assert "Do not forward this rejected reply." not in reviewer_notes
+    assert "Do not forward this uncertain reply." not in reviewer_notes
+
+
+@pytest.mark.asyncio
+async def test_generate_revised_markdown_skips_empty_human_comments() -> None:
+    """Skip standalone human comments whose bodies compact down to empty text."""
+
+    orchestrator = _orchestrator()
+    stored = await _build_editorial_artifact(orchestrator)
+    assert stored.document is not None
+
+    stored.threads[0].comments[0].review_state = ReviewState.ACCEPTED
+    empty_comment = ArtifactComment(
+        artifact_id=stored.artifact_id,
+        anchor_id=stored.threads[0].anchor.id,
+        document_revision_id=stored.document.revision_id,
+        author_type=AuthorType.HUMAN,
+        author_label="Workspace reviewer",
+        category=AgentCategory.HUMAN,
+        body=" \n\t ",
+    )
+    stored.threads[0].comments.append(empty_comment)
+    await orchestrator._repository.update_artifact(stored)  # noqa: SLF001
+
+    payload = await _capture_revision_payload(orchestrator, stored.artifact_id)
+
+    assert all(item["comment_id"] != empty_comment.id for item in payload)
 
 
 @pytest.mark.asyncio

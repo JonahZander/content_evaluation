@@ -117,6 +117,7 @@ class RevisionSuggestionInput:
     comment: str
     suggestion: str
     sources: tuple[str, ...]
+    reviewer_notes: tuple[str, ...]
     author_label: str
     document_revision_id: str | None
     sort_key: tuple[int, int, int, str, datetime, str]
@@ -250,7 +251,11 @@ class RunOrchestrator:
                 url=input_data.url,
             ),
             run_config=RunConfig(
-                selected_agents=input_data.selected_agents if input_data.selected_agents is not None else _default_agent_ids(),
+                selected_agents=(
+                    input_data.selected_agents
+                    if input_data.selected_agents is not None
+                    else _default_agent_ids()
+                ),
                 resolved_agents=resolved_agent_ids,
                 runtime_mode=self._runtime_mode,
                 orchestrator_backend=self._orchestrator_backend,
@@ -451,6 +456,7 @@ class RunOrchestrator:
                     "comment": item.comment,
                     "suggestion": item.suggestion,
                     "sources": list(item.sources),
+                    "reviewer_notes": list(item.reviewer_notes),
                     "author_label": item.author_label,
                 }
                 for item in accepted_items
@@ -2602,7 +2608,7 @@ def _coerce_int(value: object) -> int:
 
 
 def _accepted_revision_inputs(artifact: AnalysisArtifact) -> list[RevisionSuggestionInput]:
-    """Return accepted agent suggestions in stable article order."""
+    """Return current-revision rewrite inputs in stable article order."""
 
     if artifact.document is None:
         return []
@@ -2613,21 +2619,54 @@ def _accepted_revision_inputs(artifact: AnalysisArtifact) -> list[RevisionSugges
     for thread in artifact.threads:
         if thread.document_revision_id not in {None, current_revision_id}:
             continue
+        primary = thread.anchor.segments[0]
         for comment in thread.comments:
-            if comment.author_type is not AuthorType.AGENT:
-                continue
-            if comment.review_state is not ReviewState.ACCEPTED or not comment.suggestion:
-                continue
             if comment.document_revision_id not in {None, current_revision_id}:
                 continue
-            primary = thread.anchor.segments[0]
+            if comment.author_type is AuthorType.AGENT:
+                if comment.review_state is not ReviewState.ACCEPTED or not comment.suggestion:
+                    continue
+                reviewer_notes: list[str] = []
+                for reply in comment.replies:
+                    if reply.author_type is not AuthorType.HUMAN:
+                        continue
+                    compacted_body = _compact_text(reply.body)
+                    if compacted_body:
+                        reviewer_notes.append(compacted_body)
+                items.append(
+                    RevisionSuggestionInput(
+                        comment_id=comment.id,
+                        quote=_compact_text(thread.anchor.quote),
+                        comment=_compact_text(comment.body),
+                        suggestion=_compact_text(comment.suggestion),
+                        sources=tuple(comment.sources),
+                        reviewer_notes=tuple(reviewer_notes),
+                        author_label=comment.author_label,
+                        document_revision_id=comment.document_revision_id or thread.document_revision_id,
+                        sort_key=(
+                            1 if thread.anchor.match_kind == ArtifactAnchorMatchKind.SYNTHETIC_UNMATCHED else 0,
+                            block_index_by_id.get(primary.block_id, 10**9),
+                            primary.start_offset,
+                            thread.anchor.id,
+                            comment.created_at,
+                            comment.id,
+                        ),
+                    )
+                )
+                continue
+            if comment.author_type is not AuthorType.HUMAN:
+                continue
+            compacted_body = _compact_text(comment.body)
+            if not compacted_body:
+                continue
             items.append(
                 RevisionSuggestionInput(
                     comment_id=comment.id,
                     quote=_compact_text(thread.anchor.quote),
-                    comment=_compact_text(comment.body),
-                    suggestion=_compact_text(comment.suggestion),
+                    comment=compacted_body,
+                    suggestion="",
                     sources=tuple(comment.sources),
+                    reviewer_notes=(),
                     author_label=comment.author_label,
                     document_revision_id=comment.document_revision_id or thread.document_revision_id,
                     sort_key=(

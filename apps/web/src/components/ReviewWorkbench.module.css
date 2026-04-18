@@ -320,6 +320,24 @@
   transform: none;
 }
 
+.ghostButton:disabled,
+.stateButton:disabled,
+.commentActionButton:disabled,
+.replyDeleteButton:disabled,
+.iconButtonDanger:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+  transform: none;
+}
+
+.toolbarTextarea:disabled,
+.replyInput:disabled,
+.researchPromptInput:disabled {
+  cursor: not-allowed;
+  color: var(--muted);
+  background: rgba(245, 245, 245, 0.82);
+}
+
 .ghostButton {
   background: rgba(255, 255, 255, 0.68);
   color: var(--ink);
@@ -743,6 +761,16 @@
   padding: 14px 22px 18px;
   border-bottom: 1px solid var(--line);
   background: rgba(250, 250, 250, 0.52);
+}
+
+.workbenchLockBanner {
+  margin: 0 0 14px;
+  padding: 10px 16px;
+  border: 1px solid var(--line);
+  background: rgba(250, 250, 250, 0.72);
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.55;
 }
 
 .reviewInlineProgressMeta {

@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import { ReviewWorkbench } from "@/components/ReviewWorkbench";
+import { createRequestTracker } from "@/components/review/request-tracker";
 import type { AnalysisArtifact, ArtifactBlock, ArtifactComment, ArtifactThread } from "@/lib/types";
 import * as api from "@/lib/api";
 import reproDuplicateSections from "./fixtures/repro-duplicate-sections.json";
@@ -1421,6 +1422,60 @@ describe("ReviewWorkbench", () => {
     expect(screen.getByRole("button", { name: "Apply accepted changes" })).toBeDisabled();
   });
 
+  it("locks comment mutations while a revision is being generated", async () => {
+    const deferredRevision = createDeferred<AnalysisArtifact>();
+    vi.mocked(api.generateRevisedMarkdown).mockReturnValueOnce(deferredRevision.promise);
+
+    render(<ReviewWorkbench initialArtifact={mockArtifact} />);
+
+    fireEvent.click(screen.getByTestId("apply-changes-button-bottom"));
+
+    expect(await screen.findByTestId("workbench-lock-banner")).toBeInTheDocument();
+    const acceptButton = screen.getByTestId("review-state-comment-2-accepted");
+    expect(acceptButton).toBeDisabled();
+
+    fireEvent.click(acceptButton);
+
+    expect(api.updateReviewState).not.toHaveBeenCalled();
+  });
+
+  it("keeps the revision response when a blocked mutation is attempted during the wait", async () => {
+    const deferredRevision = createDeferred<AnalysisArtifact>();
+    vi.mocked(api.generateRevisedMarkdown).mockReturnValueOnce(deferredRevision.promise);
+
+    render(<ReviewWorkbench initialArtifact={mockArtifact} />);
+
+    fireEvent.click(screen.getByTestId("apply-changes-button-bottom"));
+    expect(await screen.findByTestId("workbench-lock-banner")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("review-state-comment-2-accepted"));
+    expect(api.updateReviewState).not.toHaveBeenCalled();
+
+    await act(async () => {
+      deferredRevision.resolve(buildArtifactWithDiffReview());
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByTestId("diff-review-shell")).toBeInTheDocument();
+  });
+
+  it("uses a separate request-id counter for revision mutations", () => {
+    const mutationTracker = createRequestTracker();
+    const revisionTracker = createRequestTracker();
+
+    const revisionRequest = revisionTracker.start();
+    mutationTracker.start();
+
+    expect(revisionRequest.signal.aborted).toBe(false);
+    expect(revisionTracker.isCurrent(revisionRequest.requestId)).toBe(true);
+
+    const nextRevisionRequest = revisionTracker.start();
+
+    expect(revisionRequest.signal.aborted).toBe(true);
+    expect(revisionTracker.isCurrent(revisionRequest.requestId)).toBe(false);
+    expect(revisionTracker.isCurrent(nextRevisionRequest.requestId)).toBe(true);
+  });
+
   it("opens rewrite mode with a direction prompt and labels the diff review mode", async () => {
     const generatedArtifact = buildArtifactWithRewriteDiffReview();
     vi.mocked(api.generateRevisedMarkdown).mockResolvedValueOnce(generatedArtifact);
@@ -1537,6 +1592,30 @@ describe("ReviewWorkbench", () => {
 
     expect(screen.queryByTestId("diff-review-shell")).not.toBeInTheDocument();
     expect(screen.getByTestId("review-workbench")).toBeInTheDocument();
+  });
+
+  it("re-enables comment mutations after the revision applies", async () => {
+    const reviewedArtifact = buildArtifactWithReviewedDiffs();
+    vi.mocked(api.generateRevisedMarkdown).mockResolvedValueOnce(reviewedArtifact);
+    vi.mocked(api.applyRevisedMarkdown).mockResolvedValueOnce(buildArtifactAfterAppliedRevision());
+
+    render(<ReviewWorkbench initialArtifact={mockArtifact} />);
+
+    fireEvent.click(screen.getByTestId("apply-changes-button-bottom"));
+
+    expect(await screen.findByTestId("diff-review-shell")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Apply accepted changes" }));
+
+    await waitFor(() => expect(api.applyRevisedMarkdown).toHaveBeenCalledWith(mockArtifact.artifact_id, expect.any(AbortSignal)));
+    const reviewWorkbench = await screen.findByTestId("review-workbench");
+    expect(screen.queryByTestId("workbench-lock-banner")).not.toBeInTheDocument();
+
+    const acceptButton = within(reviewWorkbench).getByTestId("review-state-comment-fact-1-accepted");
+    expect(acceptButton).toBeEnabled();
+
+    fireEvent.click(acceptButton);
+
+    expect(api.updateReviewState).toHaveBeenCalledWith("comment-fact-1", "unreviewed", expect.any(AbortSignal));
   });
 
   it("shares rewrite state between the top and bottom revision actions", () => {
@@ -2031,6 +2110,16 @@ describe("ReviewWorkbench", () => {
     expect(screen.queryByTestId("revised-markdown-local-error")).not.toBeInTheDocument();
   });
 });
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
 function buildOverlapArtifact(): AnalysisArtifact {
   const artifact = structuredClone(mockArtifact);

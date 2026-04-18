@@ -1,9 +1,12 @@
 import styles from "@/components/ReviewWorkbench.module.css";
 import type { SelectionDraft } from "@/lib/types";
 
+const REVIEW_INTERACTIONS_LOCKED_TITLE = "Comment edits are paused while revised markdown is in progress.";
+
 interface SelectionBannerProps {
   selectionDraft: SelectionDraft | null;
   commentDraft: string;
+  locked?: boolean;
   localErrorMessage: string | null;
   onCommentDraftChange: (value: string) => void;
   onSave: () => void;
@@ -13,6 +16,7 @@ interface SelectionBannerProps {
 export function SelectionBanner({
   selectionDraft,
   commentDraft,
+  locked = false,
   localErrorMessage,
   onCommentDraftChange,
   onSave,
@@ -31,6 +35,7 @@ export function SelectionBanner({
           className={styles.toolbarTextarea}
           data-testid="selection-comment-input"
           value={commentDraft}
+          disabled={locked}
           onChange={(event) => onCommentDraftChange(event.target.value)}
           placeholder="Add a reviewer note for this selection"
         />
@@ -40,7 +45,14 @@ export function SelectionBanner({
           </p>
         ) : null}
         <div className={styles.toolbarGroup}>
-          <button className={styles.button} data-testid="selection-comment-save" type="button" onClick={onSave}>
+          <button
+            className={styles.button}
+            data-testid="selection-comment-save"
+            type="button"
+            disabled={locked}
+            title={locked ? REVIEW_INTERACTIONS_LOCKED_TITLE : undefined}
+            onClick={onSave}
+          >
             Save comment
           </button>
           <button className={styles.ghostButton} type="button" onClick={onCancel}>

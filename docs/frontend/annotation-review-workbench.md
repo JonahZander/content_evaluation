@@ -146,6 +146,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - The old single `Generate revised markdown` action is replaced by two explicit actions:
   - `Apply changes` for surgical mode
   - `Rewrite draft` for full-document mode with an optional/required direction prompt in the UI before submit
+- While a revised-markdown request is generating from Phase 3, review-state changes, comment mutations, reply sends, and research submission should lock with a visible inline status banner so the pending revision can transition cleanly into Phase 4.
 - Phase 4 should label which mode produced the candidate revision and surface the rewrite direction when one was supplied.
 - Rewrite-mode Phase 4 may let reviewers switch between side-by-side and inline diff views without changing the underlying candidate revision.
 - Full-document rewrites should default to side-by-side review with one discard action that marks every diff rejected without applying the candidate draft.

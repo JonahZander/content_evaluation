@@ -7,6 +7,7 @@ import { AgentUsageSummary } from "@/components/review/AgentUsageSummary";
 import { AnalysisOverview } from "@/components/review/AnalysisOverview";
 import { CommentRail } from "@/components/review/CommentRail";
 import { DocumentPane } from "@/components/review/DocumentPane";
+import { createRequestTracker } from "@/components/review/request-tracker";
 import { RevisedMarkdownPanel } from "@/components/review/RevisedMarkdownPanel";
 import { ReviewHero } from "@/components/review/ReviewHero";
 import { ReviewToolbar, type ReviewFormState } from "@/components/review/ReviewToolbar";
@@ -90,6 +91,7 @@ const TERMINAL_RUN_STATUSES = new Set<RunStatus>(["completed", "failed", "cancel
 const noop = () => undefined as void;
 const emptyAnchorThreadMap = new Map<string, { colors: string[] }>();
 const emptyReplyDrafts: Record<string, string> = {};
+const REVIEW_INTERACTIONS_LOCKED_TITLE = "Comment edits are paused while revised markdown is in progress.";
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
@@ -143,8 +145,8 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   const queuedRefreshArtifactIdRef = useRef<string | null>(null);
   const submissionAbortControllerRef = useRef<AbortController | null>(null);
   const submissionRequestIdRef = useRef(0);
-  const mutationAbortControllerRef = useRef<AbortController | null>(null);
-  const mutationRequestIdRef = useRef(0);
+  const mutationRequestTrackerRef = useRef(createRequestTracker());
+  const revisionRequestTrackerRef = useRef(createRequestTracker());
   const sessionStorageWriteTimeoutRef = useRef<number | null>(null);
   const lastStoredWorkbenchStateRef = useRef<string | null>(null);
   const [isQueuingResearch, setIsQueuingResearch] = useState(false);
@@ -164,15 +166,19 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   }
 
   function startMutationRequest(): { signal: AbortSignal; requestId: number } {
-    mutationAbortControllerRef.current?.abort();
-    const controller = new AbortController();
-    mutationAbortControllerRef.current = controller;
-    mutationRequestIdRef.current += 1;
-    return { signal: controller.signal, requestId: mutationRequestIdRef.current };
+    return mutationRequestTrackerRef.current.start();
   }
 
   function isCurrentMutationRequest(requestId: number): boolean {
-    return mutationRequestIdRef.current === requestId;
+    return mutationRequestTrackerRef.current.isCurrent(requestId);
+  }
+
+  function startRevisionRequest(): { signal: AbortSignal; requestId: number } {
+    return revisionRequestTrackerRef.current.start();
+  }
+
+  function isCurrentRevisionRequest(requestId: number): boolean {
+    return revisionRequestTrackerRef.current.isCurrent(requestId);
   }
 
   function setIntakeLocalError(
@@ -205,7 +211,8 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
   useEffect(() => {
     return () => {
       submissionAbortControllerRef.current?.abort();
-      mutationAbortControllerRef.current?.abort();
+      mutationRequestTrackerRef.current.abort();
+      revisionRequestTrackerRef.current.abort();
     };
   }, []);
 
@@ -587,6 +594,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     && diffReview === null
     && !isGeneratingRevision
     && !isApplyingRevision;
+  const reviewInteractionsLocked = isGeneratingRevision || isApplyingRevision;
   const reviewProgress = useMemo(() => {
     const revisionId = artifact?.document?.revision_id;
     if (!artifact || revisionId == null) return null;
@@ -1121,6 +1129,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     if (artifact === null || selectionDraft === null || !commentDraft.trim()) {
       return;
     }
+    if (reviewInteractionsLocked) {
+      return;
+    }
     setReviewLocalError("selectionComment", null);
     const { signal, requestId } = startMutationRequest();
     try {
@@ -1158,6 +1169,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
 
   async function handleReply(comment: ArtifactComment) {
     if (artifact === null) {
+      return;
+    }
+    if (reviewInteractionsLocked) {
       return;
     }
     const body = replyDrafts[comment.id]?.trim();
@@ -1223,6 +1237,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     if (artifact === null) {
       return;
     }
+    if (reviewInteractionsLocked) {
+      return;
+    }
     const trimmedPrompt = prompt.trim();
     if (!trimmedPrompt) {
       return;
@@ -1266,6 +1283,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     if (artifact === null) {
       return;
     }
+    if (reviewInteractionsLocked) {
+      return;
+    }
     setThreadActionLocalError(commentId, null);
     const { signal, requestId } = startMutationRequest();
     try {
@@ -1286,6 +1306,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
 
   async function handleReviewState(commentId: string, reviewState: ReviewState) {
     if (artifact === null) {
+      return;
+    }
+    if (reviewInteractionsLocked) {
       return;
     }
     setThreadActionLocalError(commentId, null);
@@ -1314,6 +1337,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     if (artifact === null || !editingBody.trim()) {
       return;
     }
+    if (reviewInteractionsLocked) {
+      return;
+    }
     setThreadActionLocalError(commentId, null);
     const { signal, requestId } = startMutationRequest();
     try {
@@ -1338,6 +1364,9 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
 
   async function handleDeleteHumanComment(commentId: string) {
     if (artifact === null) {
+      return;
+    }
+    if (reviewInteractionsLocked) {
       return;
     }
     setThreadActionLocalError(commentId, null);
@@ -1389,14 +1418,14 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       message: mode === "rewrite" ? "Generating rewrite draft..." : "Applying accepted changes...",
     });
     setRevisedMarkdownLocalError(null);
-    const { signal, requestId } = startMutationRequest();
+    const { signal, requestId } = startRevisionRequest();
     try {
       const updatedArtifact = await generateRevisedMarkdown({
         artifactId: artifact.artifact_id,
         mode,
         directionPrompt: mode === "rewrite" ? trimmedDirectionPrompt : undefined,
       }, signal);
-      if (!isCurrentMutationRequest(requestId)) {
+      if (!isCurrentRevisionRequest(requestId)) {
         return;
       }
       dispatch({ type: "SET_ARTIFACT", artifact: updatedArtifact });
@@ -1419,7 +1448,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         message,
       });
     } finally {
-      if (isCurrentMutationRequest(requestId)) {
+      if (isCurrentRevisionRequest(requestId)) {
         dispatch({ type: "SET_IS_GENERATING_REVISION", value: false });
       }
     }
@@ -1430,13 +1459,13 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       return;
     }
     setRevisedMarkdownLocalError(null);
-    const { signal, requestId } = startMutationRequest();
+    const { signal, requestId } = startRevisionRequest();
     dispatch({ type: "SET_IS_SAVING_DIFF_REVIEW", value: true });
     try {
       const updatedArtifact = await updateRevisedMarkdownDiffReview(artifact.artifact_id, [
         { diffId, decision },
       ], signal);
-      if (!isCurrentMutationRequest(requestId)) {
+      if (!isCurrentRevisionRequest(requestId)) {
         return;
       }
       dispatch({ type: "SET_ARTIFACT", artifact: updatedArtifact });
@@ -1455,7 +1484,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         message,
       });
     } finally {
-      if (isCurrentMutationRequest(requestId)) {
+      if (isCurrentRevisionRequest(requestId)) {
         dispatch({ type: "SET_IS_SAVING_DIFF_REVIEW", value: false });
       }
     }
@@ -1469,12 +1498,12 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       return;
     }
     setRevisedMarkdownLocalError(null);
-    const { signal, requestId } = startMutationRequest();
+    const { signal, requestId } = startRevisionRequest();
     dispatch({ type: "SET_IS_APPLYING_REVISION", value: true });
     dispatch({ type: "SET_STATUS_MESSAGE", message: "Applying reviewed revised markdown..." });
     try {
       const updatedArtifact = await applyRevisedMarkdown(artifact.artifact_id, signal);
-      if (!isCurrentMutationRequest(requestId)) {
+      if (!isCurrentRevisionRequest(requestId)) {
         return;
       }
       setRewritePromptOpen(false);
@@ -1502,7 +1531,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         message,
       });
     } finally {
-      if (isCurrentMutationRequest(requestId)) {
+      if (isCurrentRevisionRequest(requestId)) {
         dispatch({ type: "SET_IS_APPLYING_REVISION", value: false });
       }
     }
@@ -1513,7 +1542,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       return;
     }
     setRevisedMarkdownLocalError(null);
-    const { signal, requestId } = startMutationRequest();
+    const { signal, requestId } = startRevisionRequest();
     dispatch({ type: "SET_IS_SAVING_DIFF_REVIEW", value: true });
     try {
       const updatedArtifact = await updateRevisedMarkdownDiffReview(
@@ -1521,7 +1550,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         diffReview.diffItems.map((item) => ({ diffId: item.id, decision: "rejected" as const })),
         signal,
       );
-      if (!isCurrentMutationRequest(requestId)) {
+      if (!isCurrentRevisionRequest(requestId)) {
         return;
       }
       dispatch({ type: "SET_ARTIFACT", artifact: updatedArtifact });
@@ -1540,7 +1569,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
         message,
       });
     } finally {
-      if (isCurrentMutationRequest(requestId)) {
+      if (isCurrentRevisionRequest(requestId)) {
         dispatch({ type: "SET_IS_SAVING_DIFF_REVIEW", value: false });
       }
     }
@@ -1551,7 +1580,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
     error: unknown,
     requestId?: number,
   ): Promise<boolean> {
-    if (requestId !== undefined && !isCurrentMutationRequest(requestId)) {
+    if (requestId !== undefined && !isCurrentRevisionRequest(requestId)) {
       return false;
     }
     const message = error instanceof Error ? error.message : "";
@@ -1563,7 +1592,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
 
     try {
       const refreshedArtifact = await fetchArtifact(currentArtifact.artifact_id);
-      if (requestId !== undefined && !isCurrentMutationRequest(requestId)) {
+      if (requestId !== undefined && !isCurrentRevisionRequest(requestId)) {
         return false;
       }
       if (refreshedArtifact.diff_review === null) {
@@ -1584,7 +1613,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
       diff_review: null,
       revised_document: null,
     };
-    if (requestId !== undefined && !isCurrentMutationRequest(requestId)) {
+    if (requestId !== undefined && !isCurrentRevisionRequest(requestId)) {
       return false;
     }
     dispatch({ type: "SET_ARTIFACT", artifact: artifactWithoutDiffReview });
@@ -1744,6 +1773,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
             <SelectionBanner
               selectionDraft={selectionDraft}
               commentDraft={commentDraft}
+              locked={reviewInteractionsLocked}
               localErrorMessage={reviewLocalErrors.selectionComment}
               onCommentDraftChange={(value) => dispatch({ type: "SET_COMMENT_DRAFT", draft: value })}
               onSave={handleCreateComment}
@@ -1817,6 +1847,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
                 key={artifact.artifact_id}
                 initialPrompt={researchPromptSeed}
                 disabled={isSubmitting || isQueuingResearch || isFollowUpRunInProgress}
+                locked={reviewInteractionsLocked}
                 submitting={isSubmitting || isQueuingResearch}
                 localError={reviewLocalErrors.research}
                 onSubmit={handleQueueResearch}
@@ -1833,6 +1864,11 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
             </section>
 
             <section className={styles.workspace} ref={workspaceRef} data-testid="review-workbench">
+              {reviewInteractionsLocked ? (
+                <section className={styles.workbenchLockBanner} role="status" data-testid="workbench-lock-banner">
+                  Revision is being generated. Comment edits are paused until the diff review opens.
+                </section>
+              ) : null}
               {reviewProgress !== null && reviewProgress.total > 0 ? (
                 <div className={styles.reviewProgressBar}>
                   <span className={styles.pill}>
@@ -1860,6 +1896,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
                 replyDrafts={replyDrafts}
                 editingCommentId={editingCommentId}
                 editingBody={editingBody}
+                interactionsLocked={reviewInteractionsLocked}
                 onReplyDraftChange={(commentId, value) => {
                   dispatch({ type: "SET_REPLY_DRAFT", commentId, body: value });
                 }}
@@ -1973,18 +2010,20 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
 function ResearchPanel({
   initialPrompt,
   disabled,
+  locked,
   submitting,
   localError,
   onSubmit,
 }: {
   initialPrompt: string;
   disabled: boolean;
+  locked: boolean;
   submitting: boolean;
   localError: string | null;
   onSubmit: (prompt: string) => void;
 }) {
   const [prompt, setPrompt] = useState(initialPrompt);
-  const canSubmit = prompt.trim().length > 0 && !disabled && !submitting;
+  const canSubmit = prompt.trim().length > 0 && !disabled && !submitting && !locked;
 
   return (
     <section className={styles.researchPanel} data-testid="research-panel">
@@ -2012,6 +2051,7 @@ function ResearchPanel({
             type="button"
             onClick={() => onSubmit(prompt)}
             disabled={!canSubmit}
+            title={locked ? REVIEW_INTERACTIONS_LOCKED_TITLE : undefined}
             data-testid="research-submit-button"
           >
             {submitting ? "Researching..." : "Research"}

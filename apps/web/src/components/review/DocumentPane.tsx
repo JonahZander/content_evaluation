@@ -66,6 +66,7 @@ interface DocumentPaneProps {
   anchorThreadMap: Map<string, AnchorThread>;
   activeDocumentRevisionId: string | null;
   selectionEnabled?: boolean;
+  interactionsLocked?: boolean;
   hoveredAnchorId: string | null;
   hiddenBlockIds?: string[];
   previewPruningEnabled?: boolean;
@@ -94,6 +95,8 @@ interface DocumentPaneProps {
 }
 
 const reviewActions: ReviewState[] = ["accepted", "rejected", "uncertain"];
+const REVIEW_INTERACTIONS_LOCKED_TITLE = "Comment edits are paused while revised markdown is in progress.";
+const REPLY_COMPOSER_LOCKED_COPY = "Comment sending is paused until the diff review opens.";
 
 function renderAnchor(
   segment: TextSegment,
@@ -411,6 +414,7 @@ function ThreadCards({
   activeReplyComposerId,
   editingCommentId,
   editingBody,
+  interactionsLocked,
   onHoverAnchor,
   onReplyDraftChange,
   onToggleReplyComposer,
@@ -432,6 +436,7 @@ function ThreadCards({
   activeReplyComposerId: string | null;
   editingCommentId: string | null;
   editingBody: string;
+  interactionsLocked: boolean;
   onHoverAnchor: (anchorId: string | null) => void;
   onReplyDraftChange: (commentId: string, value: string) => void;
   onToggleReplyComposer: (commentId: string) => void;
@@ -462,6 +467,8 @@ function ThreadCards({
           const isReplyComposerOpen = activeReplyComposerId === comment.id;
           const isAgentComment = comment.author_type === "agent";
           const isResearchComment = comment.category === "research";
+          const isReplyToggleDisabled = interactionsLocked && !isReplyComposerOpen;
+          const isEditDisabled = interactionsLocked && !isEditing;
           const isHistoricalComment = isHistoricalThread
             || (
               activeDocumentRevisionId !== null
@@ -499,11 +506,18 @@ function ThreadCards({
                   <textarea
                     className={styles.replyInput}
                     value={editingBody}
+                    disabled={interactionsLocked}
                     onChange={(event) => onEditingBodyChange(event.target.value)}
                     aria-label="Edit reviewer comment"
                   />
                   <div className={styles.toolbarGroup}>
-                    <button className={styles.button} type="button" onClick={() => onSaveEdit(comment.id)}>
+                    <button
+                      className={styles.button}
+                      type="button"
+                      disabled={interactionsLocked}
+                      title={interactionsLocked ? REVIEW_INTERACTIONS_LOCKED_TITLE : undefined}
+                      onClick={() => onSaveEdit(comment.id)}
+                    >
                       Save
                     </button>
                     <button className={styles.ghostButton} type="button" onClick={onCancelEdit}>
@@ -572,6 +586,8 @@ function ThreadCards({
                       data-testid={`review-state-${comment.id}-${state}`}
                       className={`${styles.stateButton} ${comment.review_state === state ? styles.stateButtonActive : ""}`}
                       type="button"
+                      disabled={interactionsLocked}
+                      title={interactionsLocked ? REVIEW_INTERACTIONS_LOCKED_TITLE : undefined}
                       onClick={() => onReviewState(comment.id, state)}
                     >
                       {state === "accepted" ? "Accept" : state === "rejected" ? "Reject" : "Uncertain"}
@@ -581,6 +597,8 @@ function ThreadCards({
                     className={styles.commentActionButton}
                     data-testid={`reply-toggle-${comment.id}`}
                     type="button"
+                    disabled={isReplyToggleDisabled}
+                    title={isReplyToggleDisabled ? REVIEW_INTERACTIONS_LOCKED_TITLE : undefined}
                     onClick={() => onToggleReplyComposer(comment.id)}
                   >
                     {isReplyComposerOpen ? (isResearchComment ? "Cancel follow-up" : "Cancel comment") : (isResearchComment ? "Ask follow-up" : "Add comment")}
@@ -592,6 +610,8 @@ function ThreadCards({
                     className={styles.ghostButton}
                     data-testid={`edit-comment-${comment.id}`}
                     type="button"
+                    disabled={isEditDisabled}
+                    title={isEditDisabled ? REVIEW_INTERACTIONS_LOCKED_TITLE : undefined}
                     onClick={() => onStartEditing(comment.id, comment.body)}
                   >
                     Edit
@@ -601,6 +621,8 @@ function ThreadCards({
                     data-testid={`delete-comment-${comment.id}`}
                     type="button"
                     aria-label="Delete comment"
+                    disabled={interactionsLocked}
+                    title={interactionsLocked ? REVIEW_INTERACTIONS_LOCKED_TITLE : undefined}
                     onClick={() => onDeleteComment(comment.id)}
                   >
                     <TrashIcon />
@@ -624,6 +646,8 @@ function ThreadCards({
                           data-testid={`delete-reply-${reply.id}`}
                           type="button"
                           aria-label={`Delete reply by ${reply.author_label}`}
+                          disabled={interactionsLocked}
+                          title={interactionsLocked ? REVIEW_INTERACTIONS_LOCKED_TITLE : undefined}
                           onClick={() => onDeleteReply(reply.id, comment.id)}
                         >
                           <TrashIcon />
@@ -642,6 +666,7 @@ function ThreadCards({
                       className={styles.replyInput}
                       data-testid={`reply-input-${comment.id}`}
                       value={replyDrafts[comment.id] ?? ""}
+                      disabled={interactionsLocked}
                       onChange={(event) => onReplyDraftChange(comment.id, event.target.value)}
                       placeholder={isResearchComment ? "Ask a follow-up question about this finding" : "Add a comment on this note"}
                     />
@@ -649,10 +674,15 @@ function ThreadCards({
                       className={styles.button}
                       data-testid={`reply-submit-${comment.id}`}
                       type="button"
+                      disabled={interactionsLocked}
+                      title={interactionsLocked ? REVIEW_INTERACTIONS_LOCKED_TITLE : undefined}
                       onClick={() => onAddReply(comment)}
                     >
                       {isResearchComment ? "Save follow-up" : "Save comment"}
                     </button>
+                    {interactionsLocked ? (
+                      <p className={styles.importGuidance}>{REPLY_COMPOSER_LOCKED_COPY}</p>
+                    ) : null}
                   </div>
                 ) : null}
               </div>
@@ -803,6 +833,7 @@ export function DocumentPane({
   anchorThreadMap,
   activeDocumentRevisionId,
   selectionEnabled = true,
+  interactionsLocked = false,
   hoveredAnchorId,
   hiddenBlockIds = [],
   previewPruningEnabled = false,
@@ -1053,6 +1084,7 @@ export function DocumentPane({
                         activeReplyComposerId={activeReplyComposerId}
                         editingCommentId={editingCommentId}
                         editingBody={editingBody}
+                        interactionsLocked={interactionsLocked}
                         onHoverAnchor={onHoverAnchor}
                         onReplyDraftChange={onReplyDraftChange}
                         onToggleReplyComposer={onToggleReplyComposer}

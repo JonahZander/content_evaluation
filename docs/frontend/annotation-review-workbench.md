@@ -142,6 +142,7 @@ Provide a high-legibility review surface where users can inspect source text, wa
 - The `New analysis` button should only appear once a real artifact exists.
 - Todo export should include only accepted agent suggestions, ordered by where they appear in the article, with a compact checklist followed by short context that includes both the original agent comment and the suggested change.
 - Revised markdown should remain a post-run, reviewer-triggered workflow; the canonical draft changes only after reviewed diff decisions are applied.
+- Reviewer replies on accepted agent comments should be treated as reinforcement or override instructions when revising, and standalone reviewer comments should flow into the revision for their own anchor.
 - The old single `Generate revised markdown` action is replaced by two explicit actions:
   - `Apply changes` for surgical mode
   - `Rewrite draft` for full-document mode with an optional/required direction prompt in the UI before submit

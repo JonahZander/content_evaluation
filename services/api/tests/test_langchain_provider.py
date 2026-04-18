@@ -83,10 +83,13 @@ class _FakeChatModel:
 async def test_langchain_provider_parses_structured_findings(monkeypatch: pytest.MonkeyPatch) -> None:
     """Return structured findings through the LangChain provider contract."""
 
+    import content_evaluation.providers.langchain.client as client_module
+
     provider = LangChainAnalysisProvider(
         Settings(openai_api_key="openai-key", tavily_api_key="tavily-key")
     )
     monkeypatch.setattr(provider, "_build_runnable", lambda route: _FakeStructuredRunnable(_ParsedStructuredResponse()))
+    monkeypatch.setattr(client_module.ChatPromptTemplate, "from_messages", lambda messages: _FakePrompt())
 
     findings = await provider.analyze(
         "editorial",
@@ -153,10 +156,13 @@ async def test_langchain_provider_normalizes_parsed_wrapper_without_warnings(
 ) -> None:
     """Persist plain JSON even when the provider returns a parsed wrapper object."""
 
+    import content_evaluation.providers.langchain.client as client_module
+
     provider = LangChainAnalysisProvider(
         Settings(openai_api_key="openai-key", tavily_api_key="tavily-key")
     )
     monkeypatch.setattr(provider, "_build_runnable", lambda route: _FakeStructuredRunnable())
+    monkeypatch.setattr(client_module.ChatPromptTemplate, "from_messages", lambda messages: _FakePrompt())
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("error")
@@ -317,6 +323,29 @@ def test_rewrite_prompt_instructs_embedding_suggestion_sources() -> None:
         assert "`sources`" in prompt
         assert "inline markdown link" in prompt
         assert "https://example.com/survey" in prompt
+
+
+def test_rewrite_prompt_instructs_honoring_reviewer_notes() -> None:
+    """Keep reviewer-note handling explicit in both rewrite prompt builders."""
+
+    accepted = [
+        {
+            "quote": "Many teams now use AI across most of their publishing workflow.",
+            "comment": "Replace this with a direct call-to-action.",
+            "suggestion": "",
+            "sources": [],
+            "reviewer_notes": ["Please keep the phrase plain language intact."],
+            "author_label": "Workspace reviewer",
+        }
+    ]
+
+    full_prompt = LangChainAnalysisProvider._build_rewrite_prompt("original", accepted)
+    surgical_prompt = LangChainAnalysisProvider._build_surgical_rewrite_prompt("original", accepted)
+
+    for prompt in (full_prompt, surgical_prompt):
+        assert "`reviewer_notes`" in prompt
+        assert "reviewer note wins" in prompt
+        assert "Workspace reviewer" in prompt
 
 
 def test_agent_instructions_define_exact_excerpt_and_ellipsis_rules() -> None:

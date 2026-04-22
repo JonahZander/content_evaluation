@@ -1,4 +1,5 @@
 'use client';
+// Adapted from ReactBits.dev (MIT) — https://reactbits.dev/animations/dot-grid
 import React, { useRef, useEffect, useCallback, useMemo } from 'react';
 import { gsap } from 'gsap';
 import { InertiaPlugin } from 'gsap/InertiaPlugin';

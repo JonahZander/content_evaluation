@@ -1924,13 +1924,13 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
             </section>
 
             {previousDraftSnapshot !== null && historicalSnapshotThreads.length > 0 ? (
-              <section className={styles.historicalSection} data-testid="historical-findings-panel">
-                <div className={styles.historicalSectionHeader}>
-                  <h2 className={styles.sectionTitle}>Original-draft findings</h2>
+              <details className={styles.historicalSection} data-testid="historical-findings-panel">
+                <summary className={styles.historicalSectionSummary}>
+                  <span className={styles.sectionTitle}>Original-draft findings</span>
                   <p className={styles.reviewSummaryText}>
                     These preserved fact-check and research findings no longer map cleanly into the current draft, so they remain attached to the archived previous draft.
                   </p>
-                </div>
+                </summary>
                 <DocumentPane
                   document={previousDraftSnapshot.document}
                   anchors={previousDraftSnapshot.anchors}
@@ -1964,7 +1964,7 @@ export function ReviewWorkbench({ initialArtifact }: ReviewWorkbenchProps) {
                   onDeleteComment={() => undefined}
                   threadActionLocalError={{ commentId: null, message: null }}
                 />
-              </section>
+              </details>
             ) : null}
 
             {artifact !== null && !isFollowUpRunInProgress && isTerminalArtifact && hasAcceptedSuggestions && diffReview === null ? (

@@ -334,7 +334,11 @@ export function AnalysisOverview({
                 Originality signal {factCheckRan ? formatPercent(summary.novelty_score) : "\u2014"}
               </span>
             </div>
-            <p className={styles.analysisOverviewBody}>
+            <p
+              className={
+                factCheckRan ? styles.analysisOverviewBody : styles.analysisOverviewSupportLine
+              }
+            >
               {overlapHeadline(overlapItems.length, summary.novelty_score, factCheckRan)}
             </p>
             {factCheckRan ? (

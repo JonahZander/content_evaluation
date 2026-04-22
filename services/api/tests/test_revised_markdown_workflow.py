@@ -607,3 +607,50 @@ async def test_apply_diff_review_keeps_historical_threads_only_in_snapshot() -> 
             f"but the live article should only contain threads tied to {current_revision_id}"
         )
     assert applied.previous_draft_snapshot is not None
+
+
+@pytest.mark.asyncio
+async def test_apply_diff_review_rewrite_all_pending_uses_full_candidate() -> None:
+    """Apply the full rewrite candidate when no per-diff decisions are recorded."""
+
+    orchestrator = _orchestrator()
+    artifact = await orchestrator.create_run(
+        RunInput(
+            source_type=SourceType.TEXT,
+            source_label="Draft",
+            title="Draft",
+            text="Alpha paragraph.\n\nBeta paragraph.",
+            selected_agents=["editorial"],
+        )
+    )
+    await orchestrator.process_run(
+        artifact.artifact_id,
+        RunInput(
+            source_type=SourceType.TEXT,
+            source_label="Draft",
+            title="Draft",
+            text="Alpha paragraph.\n\nBeta paragraph.",
+            selected_agents=["editorial"],
+        ),
+    )
+
+    stored = await orchestrator._require_artifact(artifact.artifact_id)  # noqa: SLF001
+    stored.threads[0].comments[0].review_state = ReviewState.ACCEPTED
+    await orchestrator._repository.update_artifact(stored)  # noqa: SLF001
+
+    generated = await orchestrator.generate_revised_markdown(
+        artifact.artifact_id,
+        mode=RevisionMode.REWRITE,
+        direction_prompt="Lead with the strongest evidence.",
+    )
+    assert generated.diff_review is not None
+    candidate_markdown = generated.diff_review.candidate_markdown
+    assert all(
+        item.decision is RevisedMarkdownDiffDecision.PENDING
+        for item in generated.diff_review.diff_items
+    )
+
+    applied = await orchestrator.apply_diff_review(artifact.artifact_id)
+
+    assert applied.document is not None
+    assert applied.document.raw_content == candidate_markdown.strip()

@@ -2812,6 +2812,11 @@ def _build_diff_items(original_markdown: str, candidate_markdown: str) -> list[A
 def _apply_diff_review(diff_review: ArtifactDiffReview) -> str:
     """Apply accepted and rejected diff decisions to reconstruct the next working markdown."""
 
+    if diff_review.mode is RevisionMode.REWRITE and all(
+        item.decision is RevisedMarkdownDiffDecision.PENDING for item in diff_review.diff_items
+    ):
+        return diff_review.candidate_markdown.strip()
+
     original_lines = diff_review.original_markdown.splitlines()
     applied_lines: list[str] = []
     cursor = 0

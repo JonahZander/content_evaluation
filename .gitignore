@@ -3,6 +3,7 @@ node_modules/
 .next/
 out/
 *.tsbuildinfo
+apps/web/next-env.d.ts
 services/api/.venv/
 apps/web/.vitest/
 .uv-cache/
@@ -39,6 +40,7 @@ yarn-error.log*
 tmp-artifacts/
 .worktrees/
 services/api/graphs/
+demo-content/
 
 # Playwright MCP cache
 .playwright-mcp/

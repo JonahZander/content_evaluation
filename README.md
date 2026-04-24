@@ -67,3 +67,7 @@ Start here:
 - Repo map: `ARCHITECTURE.md`
 - Agent entrypoint: `AGENTS.md`
 - Documentation index: `docs/index.md`
+
+## License
+
+MIT — see [LICENSE](./LICENSE).

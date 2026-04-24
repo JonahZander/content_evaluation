@@ -1,6 +1,6 @@
 # Known Issues
 
-This file lists open findings from the 2026-03-13 code review, intentional simplifications, and known rough edges. Agents encountering surprising behavior should check here before debugging.
+This file lists open findings from the 2026-03-13 code review, additional findings from a 2026-04-23 spot-check pass, intentional simplifications, and known rough edges. Agents encountering surprising behavior should check here before debugging.
 
 **Review source:** `docs/code-review-2026-03-13.md`
 **Commits that fixed items:** `b28127b`, `ee15ca7`, `b924054`
@@ -11,13 +11,17 @@ This file lists open findings from the 2026-03-13 code review, intentional simpl
 
 These are design choices, not bugs.
 
-### Similarity agent is deterministic
+### Similarity agent is dormant scaffolding
 
-The similarity agent uses Tavily search for retrieval and deterministic code-side synthesis. It does **not** send the `similarity.md` instruction file to an LLM. The `similarity.md` file exists and is loaded, but the current search node bypasses LLM analysis entirely.
+The `similarity` agent is registered in `agents/registry.py` with `selectable=False` and `default_enabled=False`, so it does not appear in `agent_catalog()` and the frontend cannot enable it. Its overlap-research role has been absorbed by the `fact_check` agent (`fact_check/research_brief.md`, deep-research provider), which is the path that actually runs in practice.
 
-Current stack: Tavily search → deterministic rationale/confidence in code → LangGraph eventing around the node.
+If the similarity branch is reached anyway, the `ProviderKind.SEARCH` path in `services/orchestration.py` builds a query from the document title, calls the Tavily search provider, and returns a single `FindingPayload` with a hardcoded rationale and a confidence derived from the max provider score. **No LLM call is made on this branch.** The `similarity.md` instruction file is loaded into `_INSTRUCTION_TEXT` at module import but is not read at runtime.
 
-This is known. A full LLM-backed research chain (search-plan → retrieve → rank → summarize) is a planned future improvement.
+The dead scaffolding (registry entry, `SIMILARITY` enum value, `SimilaritySearchProvider` interface and mock, `_score_from_result` helper, the `"similarity"` literal in the frontend `AgentCategory` union) is intentionally retained:
+
+- Removing it requires updating ~17 orchestrator instantiations in `tests/test_langgraph_runtime.py` plus `test_orchestration_maintenance.py`, `test_revised_markdown_workflow.py`, and `test_normalization.py`.
+- Removing the `AgentCategory.SIMILARITY` enum value would make any persisted artifact whose findings carry `category: "similarity"` un-deserializable by Pydantic on read.
+- A full LLM-backed similarity / overlap chain (search-plan → retrieve → rank → summarize) remains a possible future improvement; if revived, the existing scaffolding is the natural seam.
 
 ### No authentication
 
@@ -44,6 +48,26 @@ Remaining unresolved low-severity findings from `docs/code-review-2026-03-13.md`
 
 ---
 
+## 2026-04-23 Spot-Check Review
+
+A second review pass over the full codebase surfaced four additional findings. None block the local-first, single-user use case; they are tracked here for future cleanup.
+
+### Backend
+
+| ID  | File | Issue |
+|-----|------|-------|
+| M25 | `services/comments.py` (`_find_comment`, `_find_reply`) | Looks up a comment/reply by id by iterating every artifact id and fetching each artifact. Tolerable today because artifacts are cached in process, but every cache miss turns one comment mutation into N Postgres round-trips. Replace with a `comment_id → artifact_id` map or an indexed lookup before the artifact set grows. |
+| L29 | `api/main.py` (`handle_domain_errors`) | Returns `str(error)` straight to the client. Today's `ContentEvaluationError` subclasses carry sanitized messages, but the handler enforces nothing — any future raise that interpolates internal context (provider URLs, file paths, secrets) will leak it. Map exception types to fixed user-facing strings. |
+
+### Frontend
+
+| ID  | File | Issue |
+|-----|------|-------|
+| L30 | `src/lib/api.ts` (`fetchAgents`) | Only API function in the module without a `signal?: AbortSignal` parameter, so callers cannot abort it on unmount. Every other function in the file accepts and forwards a signal. |
+| L31 | `src/lib/types.ts` vs `domain/models.py` | `ArtifactSummary` and `ArtifactReviewSummary` mark several fields as optional on the TypeScript side (`tl_dr?`, `word_count?`, `article_format?`, `reading_difficulty?`, `structural_completeness?`, etc.) that the Pydantic models always populate with non-null defaults (`""`, `0`, `default_factory=...`). Not a runtime bug — fields are always on the wire — but it forces unnecessary `?? ""` / `?.` checks in consumers and gives the type system nothing to enforce. Either drop the `?` on the TS side or make the backend `| None` to match intent. |
+
+---
+
 ## Fixed or Closed
 
 These findings have been resolved in prior commits or the current codebase state.
@@ -67,7 +91,7 @@ These findings have been resolved in prior commits or the current codebase state
 | M3 | Prompt injection hardening: instructions moved to the system message and article content/upstream context now flow through a structured user payload |
 | M4/M5 | httpx clients per request: created at `__init__` in all providers |
 | M6 | Extraction fallback now uses structured `ProviderError.fallback_eligible` metadata instead of string matching. |
-| M7 | Legacy full-run orchestration path retired; settings now reject the removed legacy backend and full runs always use LangGraph. |
+| M7 | Legacy full-run orchestration path retired; full runs always use LangGraph. The `OrchestratorBackend.LEGACY` enum value is still defined for backward compatibility but is rejected at startup by Settings validation, so it is unreachable at runtime. |
 | M8 | `_ensure_run_active` now uses a narrow repository `get_run_status()` lookup instead of loading full artifacts. |
 | M9 | All inline content now defaults to markdown format. The earlier plain-text auto-detection was removed; pasted text, URL imports, and file uploads all resolve to markdown unless the file extension is `.txt`. |
 | M10 | Downstream agent context is verified to exclude `raw_output`; tests assert the trimmed payload shape on the active LangGraph path. |

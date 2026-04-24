@@ -68,6 +68,43 @@ A second review pass over the full codebase surfaced four additional findings. N
 
 ---
 
+## Deferred Dependency Upgrades (pip-audit 2026-04-24)
+
+A `pip-audit` sweep flagged 16 Python advisories. Eight were closed as patch-level bumps in commit `ae6780f`. The six remaining are tracked here as deliberately deferred.
+
+### LangChain / LangGraph 1.x migration
+
+Four advisories can only be closed by a cross-package major-version migration. The four move together because they share peer-dep constraints:
+
+| Package | Current | Fix | Advisory | Role in the codebase |
+|---------|---------|-----|----------|----------------------|
+| `langgraph` | 0.6.11 | 1.0.10 | CVE-2026-28277 | State-graph runtime; `services/orchestration.py`, `providers/deep_research/` |
+| `langgraph-checkpoint` | 3.0.1 | 4.0.0 | CVE-2026-27794 | Persistence layer for langgraph state |
+| `langchain-openai` | 0.3.35 | 1.1.14 | GHSA-r7w7-9xr2-qq2r | OpenAI chat-model adapter; every analysis/fact-check/compression agent |
+| `langchain-text-splitters` | 0.3.11 | 1.1.2 | GHSA-fv5p-p927-qmxr | Document chunking in deep-research + intake |
+
+**Why it is a real migration, not a version bump.** LangGraph 1.0 was a framework rewrite (new `create_agent` API, middleware hooks like `HumanInTheLoopMiddleware`, reshaped state-graph semantics, different stream-message types). LangChain 1.x restructured message handling, tool-call parsing, and prompt interpolation. The existing agent registry, orchestration driver, LangChain provider client, and the ~17 orchestrator instantiations in `tests/test_langgraph_runtime.py` all need to migrate together.
+
+**Effort estimate.** Half a day to two days. The skills `langchain-fundamentals`, `langgraph-fundamentals`, `langgraph-human-in-the-loop`, and `langgraph-persistence` under `.agents/skills/` exist for this kind of migration and should be invoked when this work is scheduled.
+
+### pytest 9.x bump
+
+| Package | Current | Fix | Advisory |
+|---------|---------|-----|----------|
+| `pytest` | 8.4.2 | 9.0.3 | CVE-2025-71176 |
+
+Dev-only dependency. The CVE is a local code-execution path during test collection — exploitable only by running the test suite against a malicious workspace, which is not part of any normal flow. pytest 9 dropped a few deprecated APIs (notably `pytest.warns` context-manager behavior and some plugin hooks) and typically needs small fixture rewrites to pass cleanly. Rides along with the LangChain 1.x migration or can be done independently as a ~30-minute cleanup.
+
+### pip CVE without fix
+
+| Package | Current | Advisory | Status |
+|---------|---------|----------|--------|
+| `pip` | 26.0.1 | CVE-2026-3219 | **No fix version published yet.** |
+
+Nothing to do until upstream publishes a patched release. Will stay on the Dependabot alert list regardless.
+
+---
+
 ## Fixed or Closed
 
 These findings have been resolved in prior commits or the current codebase state.

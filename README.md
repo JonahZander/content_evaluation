@@ -2,9 +2,21 @@
 
 ![CI](https://github.com/JonahZander/content_evaluation/actions/workflows/ci.yml/badge.svg)
 
-Content Evaluation is an artifact-first editorial review tool for blog posts and long-form drafts. It turns a URL, pasted draft, uploaded text file, or saved artifact into one reviewable object with agent findings, evidence-backed comments, live progress, reviewer decisions, replies, and exports, so the product feels like a real editorial workflow instead of a pile of disconnected model calls.
+A multi-agent review workbench for AI-assisted drafts. Comments attach to specific lines, claims get fact-checked against live sources, and the human stays in charge of what goes live.
 
-The backend's primary job is to produce a complete `AnalysisArtifact`. The web app renders that artifact, streams live progress while it is being built, and lets reviewers add replies and decisions on top of it. The same API/services should be usable without the frontend when someone wants to run the analysis pipeline directly and export the result.
+![Review workbench — agent suggestions attach to the source text they critique.](docs/images/review-workbench.png)
+
+## Why I built this
+
+Most AI writing tools optimize for speed at the exact moment people need more control. You prompt, get a full draft back, and immediately run into the familiar problem: the post is polished enough to feel usable but not trustworthy enough to publish. Changing one section tends to rewrite three. The default output quietly becomes the final voice.
+
+Content Evaluation treats a draft as something to review, not something to regenerate over and over. The draft becomes an artifact. Agent findings attach to specific lines. A reviewer can accept one point, reject another, and leave a third uncertain without losing context. Revisions can be surgical — only the accepted suggestions promote — or a full rewrite conditioned on a short direction prompt. Evidence stays close to the claims it is supposed to support.
+
+## How it works
+
+The backend's primary job is to produce a complete `AnalysisArtifact` from a URL, pasted draft, uploaded text file, or saved artifact. The web app renders that artifact, streams live progress while it is being built, and lets reviewers add replies and decisions on top of it. The same API/services should be usable without the frontend when someone wants to run the analysis pipeline directly and export the result.
+
+![Surgical diff review — promote only the edits you actually accept.](docs/images/diff-review.png)
 
 ## Run Locally
 
@@ -41,6 +53,8 @@ Current analysis and review capabilities:
 - Let a human reviewer mark agent comments as `accepted`, `rejected`, or `uncertain`
 - Let a human reviewer add standalone comments on new text selections
 - Export the artifact as Todo Markdown, full Markdown, or JSON
+
+![Applied revision — prior findings stay preserved as historical context.](docs/images/applied-revision.png)
 
 ## Repository Layout
 

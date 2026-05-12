@@ -638,6 +638,7 @@ async def test_agent_result_metadata_includes_usage() -> None:
             source_label="Draft",
             title="Draft",
             text="Alpha paragraph.\n\nBeta paragraph.",
+            selected_agents=["fact_check", "ai_likelihood", "editorial"],
         )
     )
     await orchestrator.process_run(
@@ -647,6 +648,7 @@ async def test_agent_result_metadata_includes_usage() -> None:
             source_label="Draft",
             title="Draft",
             text="Alpha paragraph.\n\nBeta paragraph.",
+            selected_agents=["fact_check", "ai_likelihood", "editorial"],
         ),
     )
     updated = await repository.get_artifact(artifact.artifact_id)
@@ -684,6 +686,7 @@ async def test_completed_run_builds_review_summary_and_puts_fact_check_in_thread
         source_label="Draft",
         title="Draft",
         text="Alpha paragraph.\n\nBeta paragraph.",
+        selected_agents=["fact_check", "ai_likelihood", "editorial"],
     )
     artifact = await orchestrator.create_run(input_data)
 
@@ -817,6 +820,7 @@ async def test_targeted_research_appends_without_replacing_prior_research_findin
         source_label="Draft",
         title="Draft",
         text="Alpha paragraph.\n\nBeta paragraph.",
+        selected_agents=["fact_check", "ai_likelihood", "editorial"],
     )
     artifact = await orchestrator.create_run(input_data)
     await orchestrator.process_run(artifact.artifact_id, input_data)

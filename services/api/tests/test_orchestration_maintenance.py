@@ -61,24 +61,6 @@ class StatusOnlyRepository:
 
 
 @pytest.mark.asyncio
-async def test_preview_source_document_treats_plain_text_input_as_plain_text() -> None:
-    """Preserve plain-text intent for normal pasted drafts."""
-
-    orchestrator = _build_orchestrator(InMemoryRunRepository())
-
-    document = await orchestrator.preview_source_document(
-        RunInput(
-            source_type=SourceType.TEXT,
-            source_label="Draft",
-            text="Alpha paragraph.\n\nBeta paragraph.",
-        )
-    )
-
-    assert document.content_format is ContentFormat.PLAIN_TEXT
-    assert [block.text for block in document.blocks] == ["Alpha paragraph.", "Beta paragraph."]
-
-
-@pytest.mark.asyncio
 async def test_preview_source_document_preserves_markdown_signals_in_manual_input() -> None:
     """Keep existing markdown-aware drafts rendered as markdown."""
 

@@ -62,7 +62,7 @@ Each agent should be declared with:
 ## Execution Rules
 
 - Selected agents are explicit in the API and UI.
-- An empty agent selection is respected: the run completes with no agent comments. Default agents only apply when the selection is omitted (null), not when it is explicitly empty.
+- If no agents are selected, the run completes with no agent comments. Callers must explicitly include the agent IDs they want to run; there is no implicit default set.
 - Required dependencies are auto-included.
 - Independent agents may run in parallel.
 - Dependent agents wait for prerequisites.

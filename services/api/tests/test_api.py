@@ -111,6 +111,7 @@ def test_api_run_flow_and_exports(monkeypatch: pytest.MonkeyPatch) -> None:
                 "source_label": "Draft",
                 "title": "Draft",
                 "text": "This draft helps editors assess content.\n\nIt repeats itself in places.",
+                "selected_agents": ["fact_check", "ai_likelihood", "editorial"],
             },
         )
         assert response.status_code == 200
@@ -184,6 +185,7 @@ def test_revised_markdown_diff_review_and_apply_flow(monkeypatch: pytest.MonkeyP
                 "source_label": "Draft",
                 "title": "Draft",
                 "text": "This draft helps editors assess content.\n\nIt repeats itself in places.",
+                "selected_agents": ["fact_check", "ai_likelihood", "editorial"],
             },
         )
         assert response.status_code == 200
@@ -613,6 +615,7 @@ def test_research_endpoint_queues_targeted_follow_up(monkeypatch: pytest.MonkeyP
                 "source_label": "Draft",
                 "title": "Draft",
                 "text": "This draft helps editors assess content.\n\nIt repeats itself in places.",
+                "selected_agents": ["fact_check", "ai_likelihood", "editorial"],
             },
         )
         assert response.status_code == 200

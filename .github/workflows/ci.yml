@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    name: Backend (lint, typecheck, test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --extra dev --directory services/api --frozen
+      - name: Lint (ruff)
+        run: uv run --extra dev --directory services/api ruff check .
+      - name: Typecheck (mypy)
+        run: uv run --extra dev --directory services/api mypy src
+      - name: Tests (pytest)
+        run: uv run --extra dev --directory services/api pytest
+
+  frontend:
+    name: Frontend (typecheck, test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck:web
+      - name: Tests (vitest)
+        run: npm run test:web

@@ -1,5 +1,7 @@
 # Content Evaluation
 
+![CI](https://github.com/JonahZander/content_evaluation/actions/workflows/ci.yml/badge.svg)
+
 Content Evaluation is an artifact-first editorial review tool for blog posts and long-form drafts. It turns a URL, pasted draft, uploaded text file, or saved artifact into one reviewable object with agent findings, evidence-backed comments, live progress, reviewer decisions, replies, and exports, so the product feels like a real editorial workflow instead of a pile of disconnected model calls.
 
 The backend's primary job is to produce a complete `AnalysisArtifact`. The web app renders that artifact, streams live progress while it is being built, and lets reviewers add replies and decisions on top of it. The same API/services should be usable without the frontend when someone wants to run the analysis pipeline directly and export the result.

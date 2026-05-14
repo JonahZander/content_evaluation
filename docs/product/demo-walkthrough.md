@@ -1,8 +1,8 @@
 # Demo Walkthrough
 
-**Pinned commit:** `eb98596` (`fix(review): lock workbench during revision`).
+**Pinned commit:** `0fe14c3` (`fix(review): lock workbench during revision`).
 
-The demo is a time capsule of the product at the pinned commit. It is intentionally allowed to drift from the live product between fixture captures — reviewers should read this doc as "how the product looked and behaved at commit `eb98596`." Update this line whenever the fixtures are re-captured.
+The demo is a time capsule of the product at the pinned commit. It is intentionally allowed to drift from the live product between fixture captures — reviewers should read this doc as "how the product looked and behaved at commit `0fe14c3`." Update this line whenever the fixtures are re-captured.
 
 ## Purpose
 

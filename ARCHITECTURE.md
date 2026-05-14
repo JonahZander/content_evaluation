@@ -10,8 +10,6 @@ This project is an agent-readable monorepo with a Next.js frontend and a FastAPI
   - Next.js review workbench for intake, live progress, artifact rendering, review actions, and import/export
 - `services/api/`
   - FastAPI API, artifact orchestration, LangGraph execution, LangChain provider routing, repositories, and backend tests
-- `.agents/skills/`
-  - Repo-local skills for recurring agent workflows
 
 ## Layering
 

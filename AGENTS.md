@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This repository is organized for coding agents first and humans second.
+This repository is organized to be navigated by both humans and coding agents.
 Use this file as a map, not as the full source of truth.
 
 ## Core Rules
@@ -104,18 +104,7 @@ Examples that may make sense later:
 - Annotation export and reviewer QA
 - Release verification
 
-Repo-local skills currently available:
-
-- `.agents/skills/commit-style/SKILL.md`
-- `.agents/skills/frontend-design/SKILL.md`
-- `.agents/skills/framework-selection/SKILL.md`
-- `.agents/skills/implement-plan/SKILL.md`
-- `.agents/skills/langchain-dependencies/SKILL.md`
-- `.agents/skills/langchain-fundamentals/SKILL.md`
-- `.agents/skills/langchain-middleware/SKILL.md`
-- `.agents/skills/langgraph-fundamentals/SKILL.md`
-- `.agents/skills/langgraph-human-in-the-loop/SKILL.md`
-- `.agents/skills/langgraph-persistence/SKILL.md`
+Repo-local agent skills live under `.agents/skills/` on disk but are gitignored, since they are developer tooling rather than project artifacts.
 
 Do not create a skill for information that is really repository knowledge.
 If the content explains this project's architecture, workflows, or domain language, prefer `docs/`.
@@ -124,7 +113,6 @@ If the content explains this project's architecture, workflows, or domain langua
 
 Use the repo-local commit guidance:
 
-- Skill: `.agents/skills/commit-style/SKILL.md`
 - Template: `.gitmessage.txt`
 - Conventions: `docs/process/commit-conventions.md`
 

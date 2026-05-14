@@ -46,6 +46,12 @@ demo-content/
 docs/plans/active/
 docs/plans/completed/
 
+# Demo walkthrough lives with the demo, not the product repo
+docs/product/demo-walkthrough.md
+
+# Raw code-review snapshot kept locally; curated issues live in docs/process/known-issues.md
+docs/code-review-2026-03-13.md
+
 # Playwright MCP cache
 .playwright-mcp/
 
@@ -61,7 +67,5 @@ playwright-report/
 .cursor
 .cursor/
 
-# Repo-local agent workspace scratch while keeping tracked skills
-.agents/*
-!.agents/skills/
-!.agents/skills/**
+# Repo-local agent workspace scratch
+.agents/

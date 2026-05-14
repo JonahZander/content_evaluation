@@ -1,9 +1,8 @@
 # Known Issues
 
-This file lists open findings from the 2026-03-13 code review, additional findings from a 2026-04-23 spot-check pass, intentional simplifications, and known rough edges. Agents encountering surprising behavior should check here before debugging.
+This file is the curated record of what is still open: deferred findings from a March 2026 code review, additional findings from an April 2026 spot-check pass, intentional simplifications, and known rough edges. Items that were fixed are summarized in the "Fixed or Closed" section at the bottom rather than enumerated. Agents encountering surprising behavior should check here before debugging.
 
-**Review source:** `docs/code-review-2026-03-13.md`
-**Commits that fixed items:** `b28127b`, `ee15ca7`, `b924054`
+**Commits that fixed code-review items:** `bf3f456`, `2c85ee7`, `3ad2f5d`
 
 ---
 
@@ -31,7 +30,7 @@ The API has no auth, rate limiting, or CSRF protection. This is intentional for 
 
 ## Open Findings (Deferred, Not Fixed)
 
-These findings from the 2026-03-13 code review were not addressed in the current iteration. Do not assume they are bugs — they are known and intentionally deferred.
+These findings from the March 2026 code review were not addressed in the current iteration. Do not assume they are bugs — they are known and intentionally deferred.
 
 ### Backend
 
@@ -44,7 +43,7 @@ These findings from the 2026-03-13 code review were not addressed in the current
 | ID | Issue |
 |----|-------|
 
-Remaining unresolved low-severity findings from `docs/code-review-2026-03-13.md` are still deferred. Consult that document for the full historical list.
+A handful of unresolved low-severity findings from the same review are still deferred. They were judged not worth tracking individually here; if they resurface as concrete bugs they will be re-filed on their own.
 
 ---
 
@@ -85,7 +84,7 @@ Four advisories can only be closed by a cross-package major-version migration. T
 
 **Why it is a real migration, not a version bump.** LangGraph 1.0 was a framework rewrite (new `create_agent` API, middleware hooks like `HumanInTheLoopMiddleware`, reshaped state-graph semantics, different stream-message types). LangChain 1.x restructured message handling, tool-call parsing, and prompt interpolation. The existing agent registry, orchestration driver, LangChain provider client, and the ~17 orchestrator instantiations in `tests/test_langgraph_runtime.py` all need to migrate together.
 
-**Effort estimate.** Half a day to two days. The skills `langchain-fundamentals`, `langgraph-fundamentals`, `langgraph-human-in-the-loop`, and `langgraph-persistence` under `.agents/skills/` exist for this kind of migration and should be invoked when this work is scheduled.
+**Effort estimate.** Half a day to two days.
 
 ### pytest 9.x bump
 

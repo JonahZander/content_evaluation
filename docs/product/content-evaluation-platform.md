@@ -30,7 +30,7 @@ Writers and editors need a fast way to judge whether a blog post is original, us
 1. User submits content or imports an existing artifact.
 2. The API creates an artifact plus run config, including selected agents and persistence mode.
 3. The system normalizes the text into a shared document model with ordered blocks.
-4. A LangGraph-backed orchestrator expands agent dependencies, resumes from checkpoints when needed, runs independent agents in parallel, waits for prerequisite-driven agents, and merges each result into the artifact.
+4. A LangGraph-backed orchestrator expands agent dependencies, resumes from checkpoints when needed, schedules agents in dependency order, and merges each result into the artifact.
 5. The UI shows live progress, partial findings, summary data, anchored comments, and export actions.
 6. The reviewer replies to comments, marks agent comments accepted/rejected/uncertain, can add standalone comments on selected text, and can trigger revised-markdown generation after accepting suggestions.
 7. The artifact can be exported, re-imported, or persisted in workspace mode.
@@ -44,7 +44,7 @@ Writers and editors need a fast way to judge whether a blog post is original, us
 - The API should remain useful without the frontend by producing a complete artifact directly.
 - The analysis layer should be portable across OpenAI, Anthropic, and Gemini without changing review logic.
 - Local/open-source use should work in session mode without requiring a database.
-- Artifact JSON export/import should stay stable enough to reopen prior reviews and support future static-demo surfaces without special runtime-only data.
+- Artifact JSON export/import should stay stable enough to reopen prior reviews without special runtime-only data.
 - Production should fail fast rather than silently dropping to mock behavior.
 
 ## Current Non-Goals

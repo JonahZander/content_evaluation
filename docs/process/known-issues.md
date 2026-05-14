@@ -69,7 +69,7 @@ A second review pass over the full codebase surfaced four additional findings. N
 
 ## Deferred Dependency Upgrades (pip-audit 2026-04-24)
 
-A `pip-audit` sweep flagged 16 Python advisories. Eight were closed as patch-level bumps in commit `ae6780f`. The six remaining are tracked here as deliberately deferred.
+A `pip-audit` sweep flagged 16 Python advisories. Eight were closed as patch-level bumps in commit `b020c39`. The six remaining are tracked here as deliberately deferred.
 
 ### LangChain / LangGraph 1.x migration
 
@@ -147,5 +147,5 @@ These findings have been resolved in prior commits or the current codebase state
 | L14 | `SelectionDraft` duplicated: defined once in `src/lib/types.ts` |
 | L26 | API Docker builds now copy `services/api/uv.lock` and use `uv sync --frozen` for reproducible installs. |
 | L27 | Both Dockerfiles now drop root privileges before starting the app process. |
-| L28 | Root `.gitignore` now ignores `.agents/*` scratch while explicitly keeping tracked repo-local skills. |
+| L28 | Root `.gitignore` ignores `.agents/` scratch; agent tooling is kept local rather than tracked. |
 | L25/M18 | 18+ `useState` hooks and missing `useCallback`: `useReducer` + stabilized callbacks |

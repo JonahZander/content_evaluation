@@ -47,4 +47,4 @@ The progress bar is intentionally square (`border-radius: 0`) with a gradient fi
 ## What This Is Not
 
 - Not a component library — these rules live in `ReviewWorkbench.module.css` and `globals.css`, not in a shared design system package.
-- Not final — the walkthrough affordance, empty states, and additional detail panels may introduce new surfaces that should follow these same principles.
+- Not final — empty states and additional detail panels may introduce new surfaces that should follow these same principles.

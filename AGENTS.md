@@ -87,11 +87,7 @@ If user feedback changes how a feature should behave, update the relevant markdo
 
 ## Plans
 
-Use `docs/plans/active/` for larger multi-step efforts that may span multiple sessions.
-Move finished plans to `docs/plans/completed/`.
-Keep plans concise and execution-oriented.
-
-Plan files under `active/` and `completed/` are gitignored — they are local working notes, not part of the tracked repo.
+Plan files are local working notes, not part of the tracked repo. Keep them concise and execution-oriented. Locally, `docs/plans/active/` holds in-flight multi-step efforts and `docs/plans/completed/` archives finished ones; both subdirectories are gitignored.
 
 ## Skills
 

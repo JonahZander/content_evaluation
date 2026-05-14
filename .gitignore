@@ -46,7 +46,7 @@ demo-content/
 docs/plans/active/
 docs/plans/completed/
 
-# Demo walkthrough lives with the demo, not the product repo
+# Local walkthrough draft, not part of the published repo
 docs/product/demo-walkthrough.md
 
 # Raw code-review snapshot kept locally; curated issues live in docs/process/known-issues.md

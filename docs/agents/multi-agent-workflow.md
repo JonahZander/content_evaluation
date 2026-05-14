@@ -35,7 +35,7 @@ This project uses a code-orchestrated multi-agent model:
 - Similarity research agent
   - Legacy compatibility path only
   - Hidden from the selectable agent catalog for new runs
-- AI-likelihood agent
+- AI-likelihood agent (displayed as "Human Voice" in the UI)
   - Estimates whether the text appears AI-generated
 - Structure and conversion review agent
   - Produces span-level guidance on hook quality, narrative flow, skimmability, and call-to-action strength

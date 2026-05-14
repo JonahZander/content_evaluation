@@ -42,6 +42,10 @@ tmp-artifacts/
 services/api/graphs/
 demo-content/
 
+# Plans are local working notes
+docs/plans/active/
+docs/plans/completed/
+
 # Playwright MCP cache
 .playwright-mcp/
 

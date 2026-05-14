@@ -202,7 +202,7 @@ The `reviewed` snapshot also contains one reviewer standalone comment on the `"A
 The `Export Todo`, `Export Markdown`, and `Export JSON` buttons in the toolbar should work in the demo, without any backend call:
 
 - `Export JSON` serializes the in-memory artifact to a downloadable JSON blob. The backend endpoint and the runtime-artifact endpoint return byte-identical payloads, so client-side serialization is lossless and stays live as the visitor accepts or rejects more comments.
-- `Export Markdown` serves the captured `phase-3-export-{state}.md` fixture that matches the hydrating artifact. The markdown export uses a server-side renderer we do not mirror client-side, so the demo accepts the fidelity loss: the file reflects the state at capture time, not the visitor's latest interactions. Fine for a demo demo.
+- `Export Markdown` serves the captured `phase-3-export-{state}.md` fixture that matches the hydrating artifact. The markdown export uses a server-side renderer we do not mirror client-side, so the demo accepts the fidelity loss: the file reflects the state at capture time, not the visitor's latest interactions. Fine for the demo.
 - `Export Todo` serves the captured `phase-3-export-{state}.todo.md` fixture. Since the todo file only lists *accepted* suggestions, it is the export most sensitive to the visitor's interactions — but the same argument applies.
 
 "Matches the hydrating artifact" means: when the demo loads from `phase-3-artifact-reviewed.json`, the export buttons serve `phase-3-export-reviewed.{md,todo.md}`. If we later add a "reset" affordance that switches back to `phase-3-artifact-pristine.json`, the export buttons switch in lock-step.

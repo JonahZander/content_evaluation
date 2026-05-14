@@ -91,6 +91,8 @@ Use `docs/plans/active/` for larger multi-step efforts that may span multiple se
 Move finished plans to `docs/plans/completed/`.
 Keep plans concise and execution-oriented.
 
+Plan files under `active/` and `completed/` are gitignored — they are local working notes, not part of the tracked repo.
+
 ## Skills
 
 Potential future skills should be proposed when work is repetitive, fragile, or tool-heavy.

@@ -67,18 +67,22 @@ A second review pass over the full codebase surfaced four additional findings. N
 
 ---
 
-## Deferred Dependency Upgrades (pip-audit 2026-04-24)
+## Deferred Dependency Upgrades (audited 2026-07-15)
 
-A `pip-audit` sweep flagged 16 Python advisories. Eight were closed as patch-level bumps in commit `b020c39`. The six remaining are tracked here as deliberately deferred.
+Compatible dependency updates have been applied and verified locally. The remaining findings require coordinated major-version migrations or an upstream framework fix; they are not safe lockfile-only upgrades.
 
 ### LangChain / LangGraph 1.x migration
 
-Four advisories can only be closed by a cross-package major-version migration. The four move together because they share peer-dep constraints:
+The LangChain and LangGraph findings move together because the packages share version constraints:
 
 | Package | Current | Fix | Advisory | Role in the codebase |
 |---------|---------|-----|----------|----------------------|
 | `langgraph` | 0.6.11 | 1.0.10 | CVE-2026-28277 | State-graph runtime; `services/orchestration.py`, `providers/deep_research/` |
 | `langgraph-checkpoint` | 3.0.1 | 4.0.0 | CVE-2026-27794 | Persistence layer for langgraph state |
+| `langgraph-sdk` | 0.2.15 | 0.3.15 | PYSEC-2026-2575 | LangGraph client/runtime dependency |
+| `langchain` | 0.3.30 | 1.3.9 | PYSEC-2026-2192 | Shared LangChain runtime |
+| `langchain-core` | 0.3.86 | 1.2.22 | PYSEC-2026-2193, PYSEC-2026-2562 | Messages, prompts, and model interfaces |
+| `langchain-anthropic` | 0.3.22 | 1.4.6 | PYSEC-2026-2556 | Optional Anthropic model adapter |
 | `langchain-openai` | 0.3.35 | 1.1.14 | GHSA-r7w7-9xr2-qq2r | OpenAI chat-model adapter; every analysis/fact-check/compression agent |
 | `langchain-text-splitters` | 0.3.11 | 1.1.2 | GHSA-fv5p-p927-qmxr | Document chunking in deep-research + intake |
 
@@ -94,13 +98,15 @@ Four advisories can only be closed by a cross-package major-version migration. T
 
 Dev-only dependency. The CVE is a local code-execution path during test collection — exploitable only by running the test suite against a malicious workspace, which is not part of any normal flow. pytest 9 dropped a few deprecated APIs (notably `pytest.warns` context-manager behavior and some plugin hooks) and typically needs small fixture rewrites to pass cleanly. Rides along with the LangChain 1.x migration or can be done independently as a ~30-minute cleanup.
 
-### pip CVE without fix
+### Starlette 1.x migration
 
 | Package | Current | Advisory | Status |
 |---------|---------|----------|--------|
-| `pip` | 26.0.1 | CVE-2026-3219 | **No fix version published yet.** |
+| `starlette` | 0.52.1 | Multiple PYSEC-2026 advisories | Fixed in 1.3.1; upgrading requires a FastAPI compatibility migration. |
 
-Nothing to do until upstream publishes a patched release. Will stay on the Dependabot alert list regardless.
+### Next.js-bundled PostCSS
+
+`npm audit --omit=dev` reports two moderate findings for PostCSS below 8.5.10 through Next.js 15.5.20. npm's proposed forced resolution installs Next.js 9.3.3, which is both a breaking downgrade and still an invalid resolution for this application. Track the upstream Next.js packaging fix rather than forcing that change.
 
 ---
 

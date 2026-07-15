@@ -62,7 +62,7 @@ Backend features should converge toward:
 - The API is the canonical producer of `AnalysisArtifact`.
 - The UI renders artifact snapshots directly and does not depend on backend-only stitched view models.
 - Live progress is a separate event stream, not the artifact itself.
-- Workspace persistence is the default web workflow.
+- Session persistence is the default web workflow and requires no database.
 - Session-mode runs and artifact export/import remain available for lightweight local and open-source use.
 - LangChain owns model/provider abstraction for analysis agents.
 - LangGraph owns orchestration/runtime flow for analysis runs.
@@ -82,7 +82,7 @@ Backend features should converge toward:
   - Artifact and live events live in ephemeral backend/browser state
   - Export/import is the primary persistence mechanism
 - `workspace`
-  - Optional persisted mode
+  - Optional persisted mode that requires PostgreSQL
   - Stores artifact snapshots and review state in backend storage
   - Supports reopening prior runs
 - `mock`

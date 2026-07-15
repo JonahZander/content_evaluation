@@ -2,7 +2,7 @@
 
 ![CI](https://github.com/JonahZander/content_evaluation/actions/workflows/ci.yml/badge.svg)
 
-A multi-agent review workbench for AI-assisted drafts. Comments attach to specific lines, claims get fact-checked against live sources, and the human stays in charge of what goes live.
+A multi-agent review workbench for AI-assisted drafts. Comments attach to specific lines, claim checks include source links, and the human stays in charge of what goes live. Model-generated findings are advisory and still need human verification.
 
 ![Review workbench — agent suggestions attach to the source text they critique.](docs/images/review-workbench.png)
 
@@ -20,9 +20,14 @@ The backend's primary job is to produce a complete `AnalysisArtifact` from a URL
 
 ## Run Locally
 
-1. Start the API with `npm run dev:api`.
-2. Start the web app with `npm run dev:web`.
-3. Open the app and choose a real intake path: URL import, pasted text, text-file upload, or artifact import.
+1. Run `nvm use` and `npm ci`.
+2. Run `uv sync --directory services/api --extra dev --frozen`.
+3. Copy `services/api/.env.example` to `services/api/.env`. Keys are optional for the default mock mode.
+4. Start the API with `npm run dev:api`.
+5. Start the web app with `npm run dev:web`.
+6. Open the app and choose URL import, pasted text, text-file upload, or artifact import.
+
+The web app defaults to ephemeral session storage, so PostgreSQL is not required. Live analysis requires one configured model-provider key plus Tavily. In live mode, article text and relevant reviewer notes leave the machine for the configured model and research providers. Do not submit confidential material unless those providers and their retention terms are appropriate for it.
 
 Recommended review path:
 
@@ -43,8 +48,8 @@ Current supported inputs:
 Current analysis and review capabilities:
 
 - Select which agents should run for a given analysis
-- Fact-check key claims and surface overlapping public posts as linked research
-- Estimate whether content is likely AI-generated
+- Research key claims and surface source-linked evidence and overlapping public posts for review
+- Produce a heuristic estimate of AI-writing likelihood; this is not proof of authorship
 - Summarize the article with fact-check-backed TL;DR, audience, overlap, and overall review metrics
 - Run editorial review plus post-run revised-markdown generation with dependency-aware orchestration
 - Attach agent comments to anchored text spans

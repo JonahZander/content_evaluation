@@ -14,7 +14,7 @@ test("submits pasted text and renders the analyzed review state", async ({ page 
   await expectRunLoaded(page);
   await expect(page.getByTestId("run-status")).toContainText("Run completed");
   await expect(page.getByText("Overall score")).toBeVisible();
-  await expect(page.getByTestId("review-summary-panel")).toBeVisible();
+  await expect(page.getByTestId("analysis-overview")).toBeVisible();
   await expect(page.locator("[data-testid^='comment-comment-']").first()).toBeVisible();
 });
 

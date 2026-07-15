@@ -1055,7 +1055,7 @@ describe("ReviewWorkbench", () => {
     await waitFor(() =>
       expect(api.createRun).toHaveBeenCalledWith(
         expect.objectContaining({
-          persistenceMode: "workspace",
+          persistenceMode: "session",
         }),
         expect.any(AbortSignal),
       ),
@@ -1082,7 +1082,7 @@ describe("ReviewWorkbench", () => {
         uploadedFile,
         expect.objectContaining({
           selectedAgents: ["fact_check"],
-          persistenceMode: "workspace",
+          persistenceMode: "session",
           includeDebugTrace: true,
           title: "Uploaded draft",
         }),

@@ -45,6 +45,7 @@ export default defineConfig({
         CONTENT_EVAL_ANTHROPIC_API_KEY: "",
         CONTENT_EVAL_GEMINI_API_KEY: "",
         CONTENT_EVAL_TAVILY_API_KEY: "",
+        CONTENT_EVAL_DATABASE_URL: "",
       },
     },
     {

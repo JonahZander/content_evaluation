@@ -73,7 +73,7 @@ export const DEFAULT_FORM_STATE: ReviewFormState = {
   sourceLabel: "Manual input",
   text: "",
   url: "",
-  persistenceMode: "workspace",
+  persistenceMode: "session",
   includeDebugTrace: true,
   selectedAgents: [],
 };
